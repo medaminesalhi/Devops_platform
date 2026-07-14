@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>SApixi Platform</title>
+
+    <style>
+        :root {
+            font-family: Inter, Arial, sans-serif;
+            color-scheme: dark;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            margin: 0;
+            display: grid;
+            place-items: center;
+            background:
+                radial-gradient(circle at top, #1e3a5f, #07111f 60%);
+            color: #f5f7fa;
+        }
+
+        .card {
+            width: min(680px, 90%);
+            padding: 48px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 20px;
+            background: rgba(10, 25, 43, 0.82);
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 7px 12px;
+            border-radius: 999px;
+            background: rgba(48, 198, 141, 0.15);
+            color: #55e6ae;
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        h1 {
+            margin: 24px 0 12px;
+            font-size: clamp(36px, 7vw, 64px);
+        }
+
+        p {
+            margin: 8px 0;
+            color: #b8c7d9;
+            font-size: 18px;
+            line-height: 1.6;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 32px;
+            padding-top: 24px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #55e6ae;
+            box-shadow: 0 0 16px #55e6ae;
+        }
+
+        code {
+            color: #86c7ff;
+        }
+    </style>
+</head>
+
+<body>
+    <main class="card">
+        <span class="badge">SApixi Platform</span>
+
+        <h1>Hello SApixi</h1>
+
+        <p>
+            La première version de la plateforme est opérationnelle.
+        </p>
+
+        <p>
+            Cette application évoluera vers une plateforme capable de
+            construire et de déployer différentes applications dans Kubernetes.
+        </p>
+
+        <div class="status">
+            <span class="status-dot"></span>
+
+            <span>
+                Platform is running —
+                <code>version 1.0.0</code>
+            </span>
+        </div>
+    </main>
+</body>
+</html>
