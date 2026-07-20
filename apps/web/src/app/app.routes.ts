@@ -1,0 +1,80 @@
+import {
+  Routes,
+} from '@angular/router';
+
+import {
+  authGuard,
+} from './core/auth/auth.guard';
+
+import {
+  Login,
+} from './features/auth/pages/login/login';
+
+import {
+  Dashboard,
+} from './features/dashboard/pages/dashboard/dashboard';
+
+import {
+  Integrations,
+} from './features/integrations/pages/integrations/integrations';
+
+import {
+  NewProject,
+} from './features/projects/pages/new-project/new-project';
+
+import {
+  Projects,
+} from './features/projects/pages/projects/projects';
+
+import {
+  MainLayout,
+} from './layout/main-layout/main-layout';
+
+
+export const routes: Routes = [
+  {
+    path: 'login',
+    component: Login,
+  },
+
+  {
+    path: '',
+    component: MainLayout,
+    canActivate: [
+      authGuard,
+    ],
+
+    children: [
+      {
+        path: 'dashboard',
+        component: Dashboard,
+      },
+
+      {
+        path: 'projects/new',
+        component: NewProject,
+      },
+
+      {
+        path: 'projects',
+        component: Projects,
+      },
+
+      {
+        path: 'integrations',
+        component: Integrations,
+      },
+
+      {
+        path: '',
+        pathMatch: 'full',
+        redirectTo: 'dashboard',
+      },
+    ],
+  },
+
+  {
+    path: '**',
+    redirectTo: 'dashboard',
+  },
+];

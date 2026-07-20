@@ -1,0 +1,359 @@
+<section class="projects-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">
+        Gestion des applications
+      </p>
+
+      <h2>Projets</h2>
+
+      <p>
+        Consultez les applications enregistrées, leurs versions
+        déployées et les derniers commits disponibles.
+      </p>
+    </div>
+  </header>
+
+  <section
+    class="project-actions"
+    aria-label="Actions principales"
+  >
+    <button
+      class="action-card action-card--primary"
+      type="button"
+      routerLink="/projects/new"
+    >
+      <span class="action-card__icon">+</span>
+
+      <span>
+        <strong>Nouveau projet</strong>
+
+        <small>
+          Analyser et déployer un repository GitLab.
+        </small>
+      </span>
+
+      <span class="action-card__arrow">→</span>
+    </button>
+
+    <button
+      class="action-card"
+      type="button"
+      (click)="
+        selectAction(
+          'Importation d’une application existante'
+        )
+      "
+    >
+      <span class="action-card__icon">⇧</span>
+
+      <span>
+        <strong>Importer une application</strong>
+
+        <small>
+          Adopter une application déjà dans Kubernetes.
+        </small>
+      </span>
+
+      <span class="action-card__arrow">→</span>
+    </button>
+
+    <button
+      class="action-card"
+      type="button"
+      (click)="
+        selectAction(
+          'Vérification des commits GitLab'
+        )
+      "
+    >
+      <span class="action-card__icon">↻</span>
+
+      <span>
+        <strong>Vérifier les mises à jour</strong>
+
+        <small>
+          Comparer les versions avec les derniers commits.
+        </small>
+      </span>
+
+      <span class="action-card__arrow">→</span>
+    </button>
+  </section>
+
+  @if (informationMessage) {
+    <div class="information-message">
+      <span>
+        {{ informationMessage }} : cette fonctionnalité
+        sera connectée à sa prochaine page.
+      </span>
+
+      <button
+        type="button"
+        aria-label="Fermer"
+        (click)="closeMessage()"
+      >
+        ×
+      </button>
+    </div>
+  }
+
+  <section class="summary-grid">
+    <article class="summary-card">
+      <span>Projets enregistrés</span>
+
+      <strong>{{ totalProjects }}</strong>
+
+      <small>
+        Total des applications connues
+      </small>
+    </article>
+
+    <article class="summary-card summary-card--success">
+      <span>Projets à jour</span>
+
+      <strong>{{ upToDateProjects }}</strong>
+
+      <small>
+        Aucune nouvelle version détectée
+      </small>
+    </article>
+
+    <article class="summary-card summary-card--warning">
+      <span>Mises à jour</span>
+
+      <strong>{{ availableUpdates }}</strong>
+
+      <small>
+        Nouveaux commits disponibles
+      </small>
+    </article>
+
+    <article class="summary-card summary-card--danger">
+      <span>Interventions</span>
+
+      <strong>
+        {{ projectsRequiringAttention }}
+      </strong>
+
+      <small>
+        Projets nécessitant une action
+      </small>
+    </article>
+  </section>
+
+  <section class="projects-panel">
+    <header class="projects-panel__header">
+      <div>
+        <p class="eyebrow">Catalogue</p>
+
+        <h3>Applications enregistrées</h3>
+      </div>
+
+      <span class="results-count">
+        {{ filteredProjects.length }}
+        résultat(s)
+      </span>
+    </header>
+
+    <div class="filters">
+      <label class="search-field">
+        <span>Rechercher</span>
+
+        <input
+          type="search"
+          [(ngModel)]="searchTerm"
+          placeholder="Nom, repository ou technologie..."
+        />
+      </label>
+
+      <label>
+        <span>État</span>
+
+        <select [(ngModel)]="statusFilter">
+          <option value="all">
+            Tous les états
+          </option>
+
+          <option value="up-to-date">
+            À jour
+          </option>
+
+          <option value="update-available">
+            Mise à jour disponible
+          </option>
+
+          <option value="deploying">
+            Déploiement en cours
+          </option>
+
+          <option value="attention">
+            Intervention requise
+          </option>
+        </select>
+      </label>
+
+      <label>
+        <span>Technologie</span>
+
+        <select [(ngModel)]="technologyFilter">
+          <option value="all">
+            Toutes les technologies
+          </option>
+
+          <option value="Angular">
+            Angular
+          </option>
+
+          <option value="Flask">
+            Flask
+          </option>
+
+          <option value="Spring Boot">
+            Spring Boot
+          </option>
+        </select>
+      </label>
+
+      <button
+        class="clear-filters-button"
+        type="button"
+        (click)="clearFilters()"
+      >
+        Réinitialiser
+      </button>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Projet</th>
+            <th>Technologie</th>
+            <th>Repository</th>
+            <th>Version déployée</th>
+            <th>Dernier commit</th>
+            <th>État</th>
+            <th>Environnement</th>
+            <th></th>
+          </tr>
+        </thead>
+
+        <tbody>
+          @for (
+            project of filteredProjects;
+            track project.id
+          ) {
+            <tr>
+              <td>
+                <div class="project-identity">
+                  <div class="project-avatar">
+                    {{
+                      project.name
+                        .slice(0, 2)
+                        .toUpperCase()
+                    }}
+                  </div>
+
+                  <div>
+                    <strong>
+                      {{ project.name }}
+                    </strong>
+
+                    <span>
+                      {{ project.description }}
+                    </span>
+                  </div>
+                </div>
+              </td>
+
+              <td>
+                <span class="technology-badge">
+                  {{ project.technology }}
+                </span>
+              </td>
+
+              <td>
+                <div class="repository">
+                  <strong>
+                    {{ project.repository }}
+                  </strong>
+
+                  <span>
+                    {{ project.branch }}
+                  </span>
+                </div>
+              </td>
+
+              <td>
+                <code>
+                  {{ project.deployedCommit }}
+                </code>
+              </td>
+
+              <td>
+                <code
+                  [class.commit-changed]="
+                    project.deployedCommit !==
+                    project.latestCommit
+                  "
+                >
+                  {{ project.latestCommit }}
+                </code>
+              </td>
+
+              <td>
+                <span
+                  class="project-status"
+                  [class]="
+                    'project-status project-status--' +
+                    project.status
+                  "
+                >
+                  <span></span>
+
+                  {{ statusLabel(project.status) }}
+                </span>
+              </td>
+
+              <td>
+                <span class="environment-badge">
+                  {{ project.environment }}
+                </span>
+              </td>
+
+              <td>
+                <button
+                  class="project-menu-button"
+                  type="button"
+                  (click)="
+                    selectAction(
+                      'Ouverture du projet ' +
+                      project.name
+                    )
+                  "
+                >
+                  Voir
+                </button>
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="8">
+                <div class="empty-state">
+                  <strong>
+                    Aucun projet trouvé
+                  </strong>
+
+                  <span>
+                    Modifiez vos critères de recherche.
+                  </span>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+</section>

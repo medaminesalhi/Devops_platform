@@ -1,0 +1,459 @@
+<section class="dashboard-page">
+  <header class="dashboard-heading">
+    <div>
+      <p class="eyebrow">
+        Centre de contrôle
+      </p>
+
+      <h2>
+        Vue générale de la plateforme
+      </h2>
+
+      <p>
+        Consultez l’état des projets,
+        des déploiements et des services.
+      </p>
+    </div>
+
+    <a
+      class="new-project-button"
+      routerLink="/projects/new"
+    >
+      <span aria-hidden="true">+</span>
+      Nouveau projet
+    </a>
+  </header>
+
+  @if (isLoading()) {
+    <section class="loading-panel">
+      <span class="loading-spinner"></span>
+
+      <div>
+        <strong>
+          Chargement de la plateforme
+        </strong>
+
+        <p>
+          Récupération des données PostgreSQL…
+        </p>
+      </div>
+    </section>
+  }
+
+  @if (errorMessage()) {
+    <section class="error-panel">
+      <span aria-hidden="true">!</span>
+
+      <div>
+        <strong>
+          Impossible de charger le dashboard
+        </strong>
+
+        <p>
+          {{ errorMessage() }}
+        </p>
+      </div>
+
+      <button
+        type="button"
+        (click)="loadOverview()"
+      >
+        Réessayer
+      </button>
+    </section>
+  }
+
+  @if (overview(); as data) {
+    <section class="metrics-grid">
+      <article class="metric-card">
+        <header>
+          <span class="metric-icon">
+            ▣
+          </span>
+
+          <span class="metric-period">
+            Total
+          </span>
+        </header>
+
+        <strong class="metric-value">
+          {{ data.metrics.totalProjects }}
+        </strong>
+
+        <h3>Projets</h3>
+
+        <p>
+          {{ data.metrics.activeProjects }}
+          projet(s) actif(s)
+        </p>
+      </article>
+
+      <article class="metric-card">
+        <header>
+          <span class="metric-icon">
+            ⇄
+          </span>
+
+          <span class="metric-period">
+            Aujourd’hui
+          </span>
+        </header>
+
+        <strong class="metric-value">
+          {{ data.metrics.deploymentsToday }}
+        </strong>
+
+        <h3>Déploiements</h3>
+
+        <p>
+          {{ data.metrics.runningDeployments }}
+          actuellement en cours
+        </p>
+      </article>
+
+      <article class="metric-card">
+        <header>
+          <span class="metric-icon">
+            ✓
+          </span>
+
+          <span class="metric-period">
+            7 derniers jours
+          </span>
+        </header>
+
+        <strong class="metric-value">
+          {{ data.metrics.successRate7d }} %
+        </strong>
+
+        <h3>Taux de réussite</h3>
+
+        <p>
+          {{
+            data.metrics
+              .successfulDeployments7d
+          }}
+          déploiement(s) réussi(s)
+        </p>
+      </article>
+
+      <article class="metric-card">
+        <header>
+          <span class="metric-icon">
+            !
+          </span>
+
+          <span class="metric-period">
+            7 derniers jours
+          </span>
+        </header>
+
+        <strong class="metric-value">
+          {{
+            data.metrics
+              .failedDeployments7d
+          }}
+        </strong>
+
+        <h3>Échecs</h3>
+
+        <p>
+          Déploiements à contrôler
+        </p>
+      </article>
+    </section>
+
+    <section class="dashboard-grid">
+      <article class="dashboard-card recent-card">
+        <header class="card-heading">
+          <div>
+            <p class="eyebrow">
+              Activité
+            </p>
+
+            <h3>
+              Déploiements récents
+            </h3>
+          </div>
+
+          <a routerLink="/projects">
+            Voir les projets
+            <span>→</span>
+          </a>
+        </header>
+
+        @if (
+          data.recentDeployments.length > 0
+        ) {
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Projet</th>
+                  <th>Environnement</th>
+                  <th>Statut</th>
+                  <th>Déclenché par</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+
+              <tbody>
+                @for (
+                  deployment of
+                    data.recentDeployments;
+                  track deployment.id
+                ) {
+                  <tr>
+                    <td>
+                      <div class="project-cell">
+                        <span>
+                          {{
+                            deployment
+                              .projectName
+                              .charAt(0)
+                              .toUpperCase()
+                          }}
+                        </span>
+
+                        <div>
+                          <strong>
+                            {{
+                              deployment
+                                .projectName
+                            }}
+                          </strong>
+
+                          <small>
+                            {{
+                              deployment
+                                .commitSha
+                                ? deployment
+                                    .commitSha
+                                    .slice(0, 8)
+                                : 'Aucun commit'
+                            }}
+                          </small>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td>
+                      <span class="environment-label">
+                        {{
+                          deployment.environment
+                        }}
+                      </span>
+                    </td>
+
+                    <td>
+                      <span
+                        class="status-label"
+                        [class]="
+                          'status-label ' +
+                          'status-label--' +
+                          deployment.status
+                        "
+                      >
+                        {{
+                          deploymentStatusLabel(
+                            deployment.status
+                          )
+                        }}
+                      </span>
+                    </td>
+
+                    <td>
+                      {{
+                        deployment.triggeredBy
+                      }}
+                    </td>
+
+                    <td>
+                      {{
+                        deployment.createdAt
+                          | date:
+                            'dd/MM/yyyy HH:mm'
+                      }}
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        } @else {
+          <div class="empty-state">
+            <span aria-hidden="true">
+              ⇄
+            </span>
+
+            <strong>
+              Aucun déploiement
+            </strong>
+
+            <p>
+              Les futures exécutions apparaîtront
+              dans cette section.
+            </p>
+
+            <a routerLink="/projects/new">
+              Créer le premier projet
+            </a>
+          </div>
+        }
+      </article>
+
+      <aside class="dashboard-side">
+        <article class="dashboard-card">
+          <header class="card-heading">
+            <div>
+              <p class="eyebrow">
+                Services
+              </p>
+
+              <h3>
+                État de la plateforme
+              </h3>
+            </div>
+          </header>
+
+          <div class="services-list">
+            <div class="service-item">
+              <span
+                class="service-indicator"
+                [class.service-indicator--online]="
+                  data.services.api ===
+                  'online'
+                "
+              ></span>
+
+              <div>
+                <strong>
+                  API Flask
+                </strong>
+
+                <small>
+                  {{
+                    serviceStatusLabel(
+                      data.services.api
+                    )
+                  }}
+                </small>
+              </div>
+            </div>
+
+            <div class="service-item">
+              <span
+                class="service-indicator"
+                [class.service-indicator--online]="
+                  data.services.database ===
+                  'online'
+                "
+              ></span>
+
+              <div>
+                <strong>
+                  PostgreSQL
+                </strong>
+
+                <small>
+                  {{
+                    serviceStatusLabel(
+                      data.services.database
+                    )
+                  }}
+                </small>
+              </div>
+            </div>
+
+            <div class="service-item">
+              <span class="service-indicator"></span>
+
+              <div>
+                <strong>
+                  GitLab
+                </strong>
+
+                <small>
+                  {{
+                    serviceStatusLabel(
+                      data.services.gitlab
+                    )
+                  }}
+                </small>
+              </div>
+            </div>
+
+            <div class="service-item">
+              <span class="service-indicator"></span>
+
+              <div>
+                <strong>
+                  Argo CD
+                </strong>
+
+                <small>
+                  {{
+                    serviceStatusLabel(
+                      data.services.argoCd
+                    )
+                  }}
+                </small>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="dashboard-card">
+          <header class="card-heading">
+            <div>
+              <p class="eyebrow">
+                Projets
+              </p>
+
+              <h3>
+                Répartition
+              </h3>
+            </div>
+          </header>
+
+          @if (
+            data.projectStatus.length > 0
+          ) {
+            <div class="project-status-list">
+              @for (
+                item of data.projectStatus;
+                track item.status
+              ) {
+                <div>
+                  <span>
+                    {{
+                      projectStatusLabel(
+                        item.status
+                      )
+                    }}
+                  </span>
+
+                  <strong>
+                    {{ item.count }}
+                  </strong>
+                </div>
+              }
+            </div>
+          } @else {
+            <div class="small-empty-state">
+              Aucun projet enregistré.
+            </div>
+          }
+        </article>
+      </aside>
+    </section>
+
+    <p class="dashboard-update">
+      Dernière actualisation :
+      {{
+        data.generatedAt
+          | date:'dd/MM/yyyy HH:mm:ss'
+      }}
+    </p>
+  }
+</section>

@@ -1,0 +1,1140 @@
+<section class="new-project-page">
+  <header class="page-heading">
+    <a
+      class="back-link"
+      routerLink="/projects"
+    >
+      ← Retour aux projets
+    </a>
+
+    <p class="eyebrow">
+      Assistant de déploiement
+    </p>
+
+    <h2>Analyser et déployer un projet</h2>
+
+    <p class="page-description">
+      Connectez un repository GitLab, vérifiez
+      l’analyse, configurez Docker et Helm puis
+      suivez le déploiement.
+    </p>
+  </header>
+
+  <ol
+    class="stepper"
+    aria-label="Étapes du déploiement"
+  >
+    <li
+      class="step"
+      [class.step--active]="currentStep === 1"
+      [class.step--completed]="currentStep > 1"
+    >
+      <span class="step__number">1</span>
+
+      <div>
+        <strong>Repository</strong>
+        <small>Source GitLab</small>
+      </div>
+    </li>
+
+    <li class="stepper__line"></li>
+
+    <li
+      class="step"
+      [class.step--active]="currentStep === 2"
+      [class.step--completed]="currentStep > 2"
+    >
+      <span class="step__number">2</span>
+
+      <div>
+        <strong>Analyse</strong>
+        <small>Détection et IA</small>
+      </div>
+    </li>
+
+    <li class="stepper__line"></li>
+
+    <li
+      class="step"
+      [class.step--active]="currentStep === 3"
+      [class.step--completed]="currentStep > 3"
+    >
+      <span class="step__number">3</span>
+
+      <div>
+        <strong>Docker & Helm</strong>
+        <small>Configuration</small>
+      </div>
+    </li>
+
+    <li class="stepper__line"></li>
+
+    <li
+      class="step"
+      [class.step--active]="currentStep === 4"
+      [class.step--completed]="currentStep > 4"
+    >
+      <span class="step__number">4</span>
+
+      <div>
+        <strong>Confirmation</strong>
+        <small>Vérification finale</small>
+      </div>
+    </li>
+
+    <li class="stepper__line"></li>
+
+    <li
+      class="step"
+      [class.step--active]="currentStep === 5"
+      [class.step--completed]="deploymentFinished"
+    >
+      <span class="step__number">5</span>
+
+      <div>
+        <strong>Déploiement</strong>
+        <small>Étapes et logs</small>
+      </div>
+    </li>
+  </ol>
+
+  @if (currentStep === 1) {
+    <section class="wizard-card">
+      <header class="wizard-card__header">
+        <div>
+          <p class="eyebrow">Étape 1 sur 5</p>
+          <h3>Repository GitLab</h3>
+
+          <p>
+            Indiquez la source du projet que la
+            plateforme devra analyser.
+          </p>
+        </div>
+
+        <span class="simulation-badge">
+          Simulation frontend
+        </span>
+      </header>
+
+      <form
+        [formGroup]="sourceForm"
+        (ngSubmit)="analyzeRepository()"
+      >
+        <div class="source-layout">
+          <div class="form-panel">
+            <div class="form-field">
+              <label for="repositoryUrl">
+                URL du repository GitLab
+              </label>
+
+              <div
+                class="input-container"
+                [class.input-container--invalid]="
+                  sourceForm.controls.repositoryUrl.invalid &&
+                  sourceForm.controls.repositoryUrl.touched
+                "
+              >
+                <span class="input-prefix">Git</span>
+
+                <input
+                  id="repositoryUrl"
+                  type="url"
+                  formControlName="repositoryUrl"
+                  placeholder="https://gitlab.example.com/equipe/projet.git"
+                />
+              </div>
+
+              @if (
+                sourceForm.controls.repositoryUrl.touched &&
+                sourceForm.controls.repositoryUrl.hasError(
+                  'required'
+                )
+              ) {
+                <span class="field-error">
+                  L’URL du repository est obligatoire.
+                </span>
+              }
+
+              @if (
+                sourceForm.controls.repositoryUrl.touched &&
+                sourceForm.controls.repositoryUrl.hasError(
+                  'pattern'
+                )
+              ) {
+                <span class="field-error">
+                  Utilisez une URL commençant par
+                  http:// ou https://.
+                </span>
+              }
+            </div>
+
+            <div class="field-grid field-grid--two">
+              <div class="form-field">
+                <label for="branch">Branche</label>
+
+                <input
+                  id="branch"
+                  type="text"
+                  formControlName="branch"
+                />
+              </div>
+
+              <div class="form-field">
+                <label for="accessMode">
+                  Accès au repository
+                </label>
+
+                <select
+                  id="accessMode"
+                  formControlName="accessMode"
+                >
+                  <option value="private">
+                    Privé
+                  </option>
+
+                  <option value="public">
+                    Public
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-field">
+              <label for="subdirectory">
+                Sous-dossier
+                <span>Optionnel</span>
+              </label>
+
+              <input
+                id="subdirectory"
+                type="text"
+                formControlName="subdirectory"
+                placeholder="Exemple : apps/api"
+              />
+
+              <small class="field-help">
+                À utiliser lorsque plusieurs applications
+                se trouvent dans le même repository.
+              </small>
+            </div>
+          </div>
+
+          <aside class="information-panel">
+            <span class="information-panel__icon">
+              AI
+            </span>
+
+            <h4>Analyse prévue</h4>
+
+            <ul>
+              <li>Structure du repository</li>
+              <li>Langage et framework</li>
+              <li>Commande de build</li>
+              <li>Commande de démarrage</li>
+              <li>Dockerfile existant ou manquant</li>
+              <li>Chart Helm existant ou manquant</li>
+              <li>Ports et variables nécessaires</li>
+            </ul>
+
+            <p>
+              La version réelle utilisera Flask pour
+              récupérer le repository et Ollama pour
+              compléter son analyse.
+            </p>
+          </aside>
+        </div>
+
+        <footer class="wizard-actions">
+          <a
+            class="secondary-button"
+            routerLink="/projects"
+          >
+            Annuler
+          </a>
+
+          <button
+            class="primary-button"
+            type="submit"
+            [disabled]="isAnalyzing"
+          >
+            @if (isAnalyzing) {
+              <span class="spinner"></span>
+              Analyse en cours...
+            } @else {
+              Analyser le projet
+              <span>→</span>
+            }
+          </button>
+        </footer>
+      </form>
+    </section>
+  }
+
+  @if (currentStep === 2 && analysis) {
+    <section class="wizard-card">
+      <header class="wizard-card__header">
+        <div>
+          <p class="eyebrow">Étape 2 sur 5</p>
+          <h3>Résultat de l’analyse</h3>
+
+          <p>
+            Vérifiez les informations détectées et
+            les recommandations de l’assistant.
+          </p>
+        </div>
+
+        <span class="success-badge">
+          <span></span>
+          Analyse terminée
+        </span>
+      </header>
+
+      <div class="analysis-summary">
+        <div class="analysis-summary__icon">
+          ✓
+        </div>
+
+        <div>
+          <strong>
+            {{ analysis.framework }}
+            {{ analysis.frameworkVersion }}
+          </strong>
+
+          <p>
+            {{ analysis.architecture }} avec
+            {{ analysis.runtime }}.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          (click)="goToStep(1)"
+        >
+          Modifier la source
+        </button>
+      </div>
+
+      <section class="content-section">
+        <header class="section-heading">
+          <div>
+            <p class="eyebrow">
+              Résultats détaillés
+            </p>
+
+            <h4>Informations détectées</h4>
+          </div>
+        </header>
+
+        <div class="facts-grid">
+          @for (fact of analysisFacts; track fact.label) {
+            <article class="fact-card">
+              <header>
+                <span
+                  class="fact-type"
+                  [class.fact-type--ai]="
+                    fact.kind === 'ai'
+                  "
+                >
+                  {{
+                    fact.kind === 'ai'
+                      ? 'Proposition IA'
+                      : 'Détecté'
+                  }}
+                </span>
+
+                <span class="confidence">
+                  {{ fact.confidence }} %
+                </span>
+              </header>
+
+              <small>{{ fact.label }}</small>
+
+              <strong>{{ fact.value }}</strong>
+
+              <p>
+                Source : {{ fact.source }}
+              </p>
+            </article>
+          }
+        </div>
+      </section>
+
+      <section class="analysis-details">
+        <article>
+          <span>Commande de build</span>
+          <code>{{ analysis.buildCommand }}</code>
+        </article>
+
+        <article>
+          <span>Commande de démarrage</span>
+          <code>{{ analysis.startCommand }}</code>
+        </article>
+
+        <article>
+          <span>Dockerfile</span>
+          <strong>
+            {{
+              analysis.dockerfileDetected
+                ? 'Détecté'
+                : 'À générer'
+            }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Chart Helm</span>
+          <strong>
+            {{
+              analysis.helmDetected
+                ? 'Détecté'
+                : 'À générer'
+            }}
+          </strong>
+        </article>
+      </section>
+
+      <section class="warnings-panel">
+        <header>
+          <strong>Points à vérifier</strong>
+        </header>
+
+        <ul>
+          @for (
+            warning of analysis.warnings;
+            track warning
+          ) {
+            <li>{{ warning }}</li>
+          }
+        </ul>
+      </section>
+
+      <footer class="wizard-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          (click)="goToStep(1)"
+        >
+          ← Étape précédente
+        </button>
+
+        <button
+          class="primary-button"
+          type="button"
+          [disabled]="isGenerating"
+          (click)="continueToGeneration()"
+        >
+          @if (isGenerating) {
+            <span class="spinner"></span>
+            Génération...
+          } @else {
+            Préparer Docker et Helm
+            <span>→</span>
+          }
+        </button>
+      </footer>
+    </section>
+  }
+
+  @if (currentStep === 3 && analysis) {
+    <section class="wizard-card">
+      <header class="wizard-card__header">
+        <div>
+          <p class="eyebrow">Étape 3 sur 5</p>
+          <h3>Docker, Helm et configuration</h3>
+
+          <p>
+            Modifiez les paramètres, examinez les
+            fichiers proposés et interrogez l’assistant.
+          </p>
+        </div>
+
+        <span class="simulation-badge">
+          Assistant simulé
+        </span>
+      </header>
+
+      <form
+        [formGroup]="configurationForm"
+        (ngSubmit)="prepareReview()"
+      >
+        <section class="content-section">
+          <header class="section-heading">
+            <div>
+              <p class="eyebrow">Kubernetes</p>
+              <h4>Configuration principale</h4>
+            </div>
+
+            <button
+              class="text-button"
+              type="button"
+              (click)="regenerateFiles()"
+            >
+              Régénérer les fichiers
+            </button>
+          </header>
+
+          <div class="field-grid field-grid--three">
+            <div class="form-field">
+              <label for="deploymentName">
+                Nom de l’application
+              </label>
+
+              <input
+                id="deploymentName"
+                type="text"
+                formControlName="deploymentName"
+              />
+            </div>
+
+            <div class="form-field">
+              <label for="environment">
+                Environnement
+              </label>
+
+              <select
+                id="environment"
+                formControlName="environment"
+              >
+                <option value="lab">Lab</option>
+                <option value="staging">
+                  Staging
+                </option>
+                <option value="production">
+                  Production
+                </option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="namespace">
+                Namespace
+              </label>
+
+              <input
+                id="namespace"
+                type="text"
+                formControlName="namespace"
+              />
+            </div>
+
+            <div class="form-field">
+              <label for="replicas">
+                Replicas
+              </label>
+
+              <input
+                id="replicas"
+                type="number"
+                min="1"
+                max="10"
+                formControlName="replicas"
+              />
+            </div>
+
+            <div class="form-field">
+              <label for="containerPort">
+                Port du conteneur
+              </label>
+
+              <input
+                id="containerPort"
+                type="number"
+                formControlName="containerPort"
+              />
+            </div>
+
+            <div class="form-field">
+              <label for="ingressHost">
+                Nom de domaine
+              </label>
+
+              <input
+                id="ingressHost"
+                type="text"
+                formControlName="ingressHost"
+              />
+            </div>
+
+            <div class="form-field">
+              <label for="cpuRequest">
+                CPU demandé
+              </label>
+
+              <input
+                id="cpuRequest"
+                type="text"
+                formControlName="cpuRequest"
+              />
+            </div>
+
+            <div class="form-field">
+              <label for="memoryRequest">
+                Mémoire demandée
+              </label>
+
+              <input
+                id="memoryRequest"
+                type="text"
+                formControlName="memoryRequest"
+              />
+            </div>
+          </div>
+
+          <div class="options-grid">
+            <label class="option-card">
+              <input
+                type="checkbox"
+                formControlName="ingressEnabled"
+              />
+
+              <span>
+                <strong>Activer Ingress</strong>
+                <small>
+                  Exposer l’application avec un nom
+                  de domaine.
+                </small>
+              </span>
+            </label>
+
+            <label class="option-card">
+              <input
+                type="checkbox"
+                formControlName="requireApproval"
+              />
+
+              <span>
+                <strong>Approbation humaine</strong>
+                <small>
+                  Confirmer avant de lancer le
+                  déploiement.
+                </small>
+              </span>
+            </label>
+          </div>
+        </section>
+
+        <section class="artifacts-section">
+          <header class="section-heading">
+            <div>
+              <p class="eyebrow">
+                Fichiers proposés
+              </p>
+
+              <h4>Docker et chart Helm</h4>
+            </div>
+          </header>
+
+          <div class="artifacts-workspace">
+            <nav class="files-navigation">
+              @for (
+                file of generatedFiles;
+                track file.name
+              ) {
+                <button
+                  type="button"
+                  [class.files-navigation__item--active]="
+                    selectedFileName === file.name
+                  "
+                  (click)="selectFile(file.name)"
+                >
+                  <span>
+                    {{
+                      file.category === 'docker'
+                        ? 'D'
+                        : 'H'
+                    }}
+                  </span>
+
+                  <div>
+                    <strong>{{ file.name }}</strong>
+                    <small>
+                      {{
+                        file.status === 'existing'
+                          ? 'Fichier existant'
+                          : 'Proposition générée'
+                      }}
+                    </small>
+                  </div>
+                </button>
+              }
+            </nav>
+
+            <article class="code-preview">
+              @if (selectedFile; as file) {
+                <header>
+                  <div>
+                    <strong>{{ file.name }}</strong>
+
+                    <span>
+                      {{
+                        file.status === 'existing'
+                          ? 'Existant'
+                          : 'Généré'
+                      }}
+                    </span>
+                  </div>
+
+                  <button type="button">
+                    Modifier
+                  </button>
+                </header>
+
+                <pre><code>{{ file.content }}</code></pre>
+              }
+            </article>
+          </div>
+        </section>
+
+        <section class="assistant-section">
+          <header class="section-heading">
+            <div>
+              <p class="eyebrow">
+                Assistant du projet
+              </p>
+
+              <h4>Interroger et modifier</h4>
+            </div>
+
+            <span class="assistant-status">
+              AI
+            </span>
+          </header>
+
+          <div class="assistant-layout">
+            <div class="conversation">
+              @for (
+                message of aiMessages;
+                track $index
+              ) {
+                <article
+                  class="message"
+                  [class.message--user]="
+                    message.author === 'user'
+                  "
+                >
+                  <strong>
+                    {{
+                      message.author === 'user'
+                        ? 'Vous'
+                        : 'Assistant IA'
+                    }}
+                  </strong>
+
+                  <p>{{ message.content }}</p>
+                </article>
+              }
+
+              @if (isAssistantThinking) {
+                <article class="message">
+                  <strong>Assistant IA</strong>
+                  <p>Analyse de la demande...</p>
+                </article>
+              }
+            </div>
+
+            <form
+              class="assistant-form"
+              [formGroup]="assistantForm"
+              (ngSubmit)="sendAssistantMessage()"
+            >
+              <textarea
+                formControlName="prompt"
+                rows="3"
+                placeholder="Exemple : utilise 3 replicas ou désactiver Ingress"
+              ></textarea>
+
+              <button
+                class="primary-button"
+                type="submit"
+                [disabled]="isAssistantThinking"
+              >
+                Envoyer
+                <span>→</span>
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <footer class="wizard-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            (click)="goToStep(2)"
+          >
+            ← Étape précédente
+          </button>
+
+          <button
+            class="primary-button"
+            type="submit"
+          >
+            Vérifier la configuration
+            <span>→</span>
+          </button>
+        </footer>
+      </form>
+    </section>
+  }
+
+  @if (currentStep === 4 && analysis) {
+    <section class="wizard-card">
+      <header class="wizard-card__header">
+        <div>
+          <p class="eyebrow">Étape 4 sur 5</p>
+          <h3>Vérification et confirmation</h3>
+
+          <p>
+            Contrôlez les informations avant
+            d’autoriser le déploiement.
+          </p>
+        </div>
+
+        <span class="review-badge">
+          Approbation requise
+        </span>
+      </header>
+
+      <div class="review-grid">
+        <article class="review-card">
+          <p class="eyebrow">Source</p>
+          <h4>Repository GitLab</h4>
+
+          <dl>
+            <div>
+              <dt>URL</dt>
+              <dd>
+                {{
+                  sourceForm.controls
+                    .repositoryUrl.value
+                }}
+              </dd>
+            </div>
+
+            <div>
+              <dt>Branche</dt>
+              <dd>
+                {{
+                  sourceForm.controls.branch.value
+                }}
+              </dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="review-card">
+          <p class="eyebrow">Application</p>
+          <h4>Analyse</h4>
+
+          <dl>
+            <div>
+              <dt>Framework</dt>
+              <dd>{{ analysis.framework }}</dd>
+            </div>
+
+            <div>
+              <dt>Runtime</dt>
+              <dd>{{ analysis.runtime }}</dd>
+            </div>
+
+            <div>
+              <dt>Commande</dt>
+              <dd>{{ analysis.startCommand }}</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="review-card">
+          <p class="eyebrow">Destination</p>
+          <h4>Kubernetes</h4>
+
+          <dl>
+            <div>
+              <dt>Application</dt>
+              <dd>
+                {{
+                  configurationForm.controls
+                    .deploymentName.value
+                }}
+              </dd>
+            </div>
+
+            <div>
+              <dt>Namespace</dt>
+              <dd>
+                {{
+                  configurationForm.controls
+                    .namespace.value
+                }}
+              </dd>
+            </div>
+
+            <div>
+              <dt>Replicas</dt>
+              <dd>
+                {{
+                  configurationForm.controls
+                    .replicas.value
+                }}
+              </dd>
+            </div>
+
+            <div>
+              <dt>Port</dt>
+              <dd>
+                {{
+                  configurationForm.controls
+                    .containerPort.value
+                }}
+              </dd>
+            </div>
+          </dl>
+        </article>
+      </div>
+
+      <section class="validation-panel">
+        <header>
+          <p class="eyebrow">
+            Validations automatiques
+          </p>
+
+          <h4>Résultat des contrôles</h4>
+        </header>
+
+        <div class="validation-list">
+          <div>
+            <span class="validation-icon">✓</span>
+            <strong>Dockerfile valide</strong>
+          </div>
+
+          <div>
+            <span class="validation-icon">✓</span>
+            <strong>Syntaxe YAML valide</strong>
+          </div>
+
+          <div>
+            <span class="validation-icon">✓</span>
+            <strong>Templates Helm valides</strong>
+          </div>
+
+          <div>
+            <span class="validation-icon">✓</span>
+            <strong>Port Service cohérent</strong>
+          </div>
+
+          <div>
+            <span class="validation-icon validation-icon--warning">
+              !
+            </span>
+
+            <strong>
+              Endpoint /health à confirmer
+            </strong>
+          </div>
+        </div>
+      </section>
+
+      <form
+        class="confirmation-panel"
+        [formGroup]="confirmationForm"
+        (ngSubmit)="launchDeployment()"
+      >
+        <label class="confirmation-control">
+          <input
+            type="checkbox"
+            formControlName="approved"
+          />
+
+          <span>
+            <strong>
+              Je confirme cette configuration
+            </strong>
+
+            <small>
+              J’autorise la plateforme à construire
+              l’image, préparer GitOps et lancer le
+              déploiement.
+            </small>
+          </span>
+        </label>
+
+        @if (
+          confirmationForm.controls.approved.invalid &&
+          confirmationForm.controls.approved.touched
+        ) {
+          <span class="field-error confirmation-error">
+            Vous devez confirmer la configuration.
+          </span>
+        }
+
+        <footer class="wizard-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            (click)="goToStep(3)"
+          >
+            ← Modifier la configuration
+          </button>
+
+          <button
+            class="primary-button"
+            type="submit"
+          >
+            Lancer le déploiement
+            <span>→</span>
+          </button>
+        </footer>
+      </form>
+    </section>
+  }
+
+  @if (currentStep === 5) {
+    <section class="wizard-card">
+      <header class="wizard-card__header">
+        <div>
+          <p class="eyebrow">Étape 5 sur 5</p>
+
+          <h3>
+            Déploiement de
+            {{
+              configurationForm.controls
+                .deploymentName.value
+            }}
+          </h3>
+
+          <p>
+            Suivez la progression et les logs
+            de chaque étape.
+          </p>
+        </div>
+
+        @if (deploymentFinished) {
+          <span class="success-badge">
+            <span></span>
+            Déploiement terminé
+          </span>
+        } @else {
+          <span class="running-badge">
+            <span></span>
+            Déploiement en cours
+          </span>
+        }
+      </header>
+
+      <section class="progress-section">
+        <div class="progress-heading">
+          <strong>
+            Progression
+          </strong>
+
+          <span>
+            {{ deploymentProgress }} %
+          </span>
+        </div>
+
+        <div class="progress-track">
+          <span
+            [style.width.%]="deploymentProgress"
+          ></span>
+        </div>
+      </section>
+
+      <section class="pipeline-list">
+        @for (
+          stage of pipelineStages;
+          track stage.id
+        ) {
+          <article
+            class="pipeline-stage"
+            [class]="
+              'pipeline-stage pipeline-stage--' +
+              stage.status
+            "
+          >
+            <span class="pipeline-stage__indicator">
+              @if (stage.status === 'success') {
+                ✓
+              } @else if (stage.status === 'running') {
+                ●
+              } @else if (stage.status === 'error') {
+                ×
+              } @else {
+                {{ stage.id }}
+              }
+            </span>
+
+            <div>
+              <strong>{{ stage.name }}</strong>
+              <small>{{ stage.description }}</small>
+            </div>
+
+            <span class="pipeline-stage__status">
+              @if (stage.status === 'success') {
+                Terminé
+              } @else if (stage.status === 'running') {
+                En cours
+              } @else if (stage.status === 'error') {
+                Erreur
+              } @else {
+                En attente
+              }
+            </span>
+          </article>
+        }
+      </section>
+
+      <section class="logs-panel">
+        <header>
+          <div>
+            <p class="eyebrow">
+              Exécution
+            </p>
+
+            <h4>Logs du déploiement</h4>
+          </div>
+
+          <span>LIVE</span>
+        </header>
+
+        <pre>@for (log of deploymentLogs; track $index) {
+{{ log }}
+}</pre>
+      </section>
+
+      @if (deploymentFinished) {
+        <section class="deployment-success">
+          <span>✓</span>
+
+          <div>
+            <strong>
+              Application déployée avec succès
+            </strong>
+
+            <p>
+              Les étapes GitOps, Argo CD et Kubernetes
+              sont terminées.
+            </p>
+          </div>
+        </section>
+      }
+
+      <footer class="wizard-actions">
+        <a
+          class="secondary-button"
+          routerLink="/projects"
+        >
+          Retour aux projets
+        </a>
+
+        @if (deploymentFinished) {
+          <button
+            class="primary-button"
+            type="button"
+            (click)="resetWizard()"
+          >
+            Déployer un autre projet
+          </button>
+        }
+      </footer>
+    </section>
+  }
+</section>

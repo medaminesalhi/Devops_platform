@@ -1,0 +1,187 @@
+<main class="login-page">
+  <div class="background-decoration background-decoration--left"></div>
+  <div class="background-decoration background-decoration--right"></div>
+
+  <section class="login-card">
+    <header class="login-header">
+      <div class="logo-container">
+        <img
+          class="company-logo"
+          src="/piximind-logo.png"
+          alt="Logo Piximind"
+        />
+      </div>
+
+      <p class="company-name">
+        PIXIMIND
+      </p>
+
+      <h1>
+        Deployment Platform
+      </h1>
+
+      <p class="login-description">
+        Connectez-vous pour gérer vos projets, vos déploiements
+        et votre infrastructure Kubernetes.
+      </p>
+    </header>
+
+    <form
+      class="login-form"
+      [formGroup]="loginForm"
+      (ngSubmit)="submit()"
+      novalidate
+    >
+      <div class="form-field">
+        <label for="username">
+          Nom d’utilisateur
+        </label>
+
+        <div
+          class="input-container"
+          [class.input-container--invalid]="
+            loginForm.controls.username.touched &&
+            loginForm.controls.username.invalid
+          "
+        >
+          <span class="input-icon" aria-hidden="true">
+            👤
+          </span>
+
+          <input
+            id="username"
+            type="text"
+            formControlName="username"
+            placeholder="Entrez votre nom d’utilisateur"
+            autocomplete="username"
+          />
+        </div>
+
+        @if (
+          loginForm.controls.username.touched &&
+          loginForm.controls.username.hasError('required')
+        ) {
+          <small class="field-error">
+            Le nom d’utilisateur est obligatoire.
+          </small>
+        }
+
+        @if (
+          loginForm.controls.username.touched &&
+          loginForm.controls.username.hasError('minlength')
+        ) {
+          <small class="field-error">
+            Le nom d’utilisateur doit contenir au moins 3 caractères.
+          </small>
+        }
+      </div>
+
+      <div class="form-field">
+        <div class="field-header">
+          <label for="password">
+            Mot de passe
+          </label>
+
+          <button
+            class="forgot-password-button"
+            type="button"
+          >
+            Mot de passe oublié ?
+          </button>
+        </div>
+
+        <div
+          class="input-container"
+          [class.input-container--invalid]="
+            loginForm.controls.password.touched &&
+            loginForm.controls.password.invalid
+          "
+        >
+          <span class="input-icon" aria-hidden="true">
+            🔒
+          </span>
+
+          <input
+            id="password"
+            [type]="showPassword ? 'text' : 'password'"
+            formControlName="password"
+            placeholder="Entrez votre mot de passe"
+            autocomplete="current-password"
+          />
+
+          <button
+            class="password-toggle"
+            type="button"
+            (click)="togglePasswordVisibility()"
+            [attr.aria-label]="
+              showPassword
+                ? 'Masquer le mot de passe'
+                : 'Afficher le mot de passe'
+            "
+          >
+            {{ showPassword ? 'Masquer' : 'Afficher' }}
+          </button>
+        </div>
+
+        @if (
+          loginForm.controls.password.touched &&
+          loginForm.controls.password.hasError('required')
+        ) {
+          <small class="field-error">
+            Le mot de passe est obligatoire.
+          </small>
+        }
+
+        @if (
+          loginForm.controls.password.touched &&
+          loginForm.controls.password.hasError('minlength')
+        ) {
+          <small class="field-error">
+            Le mot de passe doit contenir au moins 8 caractères.
+          </small>
+        }
+      </div>
+
+      <label class="remember-control">
+        <input
+          type="checkbox"
+          formControlName="rememberMe"
+        />
+
+        <span>
+          Maintenir ma session ouverte
+        </span>
+      </label>
+
+      <button
+        class="login-button"
+        type="submit"
+        [disabled]="isSubmitting"
+      >
+        @if (isSubmitting) {
+          <span class="spinner" aria-hidden="true"></span>
+          <span>Connexion en cours…</span>
+        } @else {
+          <span>Se connecter</span>
+          <span class="login-button__arrow" aria-hidden="true">
+            →
+          </span>
+        }
+      </button>
+    </form>
+
+    <footer class="login-footer">
+      <div class="secure-access">
+        <span class="secure-access__indicator"></span>
+
+        <span>
+          Accès sécurisé réservé aux équipes Piximind
+        </span>
+      </div>
+
+      <p>
+        © 2026 Piximind. Tous droits réservés.
+      </p>
+    </footer>
+  </section>
+</main>

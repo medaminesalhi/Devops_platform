@@ -1,0 +1,128 @@
+/* =========================================================
+   VARIABLES GLOBALES
+   ========================================================= */
+
+:root {
+  /*
+   * La taille normale du navigateur est 16 px.
+   * 90 % de 16 px = 14,4 px.
+   *
+   * Les composants utilisant rem seront donc
+   * environ 10 % plus petits.
+   */
+  font-size: 90%;
+
+  --page-background: #f4f7f8;
+  --surface: #ffffff;
+  --surface-soft: #f8fafb;
+
+  --text-primary: #1e343a;
+  --text-secondary: #667b81;
+  --text-muted: #8b9a9f;
+
+  --border-color: #dfe7e9;
+
+  --brand-primary: #70b600;
+  --brand-primary-dark: #5e9d00;
+  --brand-primary-soft: #eef8df;
+
+  --danger: #d9434c;
+  --warning: #db7908;
+  --information: #0785bc;
+
+  --sidebar-width: 17.5rem;
+  --topbar-height: 5.4rem;
+
+  --shadow-small:
+    0 0.5rem 1.4rem rgba(28, 48, 54, 0.06);
+
+  --shadow-medium:
+    0 1.1rem 2.8rem rgba(28, 48, 54, 0.08);
+
+  font-family:
+    Inter,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+
+  color: var(--text-primary);
+  background: var(--page-background);
+}
+
+/* =========================================================
+   RESET
+   ========================================================= */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-width: 20rem;
+  min-height: 100%;
+
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+
+  background: var(--page-background);
+  color: var(--text-primary);
+
+  font-size: 1rem;
+  line-height: 1.5;
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+img {
+  display: block;
+
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-top: 0;
+}
+
+code,
+pre {
+  font-family:
+    "Cascadia Code",
+    Consolas,
+    "Courier New",
+    monospace;
+}

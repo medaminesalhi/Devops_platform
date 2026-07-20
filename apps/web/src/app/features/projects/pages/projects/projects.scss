@@ -1,0 +1,515 @@
+:host {
+  display: block;
+}
+
+.projects-page {
+  display: grid;
+  gap: 24px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #68ad00;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+/* En-tête */
+
+.page-heading {
+  display: grid;
+  justify-items: center;
+  padding: 12px 20px;
+  text-align: center;
+}
+
+.page-heading h2 {
+  margin: 0;
+  color: #192f35;
+  font-size: 42px;
+  font-weight: 750;
+  letter-spacing: -0.045em;
+}
+
+.page-heading p:last-child {
+  max-width: 720px;
+  margin: 12px auto 0;
+  color: #65787e;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+/* Actions */
+
+.project-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.action-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 14px;
+  min-height: 105px;
+  padding: 20px;
+  border: 1px solid #dbe5e7;
+  border-radius: 17px;
+  background: #ffffff;
+  color: #263d43;
+  cursor: pointer;
+  text-align: left;
+  box-shadow: 0 9px 23px rgba(32, 50, 56, 0.04);
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.action-card:hover {
+  transform: translateY(-3px);
+  border-color: #bdcccf;
+  box-shadow: 0 16px 34px rgba(32, 50, 56, 0.09);
+}
+
+.action-card--primary {
+  border-color: rgba(113, 185, 0, 0.32);
+  background: linear-gradient(135deg, #f6fce9, #ffffff);
+}
+
+.action-card__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 13px;
+  background: #edf7df;
+  color: #65a800;
+  font-size: 21px;
+  font-weight: 750;
+}
+
+.action-card strong,
+.action-card small {
+  display: block;
+}
+
+.action-card strong {
+  margin-bottom: 7px;
+  font-size: 14px;
+}
+
+.action-card small {
+  color: #718489;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.action-card__arrow {
+  color: #899a9f;
+  font-size: 19px;
+}
+
+/* Message */
+
+.information-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 17px;
+  border: 1px solid #cce4a4;
+  border-radius: 12px;
+  background: #f5faed;
+  color: #527d11;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.information-message button {
+  border: 0;
+  background: transparent;
+  color: #6b911f;
+  cursor: pointer;
+  font-size: 22px;
+}
+
+/* Statistiques */
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.summary-card {
+  padding: 22px;
+  border: 1px solid #dce5e8;
+  border-radius: 17px;
+  background: #ffffff;
+  box-shadow: 0 8px 22px rgba(32, 50, 56, 0.04);
+  text-align: center;
+}
+
+.summary-card span,
+.summary-card strong,
+.summary-card small {
+  display: block;
+}
+
+.summary-card span {
+  color: #657a80;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.summary-card strong {
+  margin: 15px 0 6px;
+  color: #1b3238;
+  font-size: 35px;
+}
+
+.summary-card small {
+  color: #89989d;
+  font-size: 11px;
+}
+
+.summary-card--success strong {
+  color: #65a800;
+}
+
+.summary-card--warning strong {
+  color: #e47a0c;
+}
+
+.summary-card--danger strong {
+  color: #dc3f48;
+}
+
+/* Panel */
+
+.projects-panel {
+  padding: 26px;
+  border: 1px solid #dce5e8;
+  border-radius: 19px;
+  background: #ffffff;
+  box-shadow: 0 9px 25px rgba(32, 50, 56, 0.04);
+}
+
+.projects-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 23px;
+}
+
+.projects-panel__header h3 {
+  margin: 0;
+  color: #1d3339;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.results-count {
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: #edf7df;
+  color: #64a400;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* Filtres */
+
+.filters {
+  display: grid;
+  grid-template-columns:
+    minmax(260px, 1fr)
+    minmax(190px, 0.4fr)
+    minmax(190px, 0.4fr)
+    auto;
+  align-items: end;
+  gap: 14px;
+  margin-bottom: 24px;
+  padding: 17px;
+  border: 1px solid #e5ebed;
+  border-radius: 14px;
+  background: #f8fafb;
+}
+
+.filters label {
+  display: grid;
+  gap: 7px;
+}
+
+.filters label > span {
+  color: #52696f;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.filters input,
+.filters select {
+  width: 100%;
+  height: 45px;
+  padding: 0 13px;
+  border: 1px solid #d7e1e3;
+  border-radius: 10px;
+  outline: 0;
+  background: #ffffff;
+  color: #30474d;
+  font-size: 12px;
+}
+
+.filters input:focus,
+.filters select:focus {
+  border-color: #71b900;
+  box-shadow: 0 0 0 3px rgba(113, 185, 0, 0.1);
+}
+
+.clear-filters-button {
+  height: 45px;
+  padding: 0 15px;
+  border: 1px solid #d7e1e3;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #61767c;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Tableau */
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+th,
+td {
+  padding: 16px 13px;
+  border-bottom: 1px solid #e8edef;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+th {
+  color: #7b8d93;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: #fafcfc;
+}
+
+.project-identity {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.project-avatar {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  background: #edf7df;
+  color: #64a500;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.project-identity strong,
+.project-identity span,
+.repository strong,
+.repository span {
+  display: block;
+}
+
+.project-identity strong {
+  color: #293f45;
+  font-size: 13px;
+}
+
+.project-identity span {
+  margin-top: 4px;
+  color: #87969b;
+  font-size: 10px;
+}
+
+.repository strong {
+  color: #435a60;
+  font-size: 11px;
+}
+
+.repository span {
+  margin-top: 4px;
+  color: #8c9a9f;
+  font-size: 10px;
+}
+
+.technology-badge,
+.environment-badge {
+  display: inline-flex;
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.technology-badge {
+  background: #eef4f5;
+  color: #536b71;
+}
+
+.environment-badge {
+  background: #edf8df;
+  color: #629f06;
+}
+
+code {
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: #eef4f5;
+  color: #496168;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+}
+
+.commit-changed {
+  background: #fff2e5;
+  color: #dc6c0c;
+}
+
+.project-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.project-status > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.project-status--up-to-date {
+  color: #65a800;
+}
+
+.project-status--up-to-date > span {
+  background: #71b900;
+}
+
+.project-status--update-available {
+  color: #dc6c0c;
+}
+
+.project-status--update-available > span {
+  background: #f97316;
+}
+
+.project-status--deploying {
+  color: #0284c7;
+}
+
+.project-status--deploying > span {
+  background: #0ea5e9;
+}
+
+.project-status--attention {
+  color: #dc3545;
+}
+
+.project-status--attention > span {
+  background: #ef4444;
+}
+
+.project-menu-button {
+  min-height: 36px;
+  padding: 0 13px;
+  border: 1px solid #d5e0e2;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #4d656b;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.project-menu-button:hover {
+  border-color: #b6c6ca;
+  box-shadow: 0 6px 14px rgba(31, 49, 55, 0.07);
+}
+
+.empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 48px;
+  color: #87969b;
+  text-align: center;
+}
+
+.empty-state strong {
+  color: #42595f;
+}
+
+/* Responsive */
+
+@media (max-width: 1250px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .project-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .page-heading h2 {
+    font-size: 36px;
+  }
+}
+
+@media (max-width: 620px) {
+  .summary-grid,
+  .filters {
+    grid-template-columns: 1fr;
+  }
+
+  .projects-panel {
+    padding: 19px;
+  }
+
+  .clear-filters-button {
+    width: 100%;
+  }
+}

@@ -1,0 +1,111 @@
+<aside class="sidebar">
+  <header class="brand">
+    <img
+      class="brand__logo"
+      src="/piximind-logo.png"
+      alt="Logo Piximind"
+    />
+
+    <div class="brand__identity">
+      <strong>PIXIMIND</strong>
+      <span>Deployment Platform</span>
+    </div>
+  </header>
+
+  <nav
+    class="navigation"
+    aria-label="Navigation principale"
+  >
+    <p class="navigation__title">
+      Espace de travail
+    </p>
+
+    <a
+      class="navigation-item"
+      routerLink="/dashboard"
+      routerLinkActive="navigation-item--active"
+      [routerLinkActiveOptions]="{ exact: true }"
+    >
+      <span class="navigation-item__icon">⌂</span>
+      <span class="navigation-item__label">
+        Vue générale
+      </span>
+    </a>
+
+    <a
+      class="navigation-item"
+      routerLink="/projects"
+      routerLinkActive="navigation-item--active"
+    >
+      <span class="navigation-item__icon">▣</span>
+      <span class="navigation-item__label">
+        Projets
+      </span>
+    </a>
+
+    <button
+      class="navigation-item navigation-item--disabled"
+      type="button"
+      disabled
+    >
+      <span class="navigation-item__icon">⇄</span>
+      <span class="navigation-item__label">
+        Déploiements
+      </span>
+    </button>
+
+    <button
+      class="navigation-item navigation-item--disabled"
+      type="button"
+      disabled
+    >
+      <span class="navigation-item__icon">◎</span>
+      <span class="navigation-item__label">
+        Infrastructure
+      </span>
+    </button>
+
+    <a
+      class="navigation-item"
+      routerLink="/integrations"
+      routerLinkActive="navigation-item--active"
+    >
+      <span class="navigation-item__icon">↗</span>
+      <span class="navigation-item__label">
+        Intégrations
+      </span>
+    </a>
+
+    <button
+      class="navigation-item navigation-item--disabled"
+      type="button"
+      disabled
+    >
+      <span class="navigation-item__icon">⚙</span>
+      <span class="navigation-item__label">
+        Paramètres
+      </span>
+    </button>
+  </nav>
+
+  <footer class="sidebar-footer">
+    <div class="user-avatar">
+      AS
+    </div>
+
+    <div class="user-information">
+      <strong>Amine Salhi</strong>
+      <span>Administrateur</span>
+    </div>
+
+    <button
+      class="logout-button"
+      type="button"
+      title="Se déconnecter"
+      aria-label="Se déconnecter"
+      (click)="logout()"
+    >
+      →
+    </button>
+  </footer>
+</aside>

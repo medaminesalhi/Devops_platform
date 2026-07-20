@@ -1,0 +1,23 @@
+# Environnement virtuel
+.venv/
+
+# Variables privées
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Tests et outils
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+
+# Système
+.DS_Store
+Thumbs.db

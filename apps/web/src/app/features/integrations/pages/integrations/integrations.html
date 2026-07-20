@@ -1,0 +1,864 @@
+<section class="integrations-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">
+        Administration
+      </p>
+
+      <h2>
+        Intégrations
+      </h2>
+
+      <p>
+        Gérez les connexions entre Piximind
+        et vos services externes.
+      </p>
+    </div>
+
+    <div class="page-heading__actions">
+      <button
+        class="secondary-button"
+        type="button"
+        [disabled]="isLoading()"
+        (click)="loadConnections()"
+      >
+        <span aria-hidden="true">↻</span>
+        Actualiser
+      </button>
+
+      <button
+        class="primary-button"
+        type="button"
+        (click)="openCreateEditor()"
+      >
+        <span aria-hidden="true">+</span>
+        Ajouter une connexion
+      </button>
+    </div>
+  </header>
+
+  <section class="summary-grid">
+    <article class="summary-card">
+      <span class="summary-card__icon">
+        ↗
+      </span>
+
+      <div>
+        <strong>
+          {{ connections().length }}
+        </strong>
+
+        <span>
+          Connexions
+        </span>
+      </div>
+    </article>
+
+    <article class="summary-card">
+      <span
+        class="
+          summary-card__icon
+          summary-card__icon--success
+        "
+      >
+        ✓
+      </span>
+
+      <div>
+        <strong>
+          {{ onlineCount() }}
+        </strong>
+
+        <span>
+          Opérationnelles
+        </span>
+      </div>
+    </article>
+
+    <article class="summary-card">
+      <span
+        class="
+          summary-card__icon
+          summary-card__icon--warning
+        "
+      >
+        !
+      </span>
+
+      <div>
+        <strong>
+          {{ degradedCount() }}
+        </strong>
+
+        <span>
+          Dégradées
+        </span>
+      </div>
+    </article>
+
+    <article class="summary-card">
+      <span
+        class="
+          summary-card__icon
+          summary-card__icon--danger
+        "
+      >
+        ×
+      </span>
+
+      <div>
+        <strong>
+          {{ offlineCount() }}
+        </strong>
+
+        <span>
+          Hors ligne
+        </span>
+      </div>
+    </article>
+  </section>
+
+  @if (errorMessage()) {
+    <section
+      class="message message--error"
+      role="alert"
+    >
+      <strong>Erreur</strong>
+
+      <span>
+        {{ errorMessage() }}
+      </span>
+    </section>
+  }
+
+  @if (successMessage()) {
+    <section
+      class="message message--success"
+      role="status"
+    >
+      <strong>Succès</strong>
+
+      <span>
+        {{ successMessage() }}
+      </span>
+    </section>
+  }
+
+  @if (isLoading()) {
+    <section class="loading-panel">
+      <span class="spinner"></span>
+
+      <div>
+        <strong>
+          Chargement des connexions
+        </strong>
+
+        <p>
+          Lecture des données PostgreSQL…
+        </p>
+      </div>
+    </section>
+  } @else if (connections().length === 0) {
+    <section class="empty-state">
+      <span class="empty-state__icon">
+        ↗
+      </span>
+
+      <h3>
+        Aucune connexion configurée
+      </h3>
+
+      <p>
+        Ajoutez GitLab, Nexus, Kubernetes,
+        Argo CD, Ollama ou un autre service HTTP.
+      </p>
+
+      <button
+        class="primary-button"
+        type="button"
+        (click)="openCreateEditor()"
+      >
+        Ajouter la première connexion
+      </button>
+    </section>
+  } @else {
+    <section class="connections-card">
+      <header class="card-heading">
+        <div>
+          <h3>
+            Connexions configurées
+          </h3>
+
+          <p>
+            Chaque connexion peut être testée
+            et surveillée indépendamment.
+          </p>
+        </div>
+      </header>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Connexion</th>
+              <th>Fournisseur</th>
+              <th>Environnement</th>
+              <th>État</th>
+              <th>Dernier contrôle</th>
+              <th>Latence</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            @for (
+              connection of connections();
+              track connection.id
+            ) {
+              <tr
+                [class.table-row--selected]="
+                  selectedConnectionId()
+                  === connection.id
+                "
+                (click)="
+                  selectConnection(connection)
+                "
+              >
+                <td>
+                  <div class="connection-name">
+                    <span class="provider-avatar">
+                      {{
+                        providerLabel(
+                          connection.providerType
+                        )
+                        .charAt(0)
+                      }}
+                    </span>
+
+                    <div>
+                      <strong>
+                        {{ connection.name }}
+                      </strong>
+
+                      <small>
+                        {{ connection.baseUrl }}
+                      </small>
+                    </div>
+                  </div>
+                </td>
+
+                <td>
+                  {{
+                    providerLabel(
+                      connection.providerType
+                    )
+                  }}
+                </td>
+
+                <td>
+                  <span class="environment-badge">
+                    {{ connection.environment }}
+                  </span>
+                </td>
+
+                <td>
+                  <span
+                    class="status-badge"
+                    [class.status-badge--online]="
+                      connection.status
+                      === 'online'
+                    "
+                    [class.status-badge--degraded]="
+                      connection.status
+                      === 'degraded'
+                    "
+                    [class.status-badge--offline]="
+                      connection.status
+                      === 'offline'
+                    "
+                    [class.status-badge--unchecked]="
+                      connection.status
+                      === 'unchecked'
+                    "
+                  >
+                    <i></i>
+
+                    {{
+                      statusLabel(
+                        connection.status
+                      )
+                    }}
+                  </span>
+                </td>
+
+                <td>
+                  @if (connection.lastCheckedAt) {
+                    {{
+                      connection.lastCheckedAt
+                        | date:
+                          'dd/MM/yyyy HH:mm'
+                    }}
+                  } @else {
+                    Jamais
+                  }
+                </td>
+
+                <td>
+                  @if (
+                    connection.lastLatencyMs
+                    !== null
+                  ) {
+                    {{
+                      connection.lastLatencyMs
+                    }}
+                    ms
+                  } @else {
+                    —
+                  }
+                </td>
+
+                <td>
+                  <div
+                    class="table-actions"
+                    (click)="$event.stopPropagation()"
+                  >
+                    <button
+                      type="button"
+                      [disabled]="
+                        testingConnectionId()
+                        !== null
+                      "
+                      (click)="
+                        testSavedConnection(
+                          connection
+                        )
+                      "
+                    >
+                      @if (
+                        testingConnectionId()
+                        === connection.id
+                      ) {
+                        Test…
+                      } @else {
+                        Tester
+                      }
+                    </button>
+
+                    <button
+                      type="button"
+                      (click)="
+                        openEditEditor(
+                          connection
+                        )
+                      "
+                    >
+                      Modifier
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+
+  @if (
+    selectedConnection();
+    as connection
+  ) {
+    <section class="connection-details">
+      <header class="connection-details__heading">
+        <div>
+          <p class="eyebrow">
+            Détails de la connexion
+          </p>
+
+          <h3>
+            {{ connection.name }}
+          </h3>
+        </div>
+
+        <div class="connection-details__actions">
+          <button
+            class="secondary-button"
+            type="button"
+            (click)="
+              testSavedConnection(connection)
+            "
+          >
+            Tester
+          </button>
+
+          <button
+            class="primary-button"
+            type="button"
+            (click)="
+              openEditEditor(connection)
+            "
+          >
+            Modifier
+          </button>
+        </div>
+      </header>
+
+      <div class="detail-grid">
+        <article>
+          <span>Fournisseur</span>
+
+          <strong>
+            {{
+              providerLabel(
+                connection.providerType
+              )
+            }}
+          </strong>
+        </article>
+
+        <article>
+          <span>URL</span>
+
+          <strong>
+            {{ connection.baseUrl }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Authentification</span>
+
+          <strong>
+            {{
+              authTypeLabel(
+                connection.authType
+              )
+            }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Credential</span>
+
+          <strong>
+            {{
+              connection
+                .credentialConfigured
+                ? 'Configuré'
+                : 'Absent'
+            }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Surveillance</span>
+
+          <strong>
+            {{
+              connection.monitoringEnabled
+                ? 'Activée'
+                : 'Désactivée'
+            }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Intervalle</span>
+
+          <strong>
+            {{
+              intervalLabel(
+                connection
+                  .checkIntervalSeconds
+              )
+            }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Seuil d’alerte</span>
+
+          <strong>
+            {{
+              connection.failureThreshold
+            }}
+            échec(s)
+          </strong>
+        </article>
+
+        <article>
+          <span>Échecs consécutifs</span>
+
+          <strong>
+            {{
+              connection
+                .consecutiveFailures
+            }}
+          </strong>
+        </article>
+      </div>
+
+      @if (connection.lastError) {
+        <section class="last-error">
+          <strong>
+            Dernière erreur
+          </strong>
+
+          <p>
+            {{ connection.lastError }}
+          </p>
+        </section>
+      }
+
+      @if (savedTestResult(); as result) {
+        <section
+          class="test-result"
+          [class.test-result--online]="
+            result.status === 'online'
+          "
+          [class.test-result--degraded]="
+            result.status === 'degraded'
+          "
+          [class.test-result--offline]="
+            result.status === 'offline'
+          "
+        >
+          <header>
+            <strong>
+              Résultat du dernier test manuel
+            </strong>
+
+            <span>
+              {{ result.latency_ms }} ms
+            </span>
+          </header>
+
+          <p>
+            {{ result.message }}
+          </p>
+
+          @if (result.checked_url) {
+            <code>
+              {{ result.checked_url }}
+            </code>
+          }
+        </section>
+      }
+    </section>
+  }
+
+  @if (editorOpen()) {
+    <div
+      class="editor-backdrop"
+      (click)="closeEditor()"
+    >
+      <aside
+        class="connection-editor"
+        (click)="$event.stopPropagation()"
+      >
+        <header class="editor-heading">
+          <div>
+            <p class="eyebrow">
+              {{
+                isEditing()
+                  ? 'Modification'
+                  : 'Nouvelle connexion'
+              }}
+            </p>
+
+            <h3>
+              {{
+                isEditing()
+                  ? 'Modifier la connexion'
+                  : 'Ajouter une connexion'
+              }}
+            </h3>
+          </div>
+
+          <button
+            type="button"
+            aria-label="Fermer"
+            (click)="closeEditor()"
+          >
+            ×
+          </button>
+        </header>
+
+        <form
+          class="connection-form"
+          [formGroup]="connectionForm"
+          (ngSubmit)="saveConnection()"
+        >
+          <div class="form-field">
+            <label for="connectionName">
+              Nom de la connexion
+            </label>
+
+            <input
+              id="connectionName"
+              type="text"
+              formControlName="name"
+              placeholder="Exemple : GitLab Piximind"
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="providerType">
+              Fournisseur
+            </label>
+
+            <select
+              id="providerType"
+              formControlName="providerType"
+              (change)="onProviderChanged()"
+            >
+              <option value="gitlab">
+                GitLab
+              </option>
+
+              <option value="nexus">
+                Nexus Repository
+              </option>
+
+              <option value="argocd">
+                Argo CD
+              </option>
+
+              <option value="kubernetes">
+                Kubernetes
+              </option>
+
+              <option value="ollama">
+                Ollama
+              </option>
+
+              <option value="generic_http">
+                Service HTTP
+              </option>
+            </select>
+          </div>
+
+          <div class="form-field form-field--wide">
+            <label for="baseUrl">
+              URL du serveur
+            </label>
+
+            <input
+              id="baseUrl"
+              type="url"
+              formControlName="baseUrl"
+              placeholder="https://gitlab.example.com"
+            />
+
+            <small>
+              Saisissez l’URL du serveur,
+              pas celle d’un repository Git.
+            </small>
+          </div>
+
+          <div class="form-field">
+            <label for="environment">
+              Environnement
+            </label>
+
+            <input
+              id="environment"
+              type="text"
+              formControlName="environment"
+              placeholder="Lab, Production, Client A…"
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="authType">
+              Authentification
+            </label>
+
+            <select
+              id="authType"
+              formControlName="authType"
+            >
+              <option value="none">
+                Aucune
+              </option>
+
+              <option value="token">
+                Token
+              </option>
+
+              <option value="basic">
+                Username et mot de passe
+              </option>
+            </select>
+          </div>
+
+          @if (requiresUsername()) {
+            <div class="form-field">
+              <label for="username">
+                Nom d’utilisateur
+              </label>
+
+              <input
+                id="username"
+                type="text"
+                formControlName="username"
+              />
+            </div>
+          }
+
+          @if (requiresCredential()) {
+            <div class="form-field">
+              <label for="credential">
+                Token ou mot de passe
+              </label>
+
+              <input
+                id="credential"
+                type="password"
+                formControlName="credential"
+                [placeholder]="
+                  isEditing()
+                    ? 'Laisser vide pour conserver le secret actuel'
+                    : 'Saisissez le credential'
+                "
+                autocomplete="new-password"
+              />
+            </div>
+          }
+
+          <div class="form-field form-field--wide">
+            <label for="description">
+              Description
+            </label>
+
+            <textarea
+              id="description"
+              formControlName="description"
+              rows="3"
+              placeholder="Utilisation de cette connexion…"
+            ></textarea>
+          </div>
+
+          <label class="monitoring-control">
+            <input
+              type="checkbox"
+              formControlName="monitoringEnabled"
+            />
+
+            <span>
+              <strong>
+                Surveillance automatique
+              </strong>
+
+              <small>
+                Contrôler périodiquement
+                la disponibilité du service.
+              </small>
+            </span>
+          </label>
+
+          <div class="form-field">
+            <label for="checkInterval">
+              Intervalle en secondes
+            </label>
+
+            <input
+              id="checkInterval"
+              type="number"
+              formControlName="checkIntervalSeconds"
+              min="60"
+              max="86400"
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="failureThreshold">
+              Échecs avant alerte
+            </label>
+
+            <input
+              id="failureThreshold"
+              type="number"
+              formControlName="failureThreshold"
+              min="1"
+              max="10"
+            />
+          </div>
+
+          @if (draftTestResult(); as result) {
+            <section
+              class="test-result form-field--wide"
+              [class.test-result--online]="
+                result.status === 'online'
+              "
+              [class.test-result--degraded]="
+                result.status === 'degraded'
+              "
+              [class.test-result--offline]="
+                result.status === 'offline'
+              "
+            >
+              <header>
+                <strong>
+                  Test de la configuration
+                </strong>
+
+                <span>
+                  {{ result.latency_ms }} ms
+                </span>
+              </header>
+
+              <p>
+                {{ result.message }}
+              </p>
+
+              @if (result.checked_url) {
+                <code>
+                  {{ result.checked_url }}
+                </code>
+              }
+            </section>
+          }
+
+          <footer class="editor-actions">
+            <button
+              class="secondary-button"
+              type="button"
+              [disabled]="
+                connectionForm.invalid ||
+                isTestingDraft()
+              "
+              (click)="
+                testDraftConfiguration()
+              "
+            >
+              @if (isTestingDraft()) {
+                Test en cours…
+              } @else {
+                Tester la configuration
+              }
+            </button>
+
+            <button
+              class="primary-button"
+              type="submit"
+              [disabled]="
+                connectionForm.invalid ||
+                isSaving()
+              "
+            >
+              @if (isSaving()) {
+                Enregistrement…
+              } @else {
+                {{
+                  isEditing()
+                    ? 'Enregistrer les modifications'
+                    : 'Créer la connexion'
+                }}
+              }
+            </button>
+          </footer>
+        </form>
+      </aside>
+    </div>
+  }
+</section>

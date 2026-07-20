@@ -1,0 +1,41 @@
+<div
+  class="app-shell"
+  [class.app-shell--sidebar-hidden]="
+    !sidebarOpen()
+  "
+>
+  <!-- Sidebar -->
+  <aside
+    class="app-shell__sidebar"
+    [class.app-shell__sidebar--hidden]="
+      !sidebarOpen()
+    "
+    [attr.aria-hidden]="!sidebarOpen()"
+  >
+    <app-sidebar />
+  </aside>
+
+  <!-- Partie principale -->
+  <section class="app-shell__workspace">
+    <app-topbar
+      [sidebarOpen]="sidebarOpen()"
+      (sidebarToggle)="toggleSidebar()"
+    />
+
+    <main class="app-shell__content">
+      <router-outlet
+        (activate)="closeSidebarOnMobile()"
+      />
+    </main>
+  </section>
+
+  <!-- Fond sombre uniquement sur mobile -->
+  @if (sidebarOpen()) {
+    <button
+      class="sidebar-backdrop"
+      type="button"
+      aria-label="Fermer le menu"
+      (click)="toggleSidebar()"
+    ></button>
+  }
+</div>

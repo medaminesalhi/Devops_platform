@@ -1,0 +1,93 @@
+<header class="topbar">
+  <div class="topbar__left">
+    <button
+      class="sidebar-toggle"
+      type="button"
+      (click)="toggleSidebar()"
+      [attr.aria-label]="
+        sidebarOpen
+          ? 'Masquer la navigation'
+          : 'Afficher la navigation'
+      "
+      [attr.title]="
+        sidebarOpen
+          ? 'Masquer la navigation'
+          : 'Afficher la navigation'
+      "
+    >
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
+
+    <div class="page-information">
+      <p class="page-information__breadcrumb">
+        PIXIMIND
+        <span>/</span>
+        {{ pageInformation().section }}
+      </p>
+
+      <div class="page-information__heading">
+        <h1>
+          {{ pageInformation().title }}
+        </h1>
+
+        <span class="page-information__subtitle">
+          {{ pageInformation().subtitle }}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="topbar__right">
+    <div class="environment-badge">
+      <span class="environment-badge__indicator"></span>
+
+      <div>
+        <small>Environnement</small>
+        <strong>Lab Kubernetes</strong>
+      </div>
+    </div>
+
+    <div class="current-date">
+      <span aria-hidden="true">◷</span>
+      {{ currentDate }}
+    </div>
+
+    <button
+      class="notification-button"
+      type="button"
+      aria-label="Notifications"
+      title="Notifications"
+    >
+      <span aria-hidden="true">◌</span>
+      <i></i>
+    </button>
+
+    <div class="user-summary">
+      <div class="user-summary__avatar">
+        {{ initials }}
+      </div>
+
+      <div class="user-summary__identity">
+        <strong>
+          {{ displayName }}
+        </strong>
+
+        <span>
+          {{ roleLabel }}
+        </span>
+      </div>
+
+      <button
+        class="logout-button"
+        type="button"
+        aria-label="Se déconnecter"
+        title="Se déconnecter"
+        (click)="logout()"
+      >
+        ↗
+      </button>
+    </div>
+  </div>
+</header>
