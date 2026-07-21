@@ -1,0 +1,827 @@
+<section class="infrastructure-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">
+        Supervision
+      </p>
+
+      <h2>
+        Infrastructure
+      </h2>
+
+      <p>
+        Gérez les environnements de déploiement
+        et les services qui leur sont associés.
+      </p>
+    </div>
+
+    <div class="page-actions">
+      <button
+        class="secondary-button"
+        type="button"
+        [disabled]="isLoading()"
+        (click)="loadOverview()"
+      >
+        ↻
+        Actualiser
+      </button>
+
+      <button
+        class="primary-button"
+        type="button"
+        (click)="openCreateEditor()"
+      >
+        +
+        Ajouter un environnement
+      </button>
+    </div>
+  </header>
+
+  <section class="filters-card">
+    <div class="filter-field">
+      <label for="clientFilter">
+        Client
+      </label>
+
+      <select
+        id="clientFilter"
+        (change)="
+          setClientFilter(
+            $any($event.target).value
+          )
+        "
+      >
+        <option value="">
+          Tous les clients
+        </option>
+
+        @for (
+          client of overview()?.clients ?? [];
+          track client.id
+        ) {
+          <option [value]="client.id">
+            {{ client.name }}
+          </option>
+        }
+      </select>
+    </div>
+
+    <div class="filter-field">
+      <label for="typeFilter">
+        Contexte
+      </label>
+
+      <select
+        id="typeFilter"
+        (change)="
+          setTypeFilter(
+            $any($event.target).value
+          )
+        "
+      >
+        <option value="">
+          Tous
+        </option>
+
+        <option value="lab">
+          Lab
+        </option>
+
+        <option value="staging">
+          Staging
+        </option>
+
+        <option value="production">
+          Production
+        </option>
+
+        <option value="custom">
+          Personnalisé
+        </option>
+      </select>
+    </div>
+  </section>
+
+  @if (overview(); as data) {
+    <section class="summary-grid">
+      <article class="summary-card">
+        <span>◎</span>
+
+        <div>
+          <strong>
+            {{ data.summary.total }}
+          </strong>
+
+          <small>
+            Environnements
+          </small>
+        </div>
+      </article>
+
+      <article class="summary-card">
+        <span class="summary-icon--success">
+          ✓
+        </span>
+
+        <div>
+          <strong>
+            {{ data.summary.ready }}
+          </strong>
+
+          <small>
+            Opérationnels
+          </small>
+        </div>
+      </article>
+
+      <article class="summary-card">
+        <span class="summary-icon--warning">
+          !
+        </span>
+
+        <div>
+          <strong>
+            {{ data.summary.degraded }}
+          </strong>
+
+          <small>
+            Dégradés
+          </small>
+        </div>
+      </article>
+
+      <article class="summary-card">
+        <span class="summary-icon--danger">
+          ×
+        </span>
+
+        <div>
+          <strong>
+            {{ data.summary.offline }}
+          </strong>
+
+          <small>
+            Hors ligne
+          </small>
+        </div>
+      </article>
+    </section>
+  }
+
+  @if (errorMessage()) {
+    <section class="message message--error">
+      <strong>Erreur</strong>
+      {{ errorMessage() }}
+    </section>
+  }
+
+  @if (successMessage()) {
+    <section class="message message--success">
+      <strong>Succès</strong>
+      {{ successMessage() }}
+    </section>
+  }
+
+  @if (isLoading()) {
+    <section class="loading-card">
+      Chargement de l’infrastructure…
+    </section>
+  } @else if (
+    (overview()?.environments?.length ?? 0)
+    === 0
+  ) {
+    <section class="empty-state">
+      <span>◎</span>
+
+      <h3>
+        Aucun environnement
+      </h3>
+
+      <p>
+        Créez un environnement et associez-lui
+        Kubernetes, Nexus, GitLab GitOps
+        et Argo CD.
+      </p>
+
+      <button
+        class="primary-button"
+        type="button"
+        (click)="openCreateEditor()"
+      >
+        Créer le premier environnement
+      </button>
+    </section>
+  } @else {
+    <section class="environments-card">
+      <header class="card-heading">
+        <div>
+          <h3>
+            Environnements de déploiement
+          </h3>
+
+          <p>
+            Chaque environnement représente
+            une cible technique complète.
+          </p>
+        </div>
+      </header>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Environnement</th>
+              <th>Client</th>
+              <th>Contexte</th>
+              <th>Kubernetes</th>
+              <th>Services</th>
+              <th>État</th>
+              <th>Projets</th>
+              <th>Dernier contrôle</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            @for (
+              environment of
+                overview()?.environments ?? [];
+              track environment.id
+            ) {
+              <tr
+                [class.table-row--selected]="
+                  selectedEnvironmentId()
+                  === environment.id
+                "
+                (click)="
+                  selectEnvironment(environment)
+                "
+              >
+                <td>
+                  <div class="environment-name">
+                    <span>
+                      {{
+                        environment.name
+                          .charAt(0)
+                          .toUpperCase()
+                      }}
+                    </span>
+
+                    <div>
+                      <strong>
+                        {{ environment.name }}
+                      </strong>
+
+                      <small>
+                        Namespace :
+                        {{ environment.namespace }}
+                      </small>
+                    </div>
+                  </div>
+                </td>
+
+                <td>
+                  {{ environment.clientName }}
+                </td>
+
+                <td>
+                  <span class="context-badge">
+                    {{
+                      environmentTypeLabel(
+                        environment.environmentType
+                      )
+                    }}
+                  </span>
+                </td>
+
+                <td>
+                  {{
+                    environment
+                      .kubernetesConnectionName
+                    ?? 'Non configuré'
+                  }}
+                </td>
+
+                <td>
+                  {{
+                    environment.serviceOnline
+                  }}
+                  /
+                  {{
+                    environment.serviceTotal
+                  }}
+                  disponibles
+                </td>
+
+                <td>
+                  <span
+                    class="status-badge"
+                    [class.status-badge--ready]="
+                      environment.effectiveStatus
+                      === 'ready'
+                    "
+                    [class.status-badge--degraded]="
+                      environment.effectiveStatus
+                      === 'degraded'
+                    "
+                    [class.status-badge--offline]="
+                      environment.effectiveStatus
+                      === 'offline'
+                    "
+                    [class.status-badge--draft]="
+                      environment.effectiveStatus
+                      === 'draft'
+                    "
+                  >
+                    {{
+                      environmentStatusLabel(
+                        environment.effectiveStatus
+                      )
+                    }}
+                  </span>
+                </td>
+
+                <td>
+                  {{ environment.projectCount }}
+                </td>
+
+                <td>
+                  @if (environment.lastCheckedAt) {
+                    {{
+                      environment.lastCheckedAt
+                        | date:
+                          'dd/MM/yyyy HH:mm'
+                    }}
+                  } @else {
+                    Jamais
+                  }
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+
+  @if (
+    selectedEnvironment();
+    as environment
+  ) {
+    <section class="environment-details">
+      <header class="details-heading">
+        <div>
+          <p class="eyebrow">
+            Environnement sélectionné
+          </p>
+
+          <h3>
+            {{ environment.name }}
+          </h3>
+
+          <p>
+            {{ environment.clientName }}
+            ·
+            {{
+              environmentTypeLabel(
+                environment.environmentType
+              )
+            }}
+          </p>
+        </div>
+
+        <span
+          class="status-badge"
+          [class.status-badge--ready]="
+            environment.effectiveStatus
+            === 'ready'
+          "
+          [class.status-badge--degraded]="
+            environment.effectiveStatus
+            === 'degraded'
+          "
+          [class.status-badge--offline]="
+            environment.effectiveStatus
+            === 'offline'
+          "
+          [class.status-badge--draft]="
+            environment.effectiveStatus
+            === 'draft'
+          "
+        >
+          {{
+            environmentStatusLabel(
+              environment.effectiveStatus
+            )
+          }}
+        </span>
+      </header>
+
+      <div class="details-grid">
+        <article>
+          <span>Namespace</span>
+          <strong>
+            {{ environment.namespace }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Domaine</span>
+          <strong>
+            {{ environment.domain ?? 'Non défini' }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Services</span>
+          <strong>
+            {{ environment.serviceOnline }}
+            /
+            {{ environment.serviceTotal }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Projets autorisés</span>
+          <strong>
+            {{ environment.projectCount }}
+          </strong>
+        </article>
+      </div>
+
+      <section class="services-section">
+        <header>
+          <h4>
+            Services associés
+          </h4>
+
+          <p>
+            Ces connexions seront utilisées
+            pendant les déploiements.
+          </p>
+        </header>
+
+        @if (environment.services.length > 0) {
+          <div class="services-grid">
+            @for (
+              service of environment.services;
+              track service.role
+            ) {
+              <article class="service-card">
+                <div>
+                  <small>
+                    {{
+                      serviceRoleLabel(
+                        service.role
+                      )
+                    }}
+                  </small>
+
+                  <strong>
+                    {{
+                      service.connectionName
+                    }}
+                  </strong>
+                </div>
+
+                <span
+                  [class.service-status--online]="
+                    service.status === 'online'
+                  "
+                  [class.service-status--problem]="
+                    service.status !== 'online'
+                  "
+                >
+                  {{ service.status }}
+                </span>
+              </article>
+            }
+          </div>
+        } @else {
+          <p class="services-empty">
+            Aucun service associé.
+          </p>
+        }
+      </section>
+    </section>
+  }
+
+  @if (editorOpen()) {
+    <div
+      class="editor-backdrop"
+      (click)="closeEditor()"
+    >
+      <aside
+        class="environment-editor"
+        (click)="$event.stopPropagation()"
+      >
+        <header class="editor-heading">
+          <div>
+            <p class="eyebrow">
+              Nouvelle cible
+            </p>
+
+            <h3>
+              Ajouter un environnement
+            </h3>
+          </div>
+
+          <button
+            type="button"
+            aria-label="Fermer"
+            (click)="closeEditor()"
+          >
+            ×
+          </button>
+        </header>
+
+        <form
+          class="environment-form"
+          [formGroup]="environmentForm"
+          (ngSubmit)="createEnvironment()"
+        >
+          <div class="form-field">
+            <label for="clientId">
+              Client
+            </label>
+
+            <select
+              id="clientId"
+              formControlName="clientId"
+            >
+              <option [value]="0">
+                Sélectionner
+              </option>
+
+              @for (
+                client of
+                  overview()?.clients ?? [];
+                track client.id
+              ) {
+                <option [value]="client.id">
+                  {{ client.name }}
+                </option>
+              }
+            </select>
+          </div>
+
+          <div class="form-field">
+            <label for="environmentType">
+              Contexte
+            </label>
+
+            <select
+              id="environmentType"
+              formControlName="environmentType"
+            >
+              <option value="lab">
+                Lab
+              </option>
+
+              <option value="staging">
+                Staging
+              </option>
+
+              <option value="production">
+                Production
+              </option>
+
+              <option value="custom">
+                Personnalisé
+              </option>
+            </select>
+          </div>
+
+          <div class="form-field form-field--wide">
+            <label for="environmentName">
+              Nom de l’environnement
+            </label>
+
+            <input
+              id="environmentName"
+              type="text"
+              formControlName="name"
+              placeholder="Exemple : Client A - Lab"
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="namespace">
+              Namespace Kubernetes
+            </label>
+
+            <input
+              id="namespace"
+              type="text"
+              formControlName="namespace"
+              placeholder="client-a-lab"
+            />
+          </div>
+
+          <div class="form-field">
+            <label for="domain">
+              Domaine applicatif
+            </label>
+
+            <input
+              id="domain"
+              type="text"
+              formControlName="domain"
+              placeholder="apps.client-a.com"
+            />
+          </div>
+
+          <div class="form-field form-field--wide">
+            <label for="description">
+              Description
+            </label>
+
+            <textarea
+              id="description"
+              rows="3"
+              formControlName="description"
+              placeholder="Utilisation de cet environnement…"
+            ></textarea>
+          </div>
+
+          <section class="services-form-section">
+            <header>
+              <h4>
+                Services de déploiement
+              </h4>
+
+              <p>
+                Sélectionnez les connexions créées
+                dans la page Intégrations.
+              </p>
+            </header>
+
+            <div class="form-field">
+              <label for="kubernetesConnection">
+                Kubernetes
+              </label>
+
+              <select
+                id="kubernetesConnection"
+                formControlName=
+                  "kubernetesConnectionId"
+              >
+                <option [value]="0">
+                  Non configuré
+                </option>
+
+                @for (
+                  connection of
+                    connectionsForRole(
+                      'kubernetes'
+                    );
+                  track connection.id
+                ) {
+                  <option [value]="connection.id">
+                    {{ connection.name }}
+                  </option>
+                }
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="argocdConnection">
+                Argo CD
+              </label>
+
+              <select
+                id="argocdConnection"
+                formControlName=
+                  "argocdConnectionId"
+              >
+                <option [value]="0">
+                  Non configuré
+                </option>
+
+                @for (
+                  connection of
+                    connectionsForRole(
+                      'argocd'
+                    );
+                  track connection.id
+                ) {
+                  <option [value]="connection.id">
+                    {{ connection.name }}
+                  </option>
+                }
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="registryConnection">
+                Registry Nexus
+              </label>
+
+              <select
+                id="registryConnection"
+                formControlName=
+                  "registryConnectionId"
+              >
+                <option [value]="0">
+                  Non configuré
+                </option>
+
+                @for (
+                  connection of
+                    connectionsForRole(
+                      'container_registry'
+                    );
+                  track connection.id
+                ) {
+                  <option [value]="connection.id">
+                    {{ connection.name }}
+                  </option>
+                }
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="gitopsConnection">
+                GitLab GitOps
+              </label>
+
+              <select
+                id="gitopsConnection"
+                formControlName=
+                  "gitopsConnectionId"
+              >
+                <option [value]="0">
+                  Non configuré
+                </option>
+
+                @for (
+                  connection of
+                    connectionsForRole(
+                      'gitops_repository'
+                    );
+                  track connection.id
+                ) {
+                  <option [value]="connection.id">
+                    {{ connection.name }}
+                  </option>
+                }
+              </select>
+            </div>
+
+            <div class="form-field form-field--wide">
+              <label for="aiConnection">
+                Fournisseur IA
+              </label>
+
+              <select
+                id="aiConnection"
+                formControlName=
+                  "aiConnectionId"
+              >
+                <option [value]="0">
+                  Non configuré
+                </option>
+
+                @for (
+                  connection of
+                    connectionsForRole(
+                      'ai_provider'
+                    );
+                  track connection.id
+                ) {
+                  <option [value]="connection.id">
+                    {{ connection.name }}
+                  </option>
+                }
+              </select>
+            </div>
+          </section>
+
+          <footer class="editor-actions">
+            <button
+              class="secondary-button"
+              type="button"
+              (click)="closeEditor()"
+            >
+              Annuler
+            </button>
+
+            <button
+              class="primary-button"
+              type="submit"
+              [disabled]="
+                environmentForm.invalid ||
+                isSaving()
+              "
+            >
+              @if (isSaving()) {
+                Création…
+              } @else {
+                Créer l’environnement
+              }
+            </button>
+          </footer>
+        </form>
+      </aside>
+    </div>
+  }
+</section>

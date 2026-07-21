@@ -48,7 +48,14 @@ export interface IntegrationConnection {
   providerType: ProviderType;
 
   baseUrl: string;
+
+  /*
+   * Cette propriété reste présente dans la réponse
+   * du backend pour compatibilité, mais elle n'est
+   * plus affichée dans la page Intégrations.
+   */
   environment: string;
+
   description: string | null;
 
   enabled: boolean;
@@ -81,7 +88,6 @@ export interface IntegrationConfiguration {
   providerType: ProviderType;
 
   baseUrl: string;
-  environment: string;
   description: string | null;
 
   authType: AuthenticationType;
@@ -108,6 +114,19 @@ export interface IntegrationTestResult {
 }
 
 
+export interface SavedConnectionResult {
+  connection: IntegrationConnection;
+  test: IntegrationTestResult | null;
+  testError: string | null;
+}
+
+
+export interface DeletedConnectionResult {
+  id: number;
+  name: string;
+}
+
+
 interface ConnectionsResponse {
   success: boolean;
 
@@ -117,12 +136,9 @@ interface ConnectionsResponse {
 }
 
 
-interface ConnectionResponse {
+interface ConnectionMutationResponse {
   success: boolean;
-
-  data: {
-    connection: IntegrationConnection;
-  };
+  data: SavedConnectionResult;
 }
 
 
@@ -141,6 +157,15 @@ interface SavedTestResponse {
   data: {
     connection: IntegrationConnection;
     test: IntegrationTestResult;
+  };
+}
+
+
+interface DeleteConnectionResponse {
+  success: boolean;
+
+  data: {
+    deletedConnection: DeletedConnectionResult;
   };
 }
 
@@ -167,8 +192,9 @@ export class IntegrationsService {
       )
       .pipe(
         map(
-          (response) =>
-            response.data.connections,
+          (
+            response: ConnectionsResponse,
+          ) => response.data.connections,
         ),
       );
   }
@@ -177,9 +203,9 @@ export class IntegrationsService {
   create(
     configuration:
       IntegrationConfiguration,
-  ): Observable<IntegrationConnection> {
+  ): Observable<SavedConnectionResult> {
     return this.http
-      .post<ConnectionResponse>(
+      .post<ConnectionMutationResponse>(
         '/api/integrations',
         configuration,
         {
@@ -188,8 +214,10 @@ export class IntegrationsService {
       )
       .pipe(
         map(
-          (response) =>
-            response.data.connection,
+          (
+            response:
+              ConnectionMutationResponse,
+          ) => response.data,
         ),
       );
   }
@@ -199,9 +227,9 @@ export class IntegrationsService {
     connectionId: number,
     configuration:
       IntegrationConfiguration,
-  ): Observable<IntegrationConnection> {
+  ): Observable<SavedConnectionResult> {
     return this.http
-      .put<ConnectionResponse>(
+      .put<ConnectionMutationResponse>(
         `/api/integrations/${connectionId}`,
         configuration,
         {
@@ -210,8 +238,32 @@ export class IntegrationsService {
       )
       .pipe(
         map(
-          (response) =>
-            response.data.connection,
+          (
+            response:
+              ConnectionMutationResponse,
+          ) => response.data,
+        ),
+      );
+  }
+
+
+  delete(
+    connectionId: number,
+  ): Observable<DeletedConnectionResult> {
+    return this.http
+      .delete<DeleteConnectionResponse>(
+        `/api/integrations/${connectionId}`,
+        {
+          headers: this.createHeaders(),
+        },
+      )
+      .pipe(
+        map(
+          (
+            response:
+              DeleteConnectionResponse,
+          ) =>
+            response.data.deletedConnection,
         ),
       );
   }
@@ -231,8 +283,9 @@ export class IntegrationsService {
       )
       .pipe(
         map(
-          (response) =>
-            response.data.test,
+          (
+            response: DraftTestResponse,
+          ) => response.data.test,
         ),
       );
   }
@@ -243,10 +296,7 @@ export class IntegrationsService {
   ): Observable<SavedTestResponse['data']> {
     return this.http
       .post<SavedTestResponse>(
-        (
-          `/api/integrations/` +
-          `${connectionId}/test`
-        ),
+        `/api/integrations/${connectionId}/test`,
         {},
         {
           headers: this.createHeaders(),
@@ -254,7 +304,9 @@ export class IntegrationsService {
       )
       .pipe(
         map(
-          (response) => response.data,
+          (
+            response: SavedTestResponse,
+          ) => response.data,
         ),
       );
   }

@@ -59,9 +59,16 @@ CONNECTION_SELECT = """
 
 
 def _fetch_connection(
-    connection,
+    database_connection,
     connection_id: int,
 ) -> dict[str, Any] | None:
+    """
+    Relit une connexion complète avec son credential.
+
+    La valeur secret_ciphertext reste uniquement
+    dans le backend et ne sera jamais envoyée à Angular.
+    """
+
     query = f"""
         {CONNECTION_SELECT}
 
@@ -70,18 +77,21 @@ def _fetch_connection(
         LIMIT 1;
     """
 
-    return connection.execute(
+    return database_connection.execute(
         query,
         (connection_id,),
     ).fetchone()
 
 
 def list_connections() -> list[dict[str, Any]]:
+    """
+    Retourne toutes les connexions configurées.
+    """
+
     query = f"""
         {CONNECTION_SELECT}
 
-        ORDER BY
-            connection.name ASC;
+        ORDER BY connection.name ASC;
     """
 
     with get_database_connection() as connection:
@@ -93,6 +103,10 @@ def list_connections() -> list[dict[str, Any]]:
 def find_connection(
     connection_id: int,
 ) -> dict[str, Any] | None:
+    """
+    Recherche une connexion par son identifiant.
+    """
+
     with get_database_connection() as connection:
         return _fetch_connection(
             connection,
@@ -115,6 +129,13 @@ def create_connection(
     failure_threshold: int,
     user_id: int,
 ) -> dict[str, Any]:
+    """
+    Crée :
+    1. la connexion ;
+    2. son credential ;
+    3. une activité de création.
+    """
+
     with get_database_connection() as connection:
         created_connection = connection.execute(
             """
@@ -157,8 +178,7 @@ def create_connection(
 
         if created_connection is None:
             raise RuntimeError(
-                "La connexion n'a pas pu "
-                "être créée."
+                "La connexion n'a pas pu être créée."
             )
 
         connection_id = int(
@@ -209,8 +229,7 @@ def create_connection(
                 json.dumps(
                     {
                         "name": name,
-                        "providerType":
-                            provider_type,
+                        "providerType": provider_type,
                     }
                 ),
             ),
@@ -223,8 +242,7 @@ def create_connection(
 
         if result is None:
             raise RuntimeError(
-                "La connexion créée "
-                "est introuvable."
+                "La connexion créée est introuvable."
             )
 
         return result
@@ -247,10 +265,21 @@ def update_connection(
     failure_threshold: int,
     user_id: int,
 ) -> dict[str, Any] | None:
+    """
+    Modifie une connexion.
+
+    Lorsque le champ secret reste vide,
+    l'ancien secret est conservé.
+
+    Lorsque auth_type devient "none",
+    le secret existant est supprimé.
+    """
+
     with get_database_connection() as connection:
         updated_row = connection.execute(
             """
                 UPDATE integration_connections
+
                 SET
                     name = %s,
                     provider_type = %s,
@@ -351,10 +380,8 @@ def update_connection(
                 json.dumps(
                     {
                         "name": name,
-                        "providerType":
-                            provider_type,
-                        "credentialReplaced":
-                            replace_secret,
+                        "providerType": provider_type,
+                        "credentialReplaced": replace_secret,
                     }
                 ),
             ),
@@ -366,7 +393,81 @@ def update_connection(
         )
 
 
+def delete_connection(
+    *,
+    connection_id: int,
+) -> dict[str, Any]:
+    """
+    Supprime une connexion uniquement lorsqu'elle
+    n'est utilisée par aucun environnement.
+
+    environment_connections possède une contrainte
+    ON DELETE RESTRICT. Nous vérifions donc l'utilisation
+    avant d'exécuter la suppression.
+    """
+
+    with get_database_connection() as connection:
+        existing_connection = _fetch_connection(
+            connection,
+            connection_id,
+        )
+
+        if existing_connection is None:
+            return {
+                "deleted": False,
+                "reason": "not_found",
+                "usageCount": 0,
+                "name": None,
+            }
+
+        usage_row = connection.execute(
+            """
+                SELECT COUNT(*)::INTEGER AS total
+
+                FROM environment_connections
+
+                WHERE connection_id = %s;
+            """,
+            (connection_id,),
+        ).fetchone()
+
+        usage_count = int(
+            usage_row["total"]
+            if usage_row
+            else 0
+        )
+
+        if usage_count > 0:
+            return {
+                "deleted": False,
+                "reason": "in_use",
+                "usageCount": usage_count,
+                "name": existing_connection["name"],
+            }
+
+        connection.execute(
+            """
+                DELETE FROM integration_connections
+
+                WHERE id = %s;
+            """,
+            (connection_id,),
+        )
+
+        return {
+            "deleted": True,
+            "reason": None,
+            "usageCount": 0,
+            "name": existing_connection["name"],
+        }
+
+
 def list_due_connection_ids() -> list[int]:
+    """
+    Retourne les connexions dont le prochain
+    contrôle automatique est arrivé à échéance.
+    """
+
     query = """
         SELECT id
 
@@ -375,8 +476,10 @@ def list_due_connection_ids() -> list[int]:
         WHERE
             enabled = TRUE
             AND monitoring_enabled = TRUE
+
             AND (
                 last_checked_at IS NULL
+
                 OR last_checked_at
                    + (
                        check_interval_seconds
@@ -385,8 +488,7 @@ def list_due_connection_ids() -> list[int]:
                    <= CURRENT_TIMESTAMP
             )
 
-        ORDER BY
-            last_checked_at NULLS FIRST;
+        ORDER BY last_checked_at NULLS FIRST;
     """
 
     with get_database_connection() as connection:
@@ -407,6 +509,14 @@ def save_health_result(
     consecutive_failures: int,
     result: dict[str, Any],
 ) -> dict[str, Any]:
+    """
+    Enregistre :
+    - le contrôle dans l'historique ;
+    - le dernier état sur la connexion ;
+    - une notification lors d'une panne ;
+    - une notification lors du rétablissement.
+    """
+
     with get_database_connection() as connection:
         previous_connection = _fetch_connection(
             connection,
@@ -460,13 +570,13 @@ def save_health_result(
         connection.execute(
             """
                 UPDATE integration_connections
+
                 SET
                     status = %s,
                     consecutive_failures = %s,
                     last_http_status = %s,
                     last_error = %s,
-                    last_checked_at =
-                        CURRENT_TIMESTAMP,
+                    last_checked_at = CURRENT_TIMESTAMP,
                     last_latency_ms = %s
 
                 WHERE id = %s;
@@ -548,21 +658,20 @@ def save_health_result(
                         "est rétabli"
                     ),
                     (
-                        "Le service répond "
-                        "de nouveau correctement."
+                        "Le service répond de nouveau "
+                        "correctement."
                     ),
                 ),
             )
 
-        return_value = _fetch_connection(
+        updated_connection = _fetch_connection(
             connection,
             connection_id,
         )
 
-        if return_value is None:
+        if updated_connection is None:
             raise RuntimeError(
-                "Impossible de relire "
-                "la connexion."
+                "Impossible de relire la connexion."
             )
 
-        return return_value
+        return updated_connection

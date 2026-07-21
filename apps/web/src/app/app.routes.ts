@@ -15,6 +15,10 @@ import {
 } from './features/dashboard/pages/dashboard/dashboard';
 
 import {
+  Infrastructure,
+} from './features/infrastructure/pages/infrastructure/infrastructure';
+
+import {
   Integrations,
 } from './features/integrations/pages/integrations/integrations';
 
@@ -40,6 +44,7 @@ export const routes: Routes = [
   {
     path: '',
     component: MainLayout,
+
     canActivate: [
       authGuard,
     ],
@@ -58,6 +63,11 @@ export const routes: Routes = [
       {
         path: 'projects',
         component: Projects,
+      },
+
+      {
+        path: 'infrastructure',
+        component: Infrastructure,
       },
 
       {

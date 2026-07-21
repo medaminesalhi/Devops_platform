@@ -11,6 +11,9 @@ from app.dashboard.routes import (
 from app.database import (
     database_is_available,
 )
+from app.infrastructure.routes import (
+    infrastructure_blueprint,
+)
 from app.integrations.commands import (
     register_integration_commands,
 )
@@ -59,6 +62,11 @@ def create_app() -> Flask:
     app.register_blueprint(
         integrations_blueprint,
         url_prefix="/api/integrations",
+    )
+
+    app.register_blueprint(
+        infrastructure_blueprint,
+        url_prefix="/api/infrastructure",
     )
 
     register_commands(app)

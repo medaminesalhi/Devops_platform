@@ -183,6 +183,17 @@ export class Topbar {
       return;
     }
 
+    if (url.startsWith('/infrastructure')) {
+      this.pageInformation.set({
+        title: 'Infrastructure',
+        subtitle:
+          'Gérez les environnements de déploiement.',
+        section: 'Supervision',
+      });
+
+      return;
+    }
+    
     if (url.startsWith('/projects')) {
       this.pageInformation.set({
         title: 'Projets',

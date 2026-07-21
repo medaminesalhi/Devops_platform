@@ -14,6 +14,7 @@ from app.auth.decorators import require_auth
 
 from app.integrations.repository import (
     create_connection,
+    delete_connection,
     find_connection,
     list_connections,
     update_connection,
@@ -73,6 +74,11 @@ def error_response(
 
 
 def can_manage_integrations() -> bool:
+    """
+    Seuls les administrateurs et les DevOps
+    peuvent modifier ou supprimer une connexion.
+    """
+
     roles = set(
         g.current_user.get("roles") or []
     )
@@ -91,7 +97,9 @@ def connection_to_json(
     connection: dict[str, Any],
 ) -> dict[str, Any]:
     """
-    secret_ciphertext n'est jamais envoyé à Angular.
+    Transforme une ligne PostgreSQL en JSON.
+
+    secret_ciphertext n'est jamais retourné.
     """
 
     return {
@@ -206,6 +214,14 @@ def read_payload(
     payload: dict[str, Any],
     existing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """
+    Lit le formulaire Angular.
+
+    La valeur environment n'est plus demandée
+    dans l'interface. Elle reste en base pour
+    compatibilité et reçoit "internal" par défaut.
+    """
+
     provider_type = normalize_string(
         payload.get(
             "providerType",
@@ -239,15 +255,10 @@ def read_payload(
         )
     )
 
-    environment = normalize_string(
-        payload.get(
-            "environment",
-            (
-                existing["environment"]
-                if existing
-                else "internal"
-            ),
-        )
+    environment = (
+        existing["environment"]
+        if existing
+        else "internal"
     )
 
     raw_description = payload.get(
@@ -344,10 +355,13 @@ def read_payload(
         "auth_type": auth_type,
         "username": username,
         "credential": credential,
+
         "monitoring_enabled":
             monitoring_enabled,
+
         "check_interval_seconds":
             check_interval_seconds,
+
         "failure_threshold":
             failure_threshold,
     }
@@ -395,9 +409,8 @@ def validate_configuration(
         and not configuration["username"]
     ):
         return (
-            "Le nom d'utilisateur est "
-            "obligatoire pour "
-            "l'authentification Basic."
+            "Le nom d'utilisateur est obligatoire "
+            "pour l'authentification Basic."
         )
 
     has_existing_credential = bool(
@@ -416,7 +429,9 @@ def validate_configuration(
     if (
         configuration["auth_type"]
         != "none"
+
         and not configuration["credential"]
+
         and (
             not has_existing_credential
             or auth_type_changed
@@ -461,6 +476,47 @@ def validate_configuration(
         )
 
     return None
+
+
+def test_after_save(
+    connection: dict[str, Any],
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any] | None,
+    str | None,
+]:
+    """
+    Lance automatiquement le contrôle après
+    une création ou une modification.
+
+    Une panne du service ne fait pas échouer
+    l'enregistrement : le statut devient dégradé
+    ou hors ligne.
+
+    testError concerne uniquement une erreur
+    interne empêchant le lancement du test.
+    """
+
+    try:
+        (
+            tested_connection,
+            test_result,
+        ) = test_saved_connection(
+            int(connection["id"])
+        )
+
+        return (
+            tested_connection,
+            test_result,
+            None,
+        )
+
+    except Exception as error:
+        return (
+            connection,
+            None,
+            str(error),
+        )
 
 
 @integrations_blueprint.get("")
@@ -574,41 +630,54 @@ def create_new_connection():
     )
 
     try:
-        connection = create_connection(
+        created_connection = create_connection(
             name=configuration["name"],
+
             provider_type=configuration[
                 "provider_type"
             ],
+
             base_url=configuration[
                 "base_url"
             ],
+
             environment=configuration[
                 "environment"
             ],
+
             description=configuration[
                 "description"
             ],
+
             auth_type=configuration[
                 "auth_type"
             ],
+
             username=configuration[
                 "username"
             ],
+
             secret_ciphertext=
                 secret_ciphertext,
+
             monitoring_enabled=
                 configuration[
                     "monitoring_enabled"
                 ],
+
             check_interval_seconds=
                 configuration[
                     "check_interval_seconds"
                 ],
+
             failure_threshold=
                 configuration[
                     "failure_threshold"
                 ],
-            user_id=g.current_user["id"],
+
+            user_id=int(
+                g.current_user["id"]
+            ),
         )
 
     except Exception as error:
@@ -618,6 +687,14 @@ def create_new_connection():
             409,
         )
 
+    (
+        final_connection,
+        test_result,
+        test_error,
+    ) = test_after_save(
+        created_connection
+    )
+
     return (
         jsonify(
             {
@@ -625,8 +702,14 @@ def create_new_connection():
                 "data": {
                     "connection":
                         connection_to_json(
-                            connection
+                            final_connection
                         ),
+
+                    "test":
+                        test_result,
+
+                    "testError":
+                        test_error,
                 },
             }
         ),
@@ -720,43 +803,58 @@ def modify_connection(
         )
 
     try:
-        connection = update_connection(
+        updated_connection = update_connection(
             connection_id=connection_id,
+
             name=configuration["name"],
+
             provider_type=configuration[
                 "provider_type"
             ],
+
             base_url=configuration[
                 "base_url"
             ],
+
             environment=configuration[
                 "environment"
             ],
+
             description=configuration[
                 "description"
             ],
+
             auth_type=configuration[
                 "auth_type"
             ],
+
             username=configuration[
                 "username"
             ],
+
             replace_secret=replace_secret,
+
             secret_ciphertext=
                 secret_ciphertext,
+
             monitoring_enabled=
                 configuration[
                     "monitoring_enabled"
                 ],
+
             check_interval_seconds=
                 configuration[
                     "check_interval_seconds"
                 ],
+
             failure_threshold=
                 configuration[
                     "failure_threshold"
                 ],
-            user_id=g.current_user["id"],
+
+            user_id=int(
+                g.current_user["id"]
+            ),
         )
 
     except Exception as error:
@@ -766,12 +864,20 @@ def modify_connection(
             409,
         )
 
-    if connection is None:
+    if updated_connection is None:
         return error_response(
             "CONNECTION_NOT_FOUND",
             "Connexion introuvable.",
             404,
         )
+
+    (
+        final_connection,
+        test_result,
+        test_error,
+    ) = test_after_save(
+        updated_connection
+    )
 
     return jsonify(
         {
@@ -779,8 +885,68 @@ def modify_connection(
             "data": {
                 "connection":
                     connection_to_json(
-                        connection
+                        final_connection
                     ),
+
+                "test":
+                    test_result,
+
+                "testError":
+                    test_error,
+            },
+        }
+    )
+
+
+@integrations_blueprint.delete(
+    "/<int:connection_id>"
+)
+@require_auth
+def remove_connection(
+    connection_id: int,
+):
+    if not can_manage_integrations():
+        return error_response(
+            "INSUFFICIENT_PERMISSIONS",
+            (
+                "Vous ne pouvez pas supprimer "
+                "une intégration."
+            ),
+            403,
+        )
+
+    result = delete_connection(
+        connection_id=connection_id
+    )
+
+    if result["reason"] == "not_found":
+        return error_response(
+            "CONNECTION_NOT_FOUND",
+            "Connexion introuvable.",
+            404,
+        )
+
+    if result["reason"] == "in_use":
+        return error_response(
+            "CONNECTION_IN_USE",
+            (
+                f"La connexion « {result['name']} » "
+                f"est utilisée par "
+                f"{result['usageCount']} environnement(s). "
+                "Modifiez les environnements concernés "
+                "avant de la supprimer."
+            ),
+            409,
+        )
+
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "deletedConnection": {
+                    "id": connection_id,
+                    "name": result["name"],
+                },
             },
         }
     )
@@ -792,10 +958,7 @@ def modify_connection(
 @require_auth
 def test_draft_connection():
     """
-    Teste le formulaire avant l'enregistrement.
-
-    connectionId permet d'utiliser le credential
-    déjà enregistré pendant une modification.
+    Teste le formulaire avant son enregistrement.
     """
 
     payload = request.get_json(

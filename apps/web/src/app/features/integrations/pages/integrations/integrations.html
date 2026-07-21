@@ -146,17 +146,7 @@
 
   @if (isLoading()) {
     <section class="loading-panel">
-      <span class="spinner"></span>
-
-      <div>
-        <strong>
-          Chargement des connexions
-        </strong>
-
-        <p>
-          Lecture des données PostgreSQL…
-        </p>
-      </div>
+      Chargement des connexions…
     </section>
   } @else if (connections().length === 0) {
     <section class="empty-state">
@@ -170,7 +160,7 @@
 
       <p>
         Ajoutez GitLab, Nexus, Kubernetes,
-        Argo CD, Ollama ou un autre service HTTP.
+        Argo CD, Ollama ou un service HTTP.
       </p>
 
       <button
@@ -190,8 +180,8 @@
           </h3>
 
           <p>
-            Chaque connexion peut être testée
-            et surveillée indépendamment.
+            Les connexions sont testées
+            automatiquement après chaque enregistrement.
           </p>
         </div>
       </header>
@@ -202,10 +192,9 @@
             <tr>
               <th>Connexion</th>
               <th>Fournisseur</th>
-              <th>Environnement</th>
               <th>État</th>
               <th>Dernier contrôle</th>
-              <th>Latence</th>
+              <th>Temps de réponse</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -230,8 +219,7 @@
                       {{
                         providerLabel(
                           connection.providerType
-                        )
-                        .charAt(0)
+                        ).charAt(0)
                       }}
                     </span>
 
@@ -253,12 +241,6 @@
                       connection.providerType
                     )
                   }}
-                </td>
-
-                <td>
-                  <span class="environment-badge">
-                    {{ connection.environment }}
-                  </span>
                 </td>
 
                 <td>
@@ -296,10 +278,10 @@
                     {{
                       connection.lastCheckedAt
                         | date:
-                          'dd/MM/yyyy HH:mm'
+                          'dd/MM/yyyy HH:mm:ss'
                     }}
                   } @else {
-                    Jamais
+                    Jamais testé
                   }
                 </td>
 
@@ -354,6 +336,29 @@
                     >
                       Modifier
                     </button>
+
+                    <button
+                      class="delete-action"
+                      type="button"
+                      [disabled]="
+                        deletingConnectionId()
+                        !== null
+                      "
+                      (click)="
+                        deleteConnection(
+                          connection
+                        )
+                      "
+                    >
+                      @if (
+                        deletingConnectionId()
+                        === connection.id
+                      ) {
+                        Suppression…
+                      } @else {
+                        Supprimer
+                      }
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -392,13 +397,23 @@
           </button>
 
           <button
-            class="primary-button"
+            class="secondary-button"
             type="button"
             (click)="
               openEditEditor(connection)
             "
           >
             Modifier
+          </button>
+
+          <button
+            class="danger-button"
+            type="button"
+            (click)="
+              deleteConnection(connection)
+            "
+          >
+            Supprimer
           </button>
         </div>
       </header>
@@ -417,7 +432,7 @@
         </article>
 
         <article>
-          <span>URL</span>
+          <span>URL du serveur</span>
 
           <strong>
             {{ connection.baseUrl }}
@@ -441,8 +456,7 @@
 
           <strong>
             {{
-              connection
-                .credentialConfigured
+              connection.credentialConfigured
                 ? 'Configuré'
                 : 'Absent'
             }}
@@ -462,7 +476,7 @@
         </article>
 
         <article>
-          <span>Intervalle</span>
+          <span>Intervalle de contrôle</span>
 
           <strong>
             {{
@@ -524,7 +538,7 @@
         >
           <header>
             <strong>
-              Résultat du dernier test manuel
+              Résultat du dernier test
             </strong>
 
             <span>
@@ -650,22 +664,9 @@
             />
 
             <small>
-              Saisissez l’URL du serveur,
-              pas celle d’un repository Git.
+              Pour GitLab, saisissez l’adresse
+              du serveur et non celle d’un projet.
             </small>
-          </div>
-
-          <div class="form-field">
-            <label for="environment">
-              Environnement
-            </label>
-
-            <input
-              id="environment"
-              type="text"
-              formControlName="environment"
-              placeholder="Lab, Production, Client A…"
-            />
           </div>
 
           <div class="form-field">
@@ -706,7 +707,7 @@
           }
 
           @if (requiresCredential()) {
-            <div class="form-field">
+            <div class="form-field form-field--wide">
               <label for="credential">
                 Token ou mot de passe
               </label>
@@ -758,16 +759,33 @@
 
           <div class="form-field">
             <label for="checkInterval">
-              Intervalle en secondes
+              Intervalle de contrôle
             </label>
 
-            <input
+            <select
               id="checkInterval"
-              type="number"
               formControlName="checkIntervalSeconds"
-              min="60"
-              max="86400"
-            />
+            >
+              <option [value]="60">
+                1 minute
+              </option>
+
+              <option [value]="300">
+                5 minutes
+              </option>
+
+              <option [value]="600">
+                10 minutes
+              </option>
+
+              <option [value]="1800">
+                30 minutes
+              </option>
+
+              <option [value]="3600">
+                1 heure
+              </option>
+            </select>
           </div>
 
           <div class="form-field">
@@ -824,8 +842,8 @@
               class="secondary-button"
               type="button"
               [disabled]="
-                connectionForm.invalid ||
-                isTestingDraft()
+                connectionForm.invalid
+                || isTestingDraft()
               "
               (click)="
                 testDraftConfiguration()
@@ -834,7 +852,7 @@
               @if (isTestingDraft()) {
                 Test en cours…
               } @else {
-                Tester la configuration
+                Tester avant l’enregistrement
               }
             </button>
 
@@ -842,12 +860,12 @@
               class="primary-button"
               type="submit"
               [disabled]="
-                connectionForm.invalid ||
-                isSaving()
+                connectionForm.invalid
+                || isSaving()
               "
             >
               @if (isSaving()) {
-                Enregistrement…
+                Enregistrement et vérification…
               } @else {
                 {{
                   isEditing()
