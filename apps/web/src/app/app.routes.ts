@@ -27,6 +27,10 @@ import {
 } from './features/projects/pages/new-project/new-project';
 
 import {
+  ProjectDetail,
+} from './features/projects/pages/project-detail/project-detail';
+
+import {
   Projects,
 } from './features/projects/pages/projects/projects';
 
@@ -58,6 +62,11 @@ export const routes: Routes = [
       {
         path: 'projects/new',
         component: NewProject,
+      },
+
+      {
+        path: 'projects/:projectId',
+        component: ProjectDetail,
       },
 
       {

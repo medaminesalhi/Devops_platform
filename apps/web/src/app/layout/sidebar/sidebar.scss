@@ -1,18 +1,34 @@
 :host {
   display: block;
+
+  flex: 0 0 286px;
+
+  width: 286px;
+  min-width: 286px;
+  max-width: 286px;
+
+  height: 100vh;
 }
+
+/* =========================================================
+   SIDEBAR
+   ========================================================= */
 
 .sidebar {
   position: sticky;
   top: 0;
 
+  box-sizing: border-box;
+
   display: flex;
   flex-direction: column;
 
-  width: 286px;
+  width: 100%;
   height: 100vh;
 
   padding: 27px 20px 21px;
+
+  overflow: hidden;
 
   border-right: 1px solid rgba(148, 163, 184, 0.13);
 
@@ -24,9 +40,9 @@
     ),
     linear-gradient(
       180deg,
-      #081b22,
+      #081b22 0%,
       #0c252d 58%,
-      #081c23
+      #081c23 100%
     );
 
   color: #f8fafc;
@@ -49,7 +65,7 @@
   width: 51px;
   height: 51px;
 
-  flex: 0 0 auto;
+  flex: 0 0 51px;
 
   border-radius: 15px;
 
@@ -69,20 +85,30 @@
 }
 
 .brand__identity strong {
+  overflow: hidden;
+
   color: #ffffff;
 
   font-size: 15px;
   font-weight: 800;
   letter-spacing: 0.17em;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand__identity span {
   margin-top: 6px;
 
+  overflow: hidden;
+
   color: #8aa1a8;
 
   font-size: 11px;
   font-weight: 600;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* =========================================================
@@ -94,6 +120,8 @@
   flex-direction: column;
 
   gap: 7px;
+
+  min-width: 0;
 }
 
 .navigation__title {
@@ -108,12 +136,15 @@
 }
 
 .navigation-item {
+  box-sizing: border-box;
+
   display: flex;
   align-items: center;
 
   gap: 13px;
 
   width: 100%;
+  min-width: 0;
   min-height: 53px;
 
   padding: 8px 12px;
@@ -126,6 +157,7 @@
 
   cursor: pointer;
 
+  font-family: inherit;
   font-size: 14px;
   font-weight: 600;
 
@@ -172,7 +204,7 @@
   width: 34px;
   height: 34px;
 
-  flex: 0 0 auto;
+  flex: 0 0 34px;
 
   place-items: center;
 
@@ -187,12 +219,6 @@
   font-weight: 800;
 }
 
-.navigation-item__icon--ai {
-  color: #c4b5fd;
-
-  font-size: 10px;
-}
-
 .navigation-item--active .navigation-item__icon {
   border-color: rgba(124, 205, 0, 0.29);
 
@@ -201,10 +227,18 @@
 }
 
 .navigation-item__label {
+  min-width: 0;
   flex: 1;
+
+  overflow: hidden;
+
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .navigation-item__badge {
+  flex: 0 0 auto;
+
   padding: 4px 8px;
 
   border-radius: 999px;
@@ -223,11 +257,15 @@
    ========================================================= */
 
 .sidebar-footer {
+  box-sizing: border-box;
+
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) 36px;
   align-items: center;
 
   gap: 11px;
+
+  width: 100%;
 
   margin-top: auto;
   padding: 15px 13px;
@@ -243,6 +281,8 @@
 
   width: 44px;
   height: 44px;
+
+  flex: 0 0 44px;
 
   place-items: center;
 
@@ -290,6 +330,8 @@
   width: 36px;
   height: 36px;
 
+  padding: 0;
+
   place-items: center;
 
   border: 0;
@@ -300,6 +342,7 @@
 
   cursor: pointer;
 
+  font-family: inherit;
   font-size: 18px;
 
   transition:
@@ -312,9 +355,21 @@
   color: #fda4af;
 }
 
+/* =========================================================
+   TABLETTE
+   ========================================================= */
+
 @media (max-width: 1200px) {
-  .sidebar {
+  :host {
+    flex: 0 0 96px;
+
     width: 96px;
+    min-width: 96px;
+    max-width: 96px;
+  }
+
+  .sidebar {
+    width: 100%;
 
     padding-inline: 16px;
   }
@@ -323,6 +378,13 @@
     justify-content: center;
 
     padding-inline: 0;
+  }
+
+  .brand__logo {
+    width: 51px;
+    height: 51px;
+
+    flex-basis: 51px;
   }
 
   .brand__identity,
@@ -348,7 +410,21 @@
   }
 }
 
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
 @media (max-width: 760px) {
+  :host {
+    flex: 0 0 auto;
+
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+
+    height: auto;
+  }
+
   .sidebar {
     position: static;
 
@@ -356,6 +432,8 @@
     height: auto;
 
     padding: 15px 18px;
+
+    overflow: visible;
 
     border-right: 0;
     border-bottom: 1px solid rgba(148, 163, 184, 0.13);

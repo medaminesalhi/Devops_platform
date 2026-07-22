@@ -1,0 +1,198 @@
+<section class="project-detail-page">
+  <a
+    class="back-link"
+    routerLink="/projects"
+  >
+    ← Retour aux projets
+  </a>
+
+  @if (errorMessage()) {
+    <section class="message message--error">
+      {{ errorMessage() }}
+    </section>
+  }
+
+  @if (isLoading()) {
+    <section class="loading-card">
+      Chargement du projet…
+    </section>
+  } @else if (project(); as projectData) {
+    <header class="project-heading">
+      <div>
+        <p class="eyebrow">
+          {{ projectData }}
+        </p>
+
+        <h2>
+          {{ projectData.name }}
+        </h2>
+
+        <p>
+          {{
+            projectData.description
+            ?? 'Aucune description.'
+          }}
+        </p>
+      </div>
+
+      <span class="status-badge">
+        {{ projectData.status }}
+      </span>
+    </header>
+
+    <section class="summary-grid">
+      <article>
+        <span>Repository</span>
+
+        <strong>
+          {{
+            projectData.source
+              .repositoryPath
+          }}
+        </strong>
+      </article>
+
+      <article>
+        <span>Branche</span>
+
+        <strong>
+          {{
+            projectData.source
+              .branch
+          }}
+        </strong>
+      </article>
+
+      <article>
+        <span>Commit vérifié</span>
+
+        <strong>
+          {{
+            projectData.source
+              .lastCommitSha
+              ?.slice(0, 12)
+            ?? 'Non vérifié'
+          }}
+        </strong>
+      </article>
+
+      <article>
+        <span>Environnement par défaut</span>
+
+        <strong>
+          {{
+            projectData
+              .defaultEnvironment
+              ?.name
+            ?? 'Non défini'
+          }}
+        </strong>
+      </article>
+    </section>
+
+    <section class="detail-card">
+      <header>
+        <h3>
+          Source GitLab
+        </h3>
+      </header>
+
+      <div class="detail-grid">
+        <article>
+          <span>Connexion</span>
+
+          <strong>
+            {{
+              projectData.source
+                .connectionName
+            }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Serveur</span>
+
+          <strong>
+            {{
+              projectData.source.baseUrl
+            }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Visibilité</span>
+
+          <strong>
+            {{
+              projectData.source.visibility
+            }}
+          </strong>
+        </article>
+
+        <article>
+          <span>Sous-dossier</span>
+
+          <strong>
+            {{
+              projectData.source.subdirectory
+              ?? 'Racine du repository'
+            }}
+          </strong>
+        </article>
+      </div>
+    </section>
+
+    <section class="detail-card">
+      <header>
+        <h3>
+          Environnements autorisés
+        </h3>
+      </header>
+
+      <div class="environment-grid">
+        @for (
+          environment of
+            projectData.environments;
+          track environment.id
+        ) {
+          <article>
+            <div>
+              <strong>
+                {{ environment.name }}
+              </strong>
+
+              <span>
+                {{
+                  environmentTypeLabel(
+                    environment.environmentType
+                  )
+                }}
+                ·
+                {{ environment.namespace }}
+              </span>
+            </div>
+
+            @if (environment.isDefault) {
+              <small>
+                Par défaut
+              </small>
+            }
+          </article>
+        }
+      </div>
+    </section>
+
+    <section class="next-step">
+      <strong>
+        Phase suivante
+      </strong>
+
+      <p>
+        Le projet est maintenant enregistré.
+        La prochaine phase téléchargera le code
+        et détectera les technologies,
+        Dockerfile et charts Helm.
+      </p>
+    </section>
+  }
+</section>

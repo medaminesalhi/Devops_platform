@@ -1,174 +1,213 @@
-import { Component } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import {
+  Component,
+  OnInit,
+  inject,
+  signal,
+} from '@angular/core';
 
-type ProjectStatus =
-  | 'up-to-date'
-  | 'update-available'
-  | 'deploying'
-  | 'attention';
+import {
+  DatePipe,
+} from '@angular/common';
 
-interface Project {
-  id: number;
-  name: string;
-  description: string;
-  technology: string;
-  repository: string;
-  branch: string;
-  environment: string;
-  deployedCommit: string;
-  latestCommit: string;
-  status: ProjectStatus;
-  updatedAt: string;
+import {
+  HttpErrorResponse,
+} from '@angular/common/http';
+
+import {
+  FormBuilder,
+  ReactiveFormsModule,
+} from '@angular/forms';
+
+import {
+  RouterLink,
+} from '@angular/router';
+
+import {
+  finalize,
+} from 'rxjs';
+
+import {
+  Project,
+  ProjectStatus,
+  ProjectsService,
+} from '../../../../core/projects/projects';
+
+
+interface ApiErrorResponse {
+  success: false;
+
+  error: {
+    code: string;
+    message: string;
+  };
 }
+
 
 @Component({
   selector: 'app-projects',
+
   imports: [
-    FormsModule,
+    ReactiveFormsModule,
     RouterLink,
+    DatePipe,
   ],
+
   templateUrl: './projects.html',
   styleUrl: './projects.scss',
 })
-export class Projects {
-  searchTerm = '';
-  statusFilter = 'all';
-  technologyFilter = 'all';
-  informationMessage: string | null = null;
+export class Projects implements OnInit {
+  private readonly projectsService =
+    inject(ProjectsService);
 
-  readonly projects: Project[] = [
-    {
-      id: 1,
-      name: 'boutique-web',
-      description: 'Interface e-commerce Angular',
-      technology: 'Angular',
-      repository: 'client/boutique-web',
-      branch: 'main',
-      environment: 'Lab',
-      deployedCommit: 'a81bc24',
-      latestCommit: 'a81bc24',
-      status: 'up-to-date',
-      updatedAt: 'Il y a 5 minutes',
-    },
-    {
-      id: 2,
-      name: 'payment-api',
-      description: 'API de gestion des paiements',
-      technology: 'Flask',
-      repository: 'services/payment-api',
-      branch: 'main',
-      environment: 'Lab',
-      deployedCommit: 'c81ad10',
-      latestCommit: 'b92de31',
-      status: 'update-available',
-      updatedAt: 'Il y a 12 minutes',
-    },
-    {
-      id: 3,
-      name: 'customer-service',
-      description: 'Gestion des comptes clients',
-      technology: 'Spring Boot',
-      repository: 'services/customer-service',
-      branch: 'develop',
-      environment: 'Lab',
-      deployedCommit: 'c19fa82',
-      latestCommit: 'c19fa82',
-      status: 'attention',
-      updatedAt: 'Il y a 1 heure',
-    },
-    {
-      id: 4,
-      name: 'analytics-dashboard',
-      description: 'Dashboard de supervision',
-      technology: 'Angular',
-      repository: 'analytics/dashboard',
-      branch: 'main',
-      environment: 'Lab',
-      deployedCommit: 'e71ab09',
-      latestCommit: 'f82de11',
-      status: 'deploying',
-      updatedAt: 'Maintenant',
-    },
-  ];
+  private readonly formBuilder =
+    inject(FormBuilder);
 
-  get filteredProjects(): Project[] {
-    const normalizedSearch = this.searchTerm
-      .trim()
-      .toLowerCase();
 
-    return this.projects.filter((project) => {
-      const matchesSearch =
-        normalizedSearch.length === 0 ||
-        project.name.toLowerCase().includes(normalizedSearch) ||
-        project.repository
-          .toLowerCase()
-          .includes(normalizedSearch) ||
-        project.technology
-          .toLowerCase()
-          .includes(normalizedSearch);
+  readonly projects =
+    signal<Project[]>([]);
 
-      const matchesStatus =
-        this.statusFilter === 'all' ||
-        project.status === this.statusFilter;
+  readonly total =
+    signal(0);
 
-      const matchesTechnology =
-        this.technologyFilter === 'all' ||
-        project.technology === this.technologyFilter;
+  readonly isLoading =
+    signal(true);
 
-      return (
-        matchesSearch &&
-        matchesStatus &&
-        matchesTechnology
-      );
+  readonly errorMessage =
+    signal<string | null>(null);
+
+
+  readonly filterForm =
+    this.formBuilder.nonNullable.group({
+      search: '',
+      status: '',
     });
+
+
+  ngOnInit(): void {
+    this.loadProjects();
   }
 
-  get totalProjects(): number {
-    return this.projects.length;
+
+  loadProjects(): void {
+    const values =
+      this.filterForm.getRawValue();
+
+    this.isLoading.set(true);
+    this.errorMessage.set(null);
+
+    this.projectsService
+      .getProjects({
+        search:
+          values.search.trim()
+          || null,
+
+        status:
+          this.toProjectStatus(
+            values.status,
+          ),
+      })
+      .pipe(
+        finalize(() => {
+          this.isLoading.set(false);
+        }),
+      )
+      .subscribe({
+        next: result => {
+          this.projects.set(
+            result.projects,
+          );
+
+          this.total.set(
+            result.total,
+          );
+        },
+
+        error: (
+          error: HttpErrorResponse,
+        ) => {
+          this.errorMessage.set(
+            this.resolveError(error),
+          );
+        },
+      });
   }
 
-  get upToDateProjects(): number {
-    return this.projects.filter(
-      (project) => project.status === 'up-to-date',
-    ).length;
+
+  resetFilters(): void {
+    this.filterForm.reset({
+      search: '',
+      status: '',
+    });
+
+    this.loadProjects();
   }
 
-  get availableUpdates(): number {
-    return this.projects.filter(
-      (project) =>
-        project.status === 'update-available',
-    ).length;
-  }
 
-  get projectsRequiringAttention(): number {
-    return this.projects.filter(
-      (project) => project.status === 'attention',
-    ).length;
-  }
-
-  statusLabel(status: ProjectStatus): string {
-    const labels: Record<ProjectStatus, string> = {
-      'up-to-date': 'À jour',
-      'update-available': 'Mise à jour disponible',
-      deploying: 'Déploiement en cours',
-      attention: 'Intervention requise',
-    };
+  projectStatusLabel(
+    status: ProjectStatus,
+  ): string {
+    const labels:
+      Record<ProjectStatus, string> = {
+        draft: 'Brouillon',
+        active: 'Actif',
+        source_error:
+          'Erreur de source',
+        archived: 'Archivé',
+      };
 
     return labels[status];
   }
 
-  selectAction(message: string): void {
-    this.informationMessage = message;
+
+  visibilityLabel(
+    visibility: string,
+  ): string {
+    return (
+      visibility === 'public'
+        ? 'Public'
+        : 'Privé'
+    );
   }
 
-  clearFilters(): void {
-    this.searchTerm = '';
-    this.statusFilter = 'all';
-    this.technologyFilter = 'all';
+
+  private toProjectStatus(
+    value: string,
+  ): ProjectStatus | null {
+    switch (value) {
+      case 'draft':
+        return 'draft';
+
+      case 'active':
+        return 'active';
+
+      case 'source_error':
+        return 'source_error';
+
+      case 'archived':
+        return 'archived';
+
+      default:
+        return null;
+    }
   }
 
-  closeMessage(): void {
-    this.informationMessage = null;
+
+  private resolveError(
+    error: HttpErrorResponse,
+  ): string {
+    if (error.status === 0) {
+      return (
+        'Le backend Flask est inaccessible.'
+      );
+    }
+
+    const response =
+      error.error as
+        ApiErrorResponse | null;
+
+    return (
+      response?.error?.message
+      || `Erreur HTTP ${error.status}.`
+    );
   }
 }

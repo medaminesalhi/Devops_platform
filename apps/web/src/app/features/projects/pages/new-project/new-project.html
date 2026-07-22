@@ -1,1140 +1,1294 @@
 <section class="new-project-page">
   <header class="page-heading">
-    <a
-      class="back-link"
-      routerLink="/projects"
-    >
-      ← Retour aux projets
-    </a>
+    <div>
+      <p class="eyebrow">
+        Assistant de déploiement
+      </p>
 
-    <p class="eyebrow">
-      Assistant de déploiement
-    </p>
+      <h2>
+        Nouveau projet
+      </h2>
 
-    <h2>Analyser et déployer un projet</h2>
-
-    <p class="page-description">
-      Connectez un repository GitLab, vérifiez
-      l’analyse, configurez Docker et Helm puis
-      suivez le déploiement.
-    </p>
+      <p>
+        Configurez la source Git et les environnements
+        avant de lancer l’analyse du code.
+      </p>
+    </div>
   </header>
 
-  <ol
-    class="stepper"
-    aria-label="Étapes du déploiement"
-  >
-    <li
-      class="step"
-      [class.step--active]="currentStep === 1"
-      [class.step--completed]="currentStep > 1"
-    >
-      <span class="step__number">1</span>
+  <section class="workflow">
+    <article class="workflow-step workflow-step--active">
+      <span>1</span>
 
       <div>
-        <strong>Repository</strong>
-        <small>Source GitLab</small>
+        <strong>Création</strong>
+        <small>Source et environnements</small>
       </div>
-    </li>
+    </article>
 
-    <li class="stepper__line"></li>
-
-    <li
-      class="step"
-      [class.step--active]="currentStep === 2"
-      [class.step--completed]="currentStep > 2"
-    >
-      <span class="step__number">2</span>
+    <article class="workflow-step">
+      <span>2</span>
 
       <div>
         <strong>Analyse</strong>
-        <small>Détection et IA</small>
+        <small>Code et technologies</small>
       </div>
-    </li>
+    </article>
 
-    <li class="stepper__line"></li>
-
-    <li
-      class="step"
-      [class.step--active]="currentStep === 3"
-      [class.step--completed]="currentStep > 3"
-    >
-      <span class="step__number">3</span>
+    <article class="workflow-step">
+      <span>3</span>
 
       <div>
-        <strong>Docker & Helm</strong>
-        <small>Configuration</small>
+        <strong>IA & génération</strong>
+        <small>Docker et Helm</small>
       </div>
-    </li>
+    </article>
 
-    <li class="stepper__line"></li>
-
-    <li
-      class="step"
-      [class.step--active]="currentStep === 4"
-      [class.step--completed]="currentStep > 4"
-    >
-      <span class="step__number">4</span>
+    <article class="workflow-step">
+      <span>4</span>
 
       <div>
         <strong>Confirmation</strong>
-        <small>Vérification finale</small>
+        <small>Validation humaine</small>
       </div>
-    </li>
+    </article>
 
-    <li class="stepper__line"></li>
-
-    <li
-      class="step"
-      [class.step--active]="currentStep === 5"
-      [class.step--completed]="deploymentFinished"
-    >
-      <span class="step__number">5</span>
+    <article class="workflow-step">
+      <span>5</span>
 
       <div>
         <strong>Déploiement</strong>
-        <small>Étapes et logs</small>
+        <small>Exécution et logs</small>
       </div>
-    </li>
-  </ol>
+    </article>
+  </section>
 
-  @if (currentStep === 1) {
-    <section class="wizard-card">
-      <header class="wizard-card__header">
-        <div>
-          <p class="eyebrow">Étape 1 sur 5</p>
-          <h3>Repository GitLab</h3>
+  <section class="phase-notice">
+    <strong>
+      Phase 1 — Création du projet
+    </strong>
 
-          <p>
-            Indiquez la source du projet que la
-            plateforme devra analyser.
-          </p>
+    <p>
+      Cette phase vérifie l’accès au repository avec
+      <code>git ls-remote</code>.
+      Le téléchargement du code commencera pendant la phase Analyse.
+    </p>
+  </section>
+
+  @if (pageError()) {
+    <section
+      class="message message--error"
+      role="alert"
+    >
+      <strong>
+        Chargement impossible
+      </strong>
+
+      <span>
+        {{ pageError() }}
+      </span>
+    </section>
+  }
+
+  @if (isLoading()) {
+    <section class="loading-card">
+      Chargement des connexions GitLab et des environnements…
+    </section>
+  } @else {
+    <form
+      class="project-form"
+      [formGroup]="form"
+      (ngSubmit)="createProject()"
+    >
+      <!-- =====================================================
+           SECTION 1 : INFORMATIONS GÉNÉRALES
+           ===================================================== -->
+
+      <section class="form-card">
+        <header class="form-card__heading">
+          <span class="section-number">
+            1
+          </span>
+
+          <div>
+            <h3>
+              Informations générales
+            </h3>
+
+            <p>
+              Définissez l’identité du projet.
+            </p>
+          </div>
+        </header>
+
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="projectName">
+              Nom du projet
+            </label>
+
+            <input
+              id="projectName"
+              type="text"
+              formControlName="name"
+              placeholder="Exemple : SApixi Platform"
+            />
+
+            @if (
+              form.controls.name.touched
+              && form.controls.name.hasError('required')
+            ) {
+              <small class="field-error">
+                Le nom du projet est obligatoire.
+              </small>
+            }
+
+            @if (
+              form.controls.name.touched
+              && form.controls.name.hasError('minlength')
+            ) {
+              <small class="field-error">
+                Le nom doit contenir au moins 3 caractères.
+              </small>
+            }
+
+            @if (
+              form.controls.name.touched
+              && form.controls.name.hasError('maxlength')
+            ) {
+              <small class="field-error">
+                Le nom ne peut pas dépasser 140 caractères.
+              </small>
+            }
+          </div>
+
+          <div class="form-field form-field--wide">
+            <label for="projectDescription">
+              Description
+            </label>
+
+            <textarea
+              id="projectDescription"
+              rows="4"
+              formControlName="description"
+              placeholder="Décrivez brièvement le rôle de cette application…"
+            ></textarea>
+
+            <small>
+              La description est facultative.
+            </small>
+          </div>
         </div>
+      </section>
 
-        <span class="simulation-badge">
-          Simulation frontend
-        </span>
-      </header>
+      <!-- =====================================================
+           SECTION 2 : SOURCE GITLAB
+           ===================================================== -->
 
-      <form
-        [formGroup]="sourceForm"
-        (ngSubmit)="analyzeRepository()"
-      >
-        <div class="source-layout">
-          <div class="form-panel">
-            <div class="form-field">
-              <label for="repositoryUrl">
-                URL du repository GitLab
-              </label>
+      <section class="form-card">
+        <header class="form-card__heading">
+          <span class="section-number">
+            2
+          </span>
 
-              <div
-                class="input-container"
-                [class.input-container--invalid]="
-                  sourceForm.controls.repositoryUrl.invalid &&
-                  sourceForm.controls.repositoryUrl.touched
+          <div>
+            <h3>
+              Source GitLab
+            </h3>
+
+            <p>
+              Configurez l’accès au repository sans encore
+              télécharger son contenu.
+            </p>
+          </div>
+        </header>
+
+        <div class="source-content">
+          <!-- Serveur GitLab -->
+
+          <div class="form-field">
+            <label for="sourceConnectionId">
+              Serveur GitLab
+            </label>
+
+            <select
+              id="sourceConnectionId"
+              formControlName="sourceConnectionId"
+              (change)="onConnectionChanged()"
+            >
+              <option [value]="0">
+                Sélectionner un serveur GitLab
+              </option>
+
+              @for (
+                connection of options()?.gitConnections ?? [];
+                track connection.id
+              ) {
+                <option [value]="connection.id">
+                  {{ connection.name }}
+                  —
+                  {{ connection.baseUrl }}
+                </option>
+              }
+            </select>
+
+            @if (selectedConnection()) {
+              <small>
+                État :
+                {{ selectedConnection()?.status }}
+                ·
+                SSL :
+                {{
+                  selectedConnection()?.verifySsl
+                    ? 'vérifié'
+                    : 'désactivé'
+                }}
+              </small>
+            } @else {
+              <small>
+                Les serveurs GitLab sont configurés depuis la page
+                Intégrations.
+              </small>
+            }
+          </div>
+
+          <!-- Visibilité -->
+
+          <div class="choice-section">
+            <h4>
+              Visibilité du repository
+            </h4>
+
+            <div class="choice-grid">
+              <label
+                class="choice-card"
+                [class.choice-card--selected]="
+                  visibility() === 'public'
                 "
               >
-                <span class="input-prefix">Git</span>
-
                 <input
-                  id="repositoryUrl"
-                  type="url"
-                  formControlName="repositoryUrl"
-                  placeholder="https://gitlab.example.com/equipe/projet.git"
+                  type="radio"
+                  formControlName="visibility"
+                  value="public"
+                  (change)="onVisibilityChanged('public')"
                 />
-              </div>
 
-              @if (
-                sourceForm.controls.repositoryUrl.touched &&
-                sourceForm.controls.repositoryUrl.hasError(
-                  'required'
-                )
-              ) {
-                <span class="field-error">
-                  L’URL du repository est obligatoire.
-                </span>
-              }
+                <strong>
+                  Repository public
+                </strong>
 
-              @if (
-                sourceForm.controls.repositoryUrl.touched &&
-                sourceForm.controls.repositoryUrl.hasError(
-                  'pattern'
-                )
-              ) {
-                <span class="field-error">
-                  Utilisez une URL commençant par
-                  http:// ou https://.
+                <span>
+                  Accès HTTPS sans username, token ou mot de passe.
                 </span>
-              }
+              </label>
+
+              <label
+                class="choice-card"
+                [class.choice-card--selected]="
+                  visibility() === 'private'
+                "
+              >
+                <input
+                  type="radio"
+                  formControlName="visibility"
+                  value="private"
+                  (change)="onVisibilityChanged('private')"
+                />
+
+                <strong>
+                  Repository privé
+                </strong>
+
+                <span>
+                  Utilise un credential HTTPS ou une clé SSH.
+                </span>
+              </label>
             </div>
+          </div>
 
-            <div class="field-grid field-grid--two">
-              <div class="form-field">
-                <label for="branch">Branche</label>
+          <!-- Configuration privée -->
 
-                <input
-                  id="branch"
-                  type="text"
-                  formControlName="branch"
-                />
-              </div>
+          @if (visibility() === 'private') {
+            <!-- Transport -->
 
-              <div class="form-field">
-                <label for="accessMode">
-                  Accès au repository
+            <div class="choice-section">
+              <h4>
+                Méthode d’accès privée
+              </h4>
+
+              <div class="choice-grid">
+                <label
+                  class="choice-card"
+                  [class.choice-card--selected]="
+                    transport() === 'https'
+                  "
+                >
+                  <input
+                    type="radio"
+                    formControlName="transport"
+                    value="https"
+                    (change)="onTransportChanged('https')"
+                  />
+
+                  <strong>
+                    HTTPS
+                  </strong>
+
+                  <span>
+                    Username et mot de passe ou username et token.
+                  </span>
                 </label>
 
-                <select
-                  id="accessMode"
-                  formControlName="accessMode"
+                <label
+                  class="choice-card"
+                  [class.choice-card--selected]="
+                    transport() === 'ssh'
+                  "
                 >
-                  <option value="private">
-                    Privé
-                  </option>
+                  <input
+                    type="radio"
+                    formControlName="transport"
+                    value="ssh"
+                    (change)="onTransportChanged('ssh')"
+                  />
 
-                  <option value="public">
-                    Public
-                  </option>
-                </select>
+                  <strong>
+                    SSH
+                  </strong>
+
+                  <span>
+                    Clé privée liée à une Deploy Key GitLab.
+                  </span>
+                </label>
               </div>
             </div>
 
-            <div class="form-field">
-              <label for="subdirectory">
-                Sous-dossier
-                <span>Optionnel</span>
+            <!-- Origine du credential -->
+
+            <div class="choice-section">
+              <h4>
+                Origine du credential
+              </h4>
+
+              <div class="choice-grid">
+                <label
+                  class="choice-card"
+                  [class.choice-card--selected]="
+                    credentialSource() === 'integration'
+                  "
+                  [class.choice-card--disabled]="
+                    !integrationCredentialCompatible()
+                  "
+                >
+                  <input
+                    type="radio"
+                    formControlName="credentialSource"
+                    value="integration"
+                    [disabled]="
+                      !integrationCredentialCompatible()
+                    "
+                    (change)="
+                      onCredentialSourceChanged('integration')
+                    "
+                  />
+
+                  <strong>
+                    Credential de la connexion
+                  </strong>
+
+                  <span>
+                    Réutilise le credential déjà enregistré
+                    dans la page Intégrations.
+                  </span>
+                </label>
+
+                <label
+                  class="choice-card"
+                  [class.choice-card--selected]="
+                    credentialSource() === 'project'
+                  "
+                >
+                  <input
+                    type="radio"
+                    formControlName="credentialSource"
+                    value="project"
+                    (change)="
+                      onCredentialSourceChanged('project')
+                    "
+                  />
+
+                  <strong>
+                    Credential propre au projet
+                  </strong>
+
+                  <span>
+                    Fournissez un mot de passe, un token
+                    ou une clé privée spécifique.
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Credential venant de la connexion -->
+
+            @if (credentialSource() === 'integration') {
+              <section class="public-access-note">
+                <strong>
+                  Credential de la connexion sélectionné
+                </strong>
+
+                <p>
+                  Type :
+                  {{ credentialAuthLabel() }}
+                </p>
+
+                <p>
+                  Username :
+                  {{
+                    selectedConnection()?.credentialUsername
+                    ?? 'Non défini'
+                  }}
+                </p>
+
+                <p>
+                  Le secret est déjà chiffré dans la base de données.
+                  Il sera utilisé par Flask pour tester le repository.
+                </p>
+              </section>
+            }
+
+            <!-- Credential propre HTTPS -->
+
+            @if (
+              credentialSource() === 'project'
+              && transport() === 'https'
+            ) {
+              <div class="choice-section">
+                <h4>
+                  Authentification HTTPS
+                </h4>
+
+                <div class="choice-grid">
+                  <label
+                    class="choice-card"
+                    [class.choice-card--selected]="
+                      authMethod() === 'https_password'
+                    "
+                  >
+                    <input
+                      type="radio"
+                      formControlName="authMethod"
+                      value="https_password"
+                      (change)="
+                        onAuthMethodChanged('https_password')
+                      "
+                    />
+
+                    <strong>
+                      Username et mot de passe
+                    </strong>
+
+                    <span>
+                      Utilise le mot de passe du compte GitLab.
+                    </span>
+                  </label>
+
+                  <label
+                    class="choice-card"
+                    [class.choice-card--selected]="
+                      authMethod() === 'https_token'
+                    "
+                  >
+                    <input
+                      type="radio"
+                      formControlName="authMethod"
+                      value="https_token"
+                      (change)="
+                        onAuthMethodChanged('https_token')
+                      "
+                    />
+
+                    <strong>
+                      Username et token
+                    </strong>
+
+                    <span>
+                      Personal, Project, Group ou Deploy Token.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Type de token -->
+
+              @if (authMethod() === 'https_token') {
+                <div class="form-field">
+                  <label for="tokenType">
+                    Type de token GitLab
+                  </label>
+
+                  <select
+                    id="tokenType"
+                    formControlName="tokenType"
+                    (change)="onTokenTypeChanged()"
+                  >
+                    <option value="personal_access_token">
+                      Personal Access Token
+                    </option>
+
+                    <option value="project_access_token">
+                      Project Access Token
+                    </option>
+
+                    <option value="group_access_token">
+                      Group Access Token
+                    </option>
+
+                    <option value="deploy_token">
+                      Deploy Token
+                    </option>
+
+                    <option value="generic_token">
+                      Autre token compatible
+                    </option>
+                  </select>
+
+                  @if (
+                    form.controls.tokenType.value === 'deploy_token'
+                  ) {
+                    <small>
+                      Utilisez le username fourni par GitLab,
+                      par exemple
+                      <code>gitlab+deploy-token-12</code>.
+                    </small>
+                  } @else {
+                    <small>
+                      Pour un Personal, Project ou Group Access Token,
+                      vous pouvez utiliser
+                      <code>oauth2</code>
+                      comme username Git.
+                    </small>
+                  }
+                </div>
+              }
+
+              <!-- Username et secret HTTPS -->
+
+              <div class="form-grid form-grid--source">
+                <div class="form-field">
+                  <label for="gitUsername">
+                    Username Git
+                  </label>
+
+                  <input
+                    id="gitUsername"
+                    type="text"
+                    formControlName="username"
+                    placeholder="oauth2"
+                    autocomplete="username"
+                    (input)="invalidateSource()"
+                  />
+
+                  @if (
+                    authMethod() === 'https_password'
+                  ) {
+                    <small>
+                      Utilisez le nom d’utilisateur du compte GitLab.
+                    </small>
+                  } @else if (
+                    form.controls.tokenType.value === 'deploy_token'
+                  ) {
+                    <small>
+                      Utilisez le username exact fourni avec le Deploy Token.
+                    </small>
+                  } @else {
+                    <small>
+                      La valeur
+                      <code>oauth2</code>
+                      convient généralement pour les Access Tokens.
+                    </small>
+                  }
+                </div>
+
+                <div class="form-field">
+                  <label for="gitSecret">
+                    @if (authMethod() === 'https_token') {
+                      Token GitLab
+                    } @else {
+                      Mot de passe GitLab
+                    }
+                  </label>
+
+                  <input
+                    id="gitSecret"
+                    type="password"
+                    formControlName="secret"
+                    autocomplete="new-password"
+                    placeholder="Saisissez le secret"
+                    (input)="invalidateSource()"
+                  />
+
+                  <small>
+                    Le secret n’est jamais affiché dans les logs
+                    ni enregistré dans l’URL du repository.
+                  </small>
+                </div>
+              </div>
+
+              @if (authMethod() === 'https_password') {
+                <section class="public-access-note">
+                  <strong>
+                    Attention
+                  </strong>
+
+                  <p>
+                    Le mot de passe GitLab peut être refusé lorsque
+                    l’authentification à deux facteurs est activée
+                    ou lorsque le serveur impose l’utilisation de tokens.
+                  </p>
+                </section>
+              }
+            }
+
+            <!-- Credential propre SSH -->
+
+            @if (
+              credentialSource() === 'project'
+              && transport() === 'ssh'
+            ) {
+              <div class="form-field">
+                <label for="sshPrivateKey">
+                  Clé privée SSH
+                </label>
+
+                <textarea
+                  id="sshPrivateKey"
+                  rows="9"
+                  formControlName="secret"
+                  autocomplete="off"
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                  (input)="invalidateSource()"
+                ></textarea>
+
+                <small>
+                  La clé publique correspondante doit être ajoutée
+                  dans GitLab comme Deploy Key en lecture seule.
+                </small>
+              </div>
+
+              <section class="public-access-note">
+                <strong>
+                  Fonctionnement SSH
+                </strong>
+
+                <p>
+                  Piximind utilisera temporairement cette clé privée.
+                  La clé publique doit être autorisée dans le repository
+                  GitLab.
+                </p>
+              </section>
+            }
+          } @else {
+            <!-- Repository public -->
+
+            <section class="public-access-note">
+              <strong>
+                Accès public HTTPS
+              </strong>
+
+              <p>
+                Aucun username, mot de passe, token ou clé SSH
+                ne sera envoyé à Git.
+              </p>
+            </section>
+          }
+
+          <!-- URL et branche -->
+
+          <div class="form-grid form-grid--source">
+            <div class="form-field form-field--wide">
+              <label for="repositoryUrl">
+                URL de clonage Git
               </label>
 
               <input
-                id="subdirectory"
+                id="repositoryUrl"
                 type="text"
-                formControlName="subdirectory"
-                placeholder="Exemple : apps/api"
+                formControlName="repositoryUrl"
+                [placeholder]="
+                  transport() === 'ssh'
+                  && visibility() === 'private'
+                    ? 'git@gitlab.example.com:groupe/projet.git'
+                    : 'https://gitlab.example.com/groupe/projet.git'
+                "
+                autocomplete="off"
+                (input)="invalidateSource()"
               />
 
-              <small class="field-help">
-                À utiliser lorsque plusieurs applications
-                se trouvent dans le même repository.
+              <small>
+                Copiez l’adresse exacte depuis GitLab →
+                <strong>Clone</strong> →
+                HTTPS ou SSH.
+              </small>
+            </div>
+
+            <div class="form-field">
+              <label for="branch">
+                Branche
+              </label>
+
+              <input
+                id="branch"
+                type="text"
+                formControlName="branch"
+                placeholder="main"
+                autocomplete="off"
+                (input)="invalidateSource()"
+              />
+
+              <small>
+                Exemple :
+                <code>main</code>,
+                <code>develop</code>
+                ou
+                <code>release</code>.
               </small>
             </div>
           </div>
 
-          <aside class="information-panel">
-            <span class="information-panel__icon">
-              AI
-            </span>
+          <!-- Options avancées -->
 
-            <h4>Analyse prévue</h4>
+          <details class="advanced-options">
+            <summary>
+              Options avancées
+            </summary>
 
-            <ul>
-              <li>Structure du repository</li>
-              <li>Langage et framework</li>
-              <li>Commande de build</li>
-              <li>Commande de démarrage</li>
-              <li>Dockerfile existant ou manquant</li>
-              <li>Chart Helm existant ou manquant</li>
-              <li>Ports et variables nécessaires</li>
-            </ul>
+            <div class="form-field">
+              <label for="sourceSubdirectory">
+                Sous-dossier de l’application
+              </label>
 
-            <p>
-              La version réelle utilisera Flask pour
-              récupérer le repository et Ollama pour
-              compléter son analyse.
-            </p>
-          </aside>
-        </div>
+              <input
+                id="sourceSubdirectory"
+                type="text"
+                formControlName="sourceSubdirectory"
+                placeholder="Exemple : apps/api"
+                autocomplete="off"
+                (input)="invalidateSource()"
+              />
 
-        <footer class="wizard-actions">
-          <a
-            class="secondary-button"
-            routerLink="/projects"
-          >
-            Annuler
-          </a>
-
-          <button
-            class="primary-button"
-            type="submit"
-            [disabled]="isAnalyzing"
-          >
-            @if (isAnalyzing) {
-              <span class="spinner"></span>
-              Analyse en cours...
-            } @else {
-              Analyser le projet
-              <span>→</span>
-            }
-          </button>
-        </footer>
-      </form>
-    </section>
-  }
-
-  @if (currentStep === 2 && analysis) {
-    <section class="wizard-card">
-      <header class="wizard-card__header">
-        <div>
-          <p class="eyebrow">Étape 2 sur 5</p>
-          <h3>Résultat de l’analyse</h3>
-
-          <p>
-            Vérifiez les informations détectées et
-            les recommandations de l’assistant.
-          </p>
-        </div>
-
-        <span class="success-badge">
-          <span></span>
-          Analyse terminée
-        </span>
-      </header>
-
-      <div class="analysis-summary">
-        <div class="analysis-summary__icon">
-          ✓
-        </div>
-
-        <div>
-          <strong>
-            {{ analysis.framework }}
-            {{ analysis.frameworkVersion }}
-          </strong>
-
-          <p>
-            {{ analysis.architecture }} avec
-            {{ analysis.runtime }}.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          (click)="goToStep(1)"
-        >
-          Modifier la source
-        </button>
-      </div>
-
-      <section class="content-section">
-        <header class="section-heading">
-          <div>
-            <p class="eyebrow">
-              Résultats détaillés
-            </p>
-
-            <h4>Informations détectées</h4>
-          </div>
-        </header>
-
-        <div class="facts-grid">
-          @for (fact of analysisFacts; track fact.label) {
-            <article class="fact-card">
-              <header>
-                <span
-                  class="fact-type"
-                  [class.fact-type--ai]="
-                    fact.kind === 'ai'
-                  "
-                >
-                  {{
-                    fact.kind === 'ai'
-                      ? 'Proposition IA'
-                      : 'Détecté'
-                  }}
-                </span>
-
-                <span class="confidence">
-                  {{ fact.confidence }} %
-                </span>
-              </header>
-
-              <small>{{ fact.label }}</small>
-
-              <strong>{{ fact.value }}</strong>
-
-              <p>
-                Source : {{ fact.source }}
-              </p>
-            </article>
-          }
-        </div>
-      </section>
-
-      <section class="analysis-details">
-        <article>
-          <span>Commande de build</span>
-          <code>{{ analysis.buildCommand }}</code>
-        </article>
-
-        <article>
-          <span>Commande de démarrage</span>
-          <code>{{ analysis.startCommand }}</code>
-        </article>
-
-        <article>
-          <span>Dockerfile</span>
-          <strong>
-            {{
-              analysis.dockerfileDetected
-                ? 'Détecté'
-                : 'À générer'
-            }}
-          </strong>
-        </article>
-
-        <article>
-          <span>Chart Helm</span>
-          <strong>
-            {{
-              analysis.helmDetected
-                ? 'Détecté'
-                : 'À générer'
-            }}
-          </strong>
-        </article>
-      </section>
-
-      <section class="warnings-panel">
-        <header>
-          <strong>Points à vérifier</strong>
-        </header>
-
-        <ul>
-          @for (
-            warning of analysis.warnings;
-            track warning
-          ) {
-            <li>{{ warning }}</li>
-          }
-        </ul>
-      </section>
-
-      <footer class="wizard-actions">
-        <button
-          class="secondary-button"
-          type="button"
-          (click)="goToStep(1)"
-        >
-          ← Étape précédente
-        </button>
-
-        <button
-          class="primary-button"
-          type="button"
-          [disabled]="isGenerating"
-          (click)="continueToGeneration()"
-        >
-          @if (isGenerating) {
-            <span class="spinner"></span>
-            Génération...
-          } @else {
-            Préparer Docker et Helm
-            <span>→</span>
-          }
-        </button>
-      </footer>
-    </section>
-  }
-
-  @if (currentStep === 3 && analysis) {
-    <section class="wizard-card">
-      <header class="wizard-card__header">
-        <div>
-          <p class="eyebrow">Étape 3 sur 5</p>
-          <h3>Docker, Helm et configuration</h3>
-
-          <p>
-            Modifiez les paramètres, examinez les
-            fichiers proposés et interrogez l’assistant.
-          </p>
-        </div>
-
-        <span class="simulation-badge">
-          Assistant simulé
-        </span>
-      </header>
-
-      <form
-        [formGroup]="configurationForm"
-        (ngSubmit)="prepareReview()"
-      >
-        <section class="content-section">
-          <header class="section-heading">
-            <div>
-              <p class="eyebrow">Kubernetes</p>
-              <h4>Configuration principale</h4>
+              <small>
+                Laissez vide lorsque l’application se trouve
+                à la racine du repository.
+              </small>
             </div>
+          </details>
 
+          <!-- Test du repository -->
+
+          <div class="source-test-area">
             <button
-              class="text-button"
+              class="secondary-button"
               type="button"
-              (click)="regenerateFiles()"
+              [disabled]="isTesting()"
+              (click)="validateSource()"
             >
-              Régénérer les fichiers
-            </button>
-          </header>
-
-          <div class="field-grid field-grid--three">
-            <div class="form-field">
-              <label for="deploymentName">
-                Nom de l’application
-              </label>
-
-              <input
-                id="deploymentName"
-                type="text"
-                formControlName="deploymentName"
-              />
-            </div>
-
-            <div class="form-field">
-              <label for="environment">
-                Environnement
-              </label>
-
-              <select
-                id="environment"
-                formControlName="environment"
-              >
-                <option value="lab">Lab</option>
-                <option value="staging">
-                  Staging
-                </option>
-                <option value="production">
-                  Production
-                </option>
-              </select>
-            </div>
-
-            <div class="form-field">
-              <label for="namespace">
-                Namespace
-              </label>
-
-              <input
-                id="namespace"
-                type="text"
-                formControlName="namespace"
-              />
-            </div>
-
-            <div class="form-field">
-              <label for="replicas">
-                Replicas
-              </label>
-
-              <input
-                id="replicas"
-                type="number"
-                min="1"
-                max="10"
-                formControlName="replicas"
-              />
-            </div>
-
-            <div class="form-field">
-              <label for="containerPort">
-                Port du conteneur
-              </label>
-
-              <input
-                id="containerPort"
-                type="number"
-                formControlName="containerPort"
-              />
-            </div>
-
-            <div class="form-field">
-              <label for="ingressHost">
-                Nom de domaine
-              </label>
-
-              <input
-                id="ingressHost"
-                type="text"
-                formControlName="ingressHost"
-              />
-            </div>
-
-            <div class="form-field">
-              <label for="cpuRequest">
-                CPU demandé
-              </label>
-
-              <input
-                id="cpuRequest"
-                type="text"
-                formControlName="cpuRequest"
-              />
-            </div>
-
-            <div class="form-field">
-              <label for="memoryRequest">
-                Mémoire demandée
-              </label>
-
-              <input
-                id="memoryRequest"
-                type="text"
-                formControlName="memoryRequest"
-              />
-            </div>
-          </div>
-
-          <div class="options-grid">
-            <label class="option-card">
-              <input
-                type="checkbox"
-                formControlName="ingressEnabled"
-              />
-
-              <span>
-                <strong>Activer Ingress</strong>
-                <small>
-                  Exposer l’application avec un nom
-                  de domaine.
-                </small>
-              </span>
-            </label>
-
-            <label class="option-card">
-              <input
-                type="checkbox"
-                formControlName="requireApproval"
-              />
-
-              <span>
-                <strong>Approbation humaine</strong>
-                <small>
-                  Confirmer avant de lancer le
-                  déploiement.
-                </small>
-              </span>
-            </label>
-          </div>
-        </section>
-
-        <section class="artifacts-section">
-          <header class="section-heading">
-            <div>
-              <p class="eyebrow">
-                Fichiers proposés
-              </p>
-
-              <h4>Docker et chart Helm</h4>
-            </div>
-          </header>
-
-          <div class="artifacts-workspace">
-            <nav class="files-navigation">
-              @for (
-                file of generatedFiles;
-                track file.name
-              ) {
-                <button
-                  type="button"
-                  [class.files-navigation__item--active]="
-                    selectedFileName === file.name
-                  "
-                  (click)="selectFile(file.name)"
-                >
-                  <span>
-                    {{
-                      file.category === 'docker'
-                        ? 'D'
-                        : 'H'
-                    }}
-                  </span>
-
-                  <div>
-                    <strong>{{ file.name }}</strong>
-                    <small>
-                      {{
-                        file.status === 'existing'
-                          ? 'Fichier existant'
-                          : 'Proposition générée'
-                      }}
-                    </small>
-                  </div>
-                </button>
+              @if (isTesting()) {
+                Test de l’accès en cours…
+              } @else {
+                Tester l’accès au repository
               }
-            </nav>
+            </button>
 
-            <article class="code-preview">
-              @if (selectedFile; as file) {
+            @if (sourceError()) {
+              <section
+                class="inline-message inline-message--error"
+                role="alert"
+              >
+                <strong>
+                  Impossible d’accéder au repository
+                </strong>
+
+                <p>
+                  {{ sourceError() }}
+                </p>
+              </section>
+            }
+
+            @if (
+              sourceValidation();
+              as validation
+            ) {
+              <section
+                class="inline-message inline-message--success"
+                role="status"
+              >
                 <header>
                   <div>
-                    <strong>{{ file.name }}</strong>
+                    <strong>
+                      Accès au repository validé
+                    </strong>
 
-                    <span>
+                    <p>
                       {{
-                        file.status === 'existing'
-                          ? 'Existant'
-                          : 'Généré'
+                        sourceSuccess()
+                        ?? 'Le repository et la branche sont accessibles.'
                       }}
-                    </span>
+                    </p>
                   </div>
 
-                  <button type="button">
-                    Modifier
-                  </button>
+                  <span>
+                    Valide
+                  </span>
                 </header>
 
-                <pre><code>{{ file.content }}</code></pre>
-              }
-            </article>
-          </div>
-        </section>
+                <div class="validation-list">
+                  <article>
+                    <i>✓</i>
+                    Serveur GitLab accessible
+                  </article>
 
-        <section class="assistant-section">
-          <header class="section-heading">
-            <div>
-              <p class="eyebrow">
-                Assistant du projet
-              </p>
+                  <article>
+                    <i>✓</i>
 
-              <h4>Interroger et modifier</h4>
-            </div>
+                    @if (validation.visibility === 'public') {
+                      Aucun credential nécessaire
+                    } @else {
+                      Authentification acceptée
+                    }
+                  </article>
 
-            <span class="assistant-status">
-              AI
-            </span>
-          </header>
+                  <article>
+                    <i>✓</i>
+                    Repository accessible
+                  </article>
 
-          <div class="assistant-layout">
-            <div class="conversation">
-              @for (
-                message of aiMessages;
-                track $index
-              ) {
-                <article
-                  class="message"
-                  [class.message--user]="
-                    message.author === 'user'
-                  "
-                >
-                  <strong>
-                    {{
-                      message.author === 'user'
-                        ? 'Vous'
-                        : 'Assistant IA'
-                    }}
-                  </strong>
+                  <article>
+                    <i>✓</i>
+                    Branche
+                    {{ validation.branch }}
+                    trouvée
+                  </article>
 
-                  <p>{{ message.content }}</p>
-                </article>
-              }
+                  <article>
+                    <i>✓</i>
+                    Commit
+                    {{ validation.commitSha.slice(0, 12) }}
+                    détecté
+                  </article>
 
-              @if (isAssistantThinking) {
-                <article class="message">
-                  <strong>Assistant IA</strong>
-                  <p>Analyse de la demande...</p>
-                </article>
-              }
-            </div>
+                  <article class="pending-step">
+                    <i>○</i>
+                    Le code sera cloné pendant la phase Analyse
+                  </article>
+                </div>
 
-            <form
-              class="assistant-form"
-              [formGroup]="assistantForm"
-              (ngSubmit)="sendAssistantMessage()"
-            >
-              <textarea
-                formControlName="prompt"
-                rows="3"
-                placeholder="Exemple : utilise 3 replicas ou désactiver Ingress"
-              ></textarea>
+                <div class="validation-details">
+                  <article>
+                    <span>Repository</span>
 
-              <button
-                class="primary-button"
-                type="submit"
-                [disabled]="isAssistantThinking"
-              >
-                Envoyer
-                <span>→</span>
-              </button>
-            </form>
-          </div>
-        </section>
+                    <strong>
+                      {{ validation.repositoryPath }}
+                    </strong>
+                  </article>
 
-        <footer class="wizard-actions">
-          <button
-            class="secondary-button"
-            type="button"
-            (click)="goToStep(2)"
-          >
-            ← Étape précédente
-          </button>
+                  <article>
+                    <span>Serveur</span>
 
-          <button
-            class="primary-button"
-            type="submit"
-          >
-            Vérifier la configuration
-            <span>→</span>
-          </button>
-        </footer>
-      </form>
-    </section>
-  }
+                    <strong>
+                      {{ validation.repositoryHost }}
+                    </strong>
+                  </article>
 
-  @if (currentStep === 4 && analysis) {
-    <section class="wizard-card">
-      <header class="wizard-card__header">
-        <div>
-          <p class="eyebrow">Étape 4 sur 5</p>
-          <h3>Vérification et confirmation</h3>
+                  <article>
+                    <span>Transport</span>
 
-          <p>
-            Contrôlez les informations avant
-            d’autoriser le déploiement.
-          </p>
-        </div>
+                    <strong>
+                      {{ validation.transport.toUpperCase() }}
+                    </strong>
+                  </article>
 
-        <span class="review-badge">
-          Approbation requise
-        </span>
-      </header>
+                  <article>
+                    <span>Visibilité</span>
 
-      <div class="review-grid">
-        <article class="review-card">
-          <p class="eyebrow">Source</p>
-          <h4>Repository GitLab</h4>
-
-          <dl>
-            <div>
-              <dt>URL</dt>
-              <dd>
-                {{
-                  sourceForm.controls
-                    .repositoryUrl.value
-                }}
-              </dd>
-            </div>
-
-            <div>
-              <dt>Branche</dt>
-              <dd>
-                {{
-                  sourceForm.controls.branch.value
-                }}
-              </dd>
-            </div>
-          </dl>
-        </article>
-
-        <article class="review-card">
-          <p class="eyebrow">Application</p>
-          <h4>Analyse</h4>
-
-          <dl>
-            <div>
-              <dt>Framework</dt>
-              <dd>{{ analysis.framework }}</dd>
-            </div>
-
-            <div>
-              <dt>Runtime</dt>
-              <dd>{{ analysis.runtime }}</dd>
-            </div>
-
-            <div>
-              <dt>Commande</dt>
-              <dd>{{ analysis.startCommand }}</dd>
-            </div>
-          </dl>
-        </article>
-
-        <article class="review-card">
-          <p class="eyebrow">Destination</p>
-          <h4>Kubernetes</h4>
-
-          <dl>
-            <div>
-              <dt>Application</dt>
-              <dd>
-                {{
-                  configurationForm.controls
-                    .deploymentName.value
-                }}
-              </dd>
-            </div>
-
-            <div>
-              <dt>Namespace</dt>
-              <dd>
-                {{
-                  configurationForm.controls
-                    .namespace.value
-                }}
-              </dd>
-            </div>
-
-            <div>
-              <dt>Replicas</dt>
-              <dd>
-                {{
-                  configurationForm.controls
-                    .replicas.value
-                }}
-              </dd>
-            </div>
-
-            <div>
-              <dt>Port</dt>
-              <dd>
-                {{
-                  configurationForm.controls
-                    .containerPort.value
-                }}
-              </dd>
-            </div>
-          </dl>
-        </article>
-      </div>
-
-      <section class="validation-panel">
-        <header>
-          <p class="eyebrow">
-            Validations automatiques
-          </p>
-
-          <h4>Résultat des contrôles</h4>
-        </header>
-
-        <div class="validation-list">
-          <div>
-            <span class="validation-icon">✓</span>
-            <strong>Dockerfile valide</strong>
-          </div>
-
-          <div>
-            <span class="validation-icon">✓</span>
-            <strong>Syntaxe YAML valide</strong>
-          </div>
-
-          <div>
-            <span class="validation-icon">✓</span>
-            <strong>Templates Helm valides</strong>
-          </div>
-
-          <div>
-            <span class="validation-icon">✓</span>
-            <strong>Port Service cohérent</strong>
-          </div>
-
-          <div>
-            <span class="validation-icon validation-icon--warning">
-              !
-            </span>
-
-            <strong>
-              Endpoint /health à confirmer
-            </strong>
+                    <strong>
+                      {{
+                        validation.visibility === 'public'
+                          ? 'Public'
+                          : 'Privé'
+                      }}
+                    </strong>
+                  </article>
+                </div>
+              </section>
+            }
           </div>
         </div>
       </section>
 
-      <form
-        class="confirmation-panel"
-        [formGroup]="confirmationForm"
-        (ngSubmit)="launchDeployment()"
-      >
-        <label class="confirmation-control">
-          <input
-            type="checkbox"
-            formControlName="approved"
-          />
+      <!-- =====================================================
+           SECTION 3 : ENVIRONNEMENTS
+           ===================================================== -->
 
-          <span>
-            <strong>
-              Je confirme cette configuration
-            </strong>
-
-            <small>
-              J’autorise la plateforme à construire
-              l’image, préparer GitOps et lancer le
-              déploiement.
-            </small>
+      <section class="form-card">
+        <header class="form-card__heading">
+          <span class="section-number">
+            3
           </span>
-        </label>
 
-        @if (
-          confirmationForm.controls.approved.invalid &&
-          confirmationForm.controls.approved.touched
-        ) {
-          <span class="field-error confirmation-error">
-            Vous devez confirmer la configuration.
-          </span>
-        }
-
-        <footer class="wizard-actions">
-          <button
-            class="secondary-button"
-            type="button"
-            (click)="goToStep(3)"
-          >
-            ← Modifier la configuration
-          </button>
-
-          <button
-            class="primary-button"
-            type="submit"
-          >
-            Lancer le déploiement
-            <span>→</span>
-          </button>
-        </footer>
-      </form>
-    </section>
-  }
-
-  @if (currentStep === 5) {
-    <section class="wizard-card">
-      <header class="wizard-card__header">
-        <div>
-          <p class="eyebrow">Étape 5 sur 5</p>
-
-          <h3>
-            Déploiement de
-            {{
-              configurationForm.controls
-                .deploymentName.value
-            }}
-          </h3>
-
-          <p>
-            Suivez la progression et les logs
-            de chaque étape.
-          </p>
-        </div>
-
-        @if (deploymentFinished) {
-          <span class="success-badge">
-            <span></span>
-            Déploiement terminé
-          </span>
-        } @else {
-          <span class="running-badge">
-            <span></span>
-            Déploiement en cours
-          </span>
-        }
-      </header>
-
-      <section class="progress-section">
-        <div class="progress-heading">
-          <strong>
-            Progression
-          </strong>
-
-          <span>
-            {{ deploymentProgress }} %
-          </span>
-        </div>
-
-        <div class="progress-track">
-          <span
-            [style.width.%]="deploymentProgress"
-          ></span>
-        </div>
-      </section>
-
-      <section class="pipeline-list">
-        @for (
-          stage of pipelineStages;
-          track stage.id
-        ) {
-          <article
-            class="pipeline-stage"
-            [class]="
-              'pipeline-stage pipeline-stage--' +
-              stage.status
-            "
-          >
-            <span class="pipeline-stage__indicator">
-              @if (stage.status === 'success') {
-                ✓
-              } @else if (stage.status === 'running') {
-                ●
-              } @else if (stage.status === 'error') {
-                ×
-              } @else {
-                {{ stage.id }}
-              }
-            </span>
-
-            <div>
-              <strong>{{ stage.name }}</strong>
-              <small>{{ stage.description }}</small>
-            </div>
-
-            <span class="pipeline-stage__status">
-              @if (stage.status === 'success') {
-                Terminé
-              } @else if (stage.status === 'running') {
-                En cours
-              } @else if (stage.status === 'error') {
-                Erreur
-              } @else {
-                En attente
-              }
-            </span>
-          </article>
-        }
-      </section>
-
-      <section class="logs-panel">
-        <header>
           <div>
-            <p class="eyebrow">
-              Exécution
+            <h3>
+              Environnements autorisés
+            </h3>
+
+            <p>
+              Sélectionnez les infrastructures dans lesquelles
+              ce projet pourra être déployé.
             </p>
-
-            <h4>Logs du déploiement</h4>
           </div>
-
-          <span>LIVE</span>
         </header>
 
-        <pre>@for (log of deploymentLogs; track $index) {
-{{ log }}
-}</pre>
-      </section>
-
-      @if (deploymentFinished) {
-        <section class="deployment-success">
-          <span>✓</span>
-
-          <div>
+        @if (environments().length === 0) {
+          <section class="empty-environments">
             <strong>
-              Application déployée avec succès
+              Aucun environnement disponible
             </strong>
 
             <p>
-              Les étapes GitOps, Argo CD et Kubernetes
-              sont terminées.
+              Créez d’abord un environnement depuis
+              la page Infrastructure.
+            </p>
+          </section>
+        } @else {
+          <div class="environment-grid">
+            @for (
+              environment of environments();
+              track environment.id
+            ) {
+              <article
+                class="environment-card"
+                [class.environment-card--selected]="
+                  isEnvironmentSelected(environment.id)
+                "
+              >
+                <header>
+                  <label>
+                    <input
+                      type="checkbox"
+                      [checked]="
+                        isEnvironmentSelected(environment.id)
+                      "
+                      (change)="
+                        toggleEnvironment(
+                          environment.id,
+                          $any($event.target).checked
+                        )
+                      "
+                    />
+
+                    <strong>
+                      {{ environment.name }}
+                    </strong>
+                  </label>
+
+                  <span class="context-badge">
+                    {{ environment.environmentType }}
+                  </span>
+                </header>
+
+                <dl>
+                  <div>
+                    <dt>
+                      Namespace
+                    </dt>
+
+                    <dd>
+                      {{ environment.namespace }}
+                    </dd>
+                  </div>
+
+                  <div>
+                    <dt>
+                      Domaine
+                    </dt>
+
+                    <dd>
+                      {{
+                        environment.domain
+                        ?? 'Non défini'
+                      }}
+                    </dd>
+                  </div>
+
+                  <div>
+                    <dt>
+                      Configuration
+                    </dt>
+
+                    <dd>
+                      {{ environment.configurationStatus }}
+                    </dd>
+                  </div>
+                </dl>
+
+                <label class="default-control">
+                  <input
+                    type="radio"
+                    name="defaultEnvironment"
+                    [checked]="
+                      defaultEnvironmentId() === environment.id
+                    "
+                    (change)="
+                      selectDefaultEnvironment(environment.id)
+                    "
+                  />
+
+                  Définir comme environnement par défaut
+                </label>
+              </article>
+            }
+          </div>
+        }
+
+        @if (environmentError()) {
+          <section
+            class="section-message section-message--error"
+            role="alert"
+          >
+            {{ environmentError() }}
+          </section>
+        }
+      </section>
+
+      <!-- =====================================================
+           SECTION 4 : RÉSUMÉ
+           ===================================================== -->
+
+      <section class="form-card">
+        <header class="form-card__heading">
+          <span class="section-number">
+            4
+          </span>
+
+          <div>
+            <h3>
+              Résumé de la phase 1
+            </h3>
+
+            <p>
+              Vérifiez la configuration avant d’enregistrer
+              le projet.
             </p>
           </div>
-        </section>
-      }
+        </header>
 
-      <footer class="wizard-actions">
-        <a
-          class="secondary-button"
-          routerLink="/projects"
-        >
-          Retour aux projets
-        </a>
+        <div class="summary-grid">
+          <article>
+            <span>
+              Projet
+            </span>
 
-        @if (deploymentFinished) {
+            <strong>
+              {{
+                form.controls.name.value
+                || 'Non défini'
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>
+              Serveur GitLab
+            </span>
+
+            <strong>
+              {{
+                selectedConnection()?.name
+                ?? 'Non défini'
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>
+              Repository
+            </span>
+
+            <strong>
+              {{
+                form.controls.repositoryUrl.value
+                || 'Non défini'
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>
+              Visibilité
+            </span>
+
+            <strong>
+              {{
+                visibility() === 'public'
+                  ? 'Public'
+                  : 'Privé'
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>
+              Transport
+            </span>
+
+            <strong>
+              {{
+                (
+                  visibility() === 'public'
+                    ? 'https'
+                    : transport()
+                ).toUpperCase()
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>
+              Credential
+            </span>
+
+            <strong>
+              @if (visibility() === 'public') {
+                Aucun
+              } @else if (
+                credentialSource() === 'integration'
+              ) {
+                Connexion GitLab
+              } @else if (
+                transport() === 'ssh'
+              ) {
+                Clé SSH du projet
+              } @else if (
+                authMethod() === 'https_password'
+              ) {
+                Username et mot de passe
+              } @else {
+                Username et token
+              }
+            </strong>
+          </article>
+
+          <article>
+            <span>
+              Branche
+            </span>
+
+            <strong>
+              {{
+                form.controls.branch.value
+                || 'Non définie'
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>
+              Source validée
+            </span>
+
+            <strong
+              [class.summary-value--valid]="
+                sourceValidation()
+              "
+            >
+              {{
+                sourceValidation()
+                  ? 'Oui'
+                  : 'Non'
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>
+              Environnements autorisés
+            </span>
+
+            <strong>
+              {{ selectedEnvironmentIds().length }}
+            </strong>
+          </article>
+
+          <article>
+            <span>
+              Environnement par défaut
+            </span>
+
+            <strong>
+              @if (defaultEnvironmentId() === null) {
+                Non défini
+              } @else {
+                @for (
+                  environment of environments();
+                  track environment.id
+                ) {
+                  @if (
+                    environment.id === defaultEnvironmentId()
+                  ) {
+                    {{ environment.name }}
+                  }
+                }
+              }
+            </strong>
+          </article>
+        </div>
+      </section>
+
+      <!-- =====================================================
+           CRÉATION
+           ===================================================== -->
+
+      <footer class="creation-footer">
+        <div>
+          <strong>
+            Prochaine phase
+          </strong>
+
+          <span>
+            Clone temporaire du repository et analyse
+            des technologies utilisées.
+          </span>
+        </div>
+
+        <div class="creation-actions">
+          @if (creationError()) {
+            <section
+              class="section-message section-message--error"
+              role="alert"
+            >
+              {{ creationError() }}
+            </section>
+          }
+
           <button
             class="primary-button"
-            type="button"
-            (click)="resetWizard()"
+            type="submit"
+            [disabled]="
+              form.invalid
+              || !sourceValidation()
+              || selectedEnvironmentIds().length === 0
+              || defaultEnvironmentId() === null
+              || isCreating()
+            "
           >
-            Déployer un autre projet
+            @if (isCreating()) {
+              Création du projet…
+            } @else {
+              Créer le projet
+            }
           </button>
-        }
+        </div>
       </footer>
-    </section>
+    </form>
   }
 </section>

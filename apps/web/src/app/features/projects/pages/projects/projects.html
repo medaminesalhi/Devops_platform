@@ -2,358 +2,268 @@
   <header class="page-heading">
     <div>
       <p class="eyebrow">
-        Gestion des applications
+        Espace de travail
       </p>
 
-      <h2>Projets</h2>
+      <h2>
+        Projets
+      </h2>
 
       <p>
-        Consultez les applications enregistrées, leurs versions
-        déployées et les derniers commits disponibles.
+        Gérez les repositories,
+        les environnements et les déploiements.
       </p>
     </div>
-  </header>
 
-  <section
-    class="project-actions"
-    aria-label="Actions principales"
-  >
-    <button
-      class="action-card action-card--primary"
-      type="button"
+    <a
+      class="primary-button"
       routerLink="/projects/new"
     >
-      <span class="action-card__icon">+</span>
+      + Nouveau projet
+    </a>
+  </header>
 
-      <span>
-        <strong>Nouveau projet</strong>
-
-        <small>
-          Analyser et déployer un repository GitLab.
-        </small>
-      </span>
-
-      <span class="action-card__arrow">→</span>
-    </button>
-
-    <button
-      class="action-card"
-      type="button"
-      (click)="
-        selectAction(
-          'Importation d’une application existante'
-        )
-      "
+  <section class="filters-card">
+    <form
+      [formGroup]="filterForm"
+      (ngSubmit)="loadProjects()"
     >
-      <span class="action-card__icon">⇧</span>
-
-      <span>
-        <strong>Importer une application</strong>
-
-        <small>
-          Adopter une application déjà dans Kubernetes.
-        </small>
-      </span>
-
-      <span class="action-card__arrow">→</span>
-    </button>
-
-    <button
-      class="action-card"
-      type="button"
-      (click)="
-        selectAction(
-          'Vérification des commits GitLab'
-        )
-      "
-    >
-      <span class="action-card__icon">↻</span>
-
-      <span>
-        <strong>Vérifier les mises à jour</strong>
-
-        <small>
-          Comparer les versions avec les derniers commits.
-        </small>
-      </span>
-
-      <span class="action-card__arrow">→</span>
-    </button>
-  </section>
-
-  @if (informationMessage) {
-    <div class="information-message">
-      <span>
-        {{ informationMessage }} : cette fonctionnalité
-        sera connectée à sa prochaine page.
-      </span>
-
-      <button
-        type="button"
-        aria-label="Fermer"
-        (click)="closeMessage()"
-      >
-        ×
-      </button>
-    </div>
-  }
-
-  <section class="summary-grid">
-    <article class="summary-card">
-      <span>Projets enregistrés</span>
-
-      <strong>{{ totalProjects }}</strong>
-
-      <small>
-        Total des applications connues
-      </small>
-    </article>
-
-    <article class="summary-card summary-card--success">
-      <span>Projets à jour</span>
-
-      <strong>{{ upToDateProjects }}</strong>
-
-      <small>
-        Aucune nouvelle version détectée
-      </small>
-    </article>
-
-    <article class="summary-card summary-card--warning">
-      <span>Mises à jour</span>
-
-      <strong>{{ availableUpdates }}</strong>
-
-      <small>
-        Nouveaux commits disponibles
-      </small>
-    </article>
-
-    <article class="summary-card summary-card--danger">
-      <span>Interventions</span>
-
-      <strong>
-        {{ projectsRequiringAttention }}
-      </strong>
-
-      <small>
-        Projets nécessitant une action
-      </small>
-    </article>
-  </section>
-
-  <section class="projects-panel">
-    <header class="projects-panel__header">
-      <div>
-        <p class="eyebrow">Catalogue</p>
-
-        <h3>Applications enregistrées</h3>
-      </div>
-
-      <span class="results-count">
-        {{ filteredProjects.length }}
-        résultat(s)
-      </span>
-    </header>
-
-    <div class="filters">
-      <label class="search-field">
-        <span>Rechercher</span>
+      <div class="filter-field">
+        <label for="projectSearch">
+          Recherche
+        </label>
 
         <input
+          id="projectSearch"
           type="search"
-          [(ngModel)]="searchTerm"
-          placeholder="Nom, repository ou technologie..."
+          formControlName="search"
+          placeholder="Nom ou repository…"
         />
-      </label>
+      </div>
 
-      <label>
-        <span>État</span>
+      <div class="filter-field">
+        <label for="projectStatus">
+          Statut
+        </label>
 
-        <select [(ngModel)]="statusFilter">
-          <option value="all">
-            Tous les états
+        <select
+          id="projectStatus"
+          formControlName="status"
+        >
+          <option value="">
+            Tous les statuts
           </option>
 
-          <option value="up-to-date">
-            À jour
+          <option value="active">
+            Actif
           </option>
 
-          <option value="update-available">
-            Mise à jour disponible
+          <option value="draft">
+            Brouillon
           </option>
 
-          <option value="deploying">
-            Déploiement en cours
-          </option>
-
-          <option value="attention">
-            Intervention requise
-          </option>
-        </select>
-      </label>
-
-      <label>
-        <span>Technologie</span>
-
-        <select [(ngModel)]="technologyFilter">
-          <option value="all">
-            Toutes les technologies
-          </option>
-
-          <option value="Angular">
-            Angular
-          </option>
-
-          <option value="Flask">
-            Flask
-          </option>
-
-          <option value="Spring Boot">
-            Spring Boot
+          <option value="source_error">
+            Erreur de source
           </option>
         </select>
-      </label>
+      </div>
 
-      <button
-        class="clear-filters-button"
-        type="button"
-        (click)="clearFilters()"
+      <div class="filter-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          (click)="resetFilters()"
+        >
+          Réinitialiser
+        </button>
+
+        <button
+          class="primary-button"
+          type="submit"
+        >
+          Rechercher
+        </button>
+      </div>
+    </form>
+  </section>
+
+  @if (errorMessage()) {
+    <section class="message message--error">
+      {{ errorMessage() }}
+    </section>
+  }
+
+  @if (isLoading()) {
+    <section class="loading-card">
+      Chargement des projets…
+    </section>
+  } @else if (projects().length === 0) {
+    <section class="empty-state">
+      <h3>
+        Aucun projet
+      </h3>
+
+      <p>
+        Créez un premier projet
+        et associez-le à un environnement.
+      </p>
+
+      <a
+        class="primary-button"
+        routerLink="/projects/new"
       >
-        Réinitialiser
-      </button>
-    </div>
+        Créer un projet
+      </a>
+    </section>
+  } @else {
+    <section class="projects-card">
+      <header>
+        <div>
+          <h3>
+            Projets configurés
+          </h3>
 
-    <div class="table-wrapper">
-      <table>
-        <thead>
-          <tr>
-            <th>Projet</th>
-            <th>Technologie</th>
-            <th>Repository</th>
-            <th>Version déployée</th>
-            <th>Dernier commit</th>
-            <th>État</th>
-            <th>Environnement</th>
-            <th></th>
-          </tr>
-        </thead>
+          <p>
+            {{ total() }} projet(s)
+          </p>
+        </div>
+      </header>
 
-        <tbody>
-          @for (
-            project of filteredProjects;
-            track project.id
-          ) {
+      <div class="table-container">
+        <table>
+          <thead>
             <tr>
-              <td>
-                <div class="project-identity">
-                  <div class="project-avatar">
+              <th>Projet</th>
+              <th>Repository</th>
+              <th>Accès</th>
+              <th>Branche</th>
+              <th>Environnement</th>
+              <th>Statut</th>
+              <th>Modification</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            @for (
+              project of projects();
+              track project.id
+            ) {
+              <tr>
+                <td>
+                  <div class="project-name">
+                    <span>
+                      {{
+                        project.name
+                          .charAt(0)
+                          .toUpperCase()
+                      }}
+                    </span>
+
+                    <div>
+                      <strong>
+                        {{ project.name }}
+                      </strong>
+
+                      <small>
+                        {{ project.slug }}
+                      </small>
+                    </div>
+                  </div>
+                </td>
+
+                <td>
+                  <strong>
                     {{
-                      project.name
-                        .slice(0, 2)
+                      project.source
+                        .repositoryPath
+                    }}
+                  </strong>
+
+                  <small>
+                    {{
+                      project.source
+                        .connectionName
+                    }}
+                  </small>
+                </td>
+
+                <td>
+                  <strong>
+                    {{
+                      visibilityLabel(
+                        project.source.visibility
+                      )
+                    }}
+                  </strong>
+
+                  <small>
+                    {{
+                      project.source.transport
                         .toUpperCase()
                     }}
-                  </div>
+                  </small>
+                </td>
 
-                  <div>
-                    <strong>
-                      {{ project.name }}
-                    </strong>
+                <td>
+                  {{ project.source.branch }}
+                </td>
 
-                    <span>
-                      {{ project.description }}
-                    </span>
-                  </div>
-                </div>
-              </td>
+                <td>
+                  {{
+                    project.defaultEnvironment
+                      ?.name
+                    ?? 'Non défini'
+                  }}
+                </td>
 
-              <td>
-                <span class="technology-badge">
-                  {{ project.technology }}
-                </span>
-              </td>
-
-              <td>
-                <div class="repository">
-                  <strong>
-                    {{ project.repository }}
-                  </strong>
-
-                  <span>
-                    {{ project.branch }}
+                <td>
+                  <span
+                    class="status-badge"
+                    [class.status-badge--active]="
+                      project.status === 'active'
+                    "
+                    [class.status-badge--error]="
+                      project.status
+                      === 'source_error'
+                    "
+                  >
+                    {{
+                      projectStatusLabel(
+                        project.status
+                      )
+                    }}
                   </span>
-                </div>
-              </td>
+                </td>
 
-              <td>
-                <code>
-                  {{ project.deployedCommit }}
-                </code>
-              </td>
+                <td>
+                  @if (project.updatedAt) {
+                    {{
+                      project.updatedAt
+                      | date:
+                        'dd/MM/yyyy HH:mm'
+                    }}
+                  } @else {
+                    —
+                  }
+                </td>
 
-              <td>
-                <code
-                  [class.commit-changed]="
-                    project.deployedCommit !==
-                    project.latestCommit
-                  "
-                >
-                  {{ project.latestCommit }}
-                </code>
-              </td>
-
-              <td>
-                <span
-                  class="project-status"
-                  [class]="
-                    'project-status project-status--' +
-                    project.status
-                  "
-                >
-                  <span></span>
-
-                  {{ statusLabel(project.status) }}
-                </span>
-              </td>
-
-              <td>
-                <span class="environment-badge">
-                  {{ project.environment }}
-                </span>
-              </td>
-
-              <td>
-                <button
-                  class="project-menu-button"
-                  type="button"
-                  (click)="
-                    selectAction(
-                      'Ouverture du projet ' +
-                      project.name
-                    )
-                  "
-                >
-                  Voir
-                </button>
-              </td>
-            </tr>
-          } @empty {
-            <tr>
-              <td colspan="8">
-                <div class="empty-state">
-                  <strong>
-                    Aucun projet trouvé
-                  </strong>
-
-                  <span>
-                    Modifiez vos critères de recherche.
-                  </span>
-                </div>
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
-  </section>
+                <td>
+                  <a
+                    class="open-link"
+                    [routerLink]="[
+                      '/projects',
+                      project.id
+                    ]"
+                  >
+                    Ouvrir
+                  </a>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
 </section>

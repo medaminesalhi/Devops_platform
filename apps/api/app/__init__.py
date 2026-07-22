@@ -1,24 +1,44 @@
 from __future__ import annotations
 
-from flask import Flask, jsonify
+from flask import (
+    Flask,
+    jsonify,
+)
 
-from app.auth.routes import auth_blueprint
-from app.commands import register_commands
-from app.config import Config
+from app.auth.routes import (
+    auth_blueprint,
+)
+
+from app.commands import (
+    register_commands,
+)
+
+from app.config import (
+    Config,
+)
+
 from app.dashboard.routes import (
     dashboard_blueprint,
 )
+
 from app.database import (
     database_is_available,
 )
+
 from app.infrastructure.routes import (
     infrastructure_blueprint,
 )
+
 from app.integrations.commands import (
     register_integration_commands,
 )
+
 from app.integrations.routes import (
     integrations_blueprint,
+)
+
+from app.projects.routes import (
+    projects_blueprint,
 )
 
 
@@ -29,7 +49,9 @@ def create_app() -> Flask:
 
     app = Flask(__name__)
 
-    app.config.from_object(Config)
+    app.config.from_object(
+        Config
+    )
 
     if not app.config["SECRET_KEY"]:
         raise RuntimeError(
@@ -69,6 +91,11 @@ def create_app() -> Flask:
         url_prefix="/api/infrastructure",
     )
 
+    app.register_blueprint(
+        projects_blueprint,
+        url_prefix="/api/projects",
+    )
+
     register_commands(app)
 
     register_integration_commands(app)
@@ -80,6 +107,7 @@ def create_app() -> Flask:
                 jsonify(
                     {
                         "success": False,
+
                         "error": {
                             "code":
                                 "DATABASE_UNAVAILABLE",
@@ -96,6 +124,7 @@ def create_app() -> Flask:
         return jsonify(
             {
                 "success": True,
+
                 "data": {
                     "service":
                         "piximind-api",

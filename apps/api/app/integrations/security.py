@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from cryptography.fernet import (
     Fernet,
     InvalidToken,
@@ -8,80 +10,75 @@ from cryptography.fernet import (
 from flask import current_app
 
 
-def get_credential_cipher() -> Fernet:
-    """
-    Crée le système de chiffrement à partir
-    de la clé stockée dans le fichier .env.
-    """
+class CredentialSecurityError(RuntimeError):
+    pass
 
-    encryption_key = current_app.config.get(
-        "CREDENTIAL_ENCRYPTION_KEY",
-        "",
+
+def _get_encryption_key() -> str:
+    key = (
+        current_app.config.get(
+            "CREDENTIAL_ENCRYPTION_KEY"
+        )
+        or os.getenv(
+            "CREDENTIAL_ENCRYPTION_KEY"
+        )
+        or ""
     ).strip()
 
-    if not encryption_key:
-        raise RuntimeError(
-            "CREDENTIAL_ENCRYPTION_KEY "
-            "n'est pas configurée."
+    if not key:
+        raise CredentialSecurityError(
+            "CREDENTIAL_ENCRYPTION_KEY n'est pas configurée."
         )
 
+    return key
+
+
+def _get_cipher() -> Fernet:
     try:
         return Fernet(
-            encryption_key.encode("utf-8")
+            _get_encryption_key().encode(
+                "utf-8"
+            )
         )
 
-    except ValueError as error:
-        raise RuntimeError(
-            "CREDENTIAL_ENCRYPTION_KEY "
-            "n'est pas une clé Fernet valide."
+    except (ValueError, TypeError) as error:
+        raise CredentialSecurityError(
+            "La clé de chiffrement est invalide."
         ) from error
 
 
 def encrypt_credential(
-    secret: str,
-) -> str:
-    """
-    Chiffre un token ou mot de passe avant
-    son enregistrement dans PostgreSQL.
-    """
+    secret: str | None,
+) -> str | None:
+    if secret is None:
+        return None
 
-    encrypted_secret = (
-        get_credential_cipher().encrypt(
-            secret.encode("utf-8")
-        )
+    normalized = secret.strip()
+
+    if not normalized:
+        return None
+
+    encrypted = _get_cipher().encrypt(
+        normalized.encode("utf-8")
     )
 
-    return encrypted_secret.decode("utf-8")
+    return encrypted.decode("utf-8")
 
 
 def decrypt_credential(
-    secret_ciphertext: str | None,
+    encrypted_secret: str | None,
 ) -> str | None:
-    """
-    Déchiffre temporairement un credential.
-
-    Le résultat ne doit jamais être renvoyé
-    au frontend Angular.
-    """
-
-    if not secret_ciphertext:
+    if not encrypted_secret:
         return None
 
     try:
-        decrypted_secret = (
-            get_credential_cipher().decrypt(
-                secret_ciphertext.encode(
-                    "utf-8"
-                )
-            )
-        )
-
-        return decrypted_secret.decode(
-            "utf-8"
+        decrypted = _get_cipher().decrypt(
+            encrypted_secret.encode("utf-8")
         )
 
     except InvalidToken as error:
-        raise RuntimeError(
-            "Le credential enregistré "
-            "ne peut pas être déchiffré."
+        raise CredentialSecurityError(
+            "Impossible de déchiffrer le credential."
         ) from error
+
+    return decrypted.decode("utf-8")
