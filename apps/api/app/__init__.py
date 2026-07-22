@@ -40,7 +40,9 @@ from app.integrations.routes import (
 from app.projects.routes import (
     projects_blueprint,
 )
-
+from app.analysis import (
+    analysis_blueprint,
+)
 
 def create_app() -> Flask:
     """
@@ -89,6 +91,10 @@ def create_app() -> Flask:
     app.register_blueprint(
         infrastructure_blueprint,
         url_prefix="/api/infrastructure",
+    )
+    app.register_blueprint(
+        analysis_blueprint,
+        url_prefix="/api/projects",
     )
 
     app.register_blueprint(

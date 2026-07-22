@@ -1,53 +1,139 @@
 <section class="project-detail-page">
-  <a
-    class="back-link"
-    routerLink="/projects"
-  >
-    ← Retour aux projets
-  </a>
+  <header class="page-heading">
+    <div>
+      <a
+        class="back-link"
+        routerLink="/projects"
+      >
+        ← Retour aux projets
+      </a>
 
-  @if (errorMessage()) {
-    <section class="message message--error">
-      {{ errorMessage() }}
-    </section>
-  }
+      <p class="eyebrow">
+        Assistant de déploiement
+      </p>
 
-  @if (isLoading()) {
-    <section class="loading-card">
-      Chargement du projet…
-    </section>
-  } @else if (project(); as projectData) {
-    <header class="project-heading">
-      <div>
-        <p class="eyebrow">
-          {{ projectData }}
-        </p>
-
+      @if (project(); as currentProject) {
         <h2>
-          {{ projectData.name }}
+          {{ currentProject.name }}
         </h2>
 
         <p>
-          {{
-            projectData.description
-            ?? 'Aucune description.'
-          }}
+          {{ currentProject.description ?? 'Aucune description.' }}
         </p>
+      } @else {
+        <h2>
+          Détail du projet
+        </h2>
+      }
+    </div>
+  </header>
+
+  <section class="workflow">
+    <article
+      class="
+        workflow-step
+        workflow-step--completed
+      "
+    >
+      <span>✓</span>
+
+      <div>
+        <strong>Création</strong>
+        <small>Source validée</small>
       </div>
+    </article>
 
-      <span class="status-badge">
-        {{ projectData.status }}
+    <article
+      class="workflow-step"
+      [class.workflow-step--active]="
+        !analysisConfirmed()
+      "
+      [class.workflow-step--completed]="
+        analysisConfirmed()
+      "
+    >
+      <span>
+        {{
+          analysisConfirmed()
+            ? '✓'
+            : '2'
+        }}
       </span>
-    </header>
 
-    <section class="summary-grid">
+      <div>
+        <strong>Analyse</strong>
+
+        <small>
+          {{
+            analysisConfirmed()
+              ? 'Confirmée'
+              : 'Code et technologies'
+          }}
+        </small>
+      </div>
+    </article>
+
+    <article
+      class="workflow-step"
+      [class.workflow-step--active]="
+        phase3Unlocked()
+      "
+    >
+      <span>3</span>
+
+      <div>
+        <strong>IA & génération</strong>
+
+        <small>
+          Docker, Helm et Argo CD
+        </small>
+      </div>
+    </article>
+
+    <article class="workflow-step">
+      <span>4</span>
+
+      <div>
+        <strong>Confirmation</strong>
+        <small>Validation humaine</small>
+      </div>
+    </article>
+
+    <article class="workflow-step">
+      <span>5</span>
+
+      <div>
+        <strong>Déploiement</strong>
+        <small>GitOps, Argo CD et Kubernetes</small>
+      </div>
+    </article>
+  </section>
+
+  @if (projectError()) {
+    <section class="message message--error">
+      {{ projectError() }}
+    </section>
+  }
+
+  @if (analysisError()) {
+    <section class="message message--error">
+      {{ analysisError() }}
+    </section>
+  }
+
+  @if (isLoadingProject()) {
+    <section class="loading-card">
+      Chargement du projet…
+    </section>
+  } @else if (project(); as currentProject) {
+    <section class="project-summary">
       <article>
         <span>Repository</span>
 
         <strong>
           {{
-            projectData.source
-              .repositoryPath
+            currentProject.source.repositoryPath
+            ?? 'Non défini'
           }}
         </strong>
       </article>
@@ -56,143 +142,965 @@
         <span>Branche</span>
 
         <strong>
+          {{ currentProject.source.branch }}
+        </strong>
+      </article>
+
+      <article>
+        <span>Commit phase 1</span>
+
+        <strong>
           {{
-            projectData.source
-              .branch
+            shortSha(
+              currentProject.source.lastCommitSha
+            )
           }}
         </strong>
       </article>
 
       <article>
-        <span>Commit vérifié</span>
+        <span>Transport</span>
 
         <strong>
           {{
-            projectData.source
-              .lastCommitSha
-              ?.slice(0, 12)
-            ?? 'Non vérifié'
+            currentProject.source.transport
+              .toUpperCase()
           }}
         </strong>
       </article>
 
       <article>
-        <span>Environnement par défaut</span>
+        <span>Visibilité</span>
 
         <strong>
           {{
-            projectData
-              .defaultEnvironment
-              ?.name
-            ?? 'Non défini'
+            currentProject.source.visibility
+              === 'public'
+                ? 'Public'
+                : 'Privé'
+          }}
+        </strong>
+      </article>
+
+      <article>
+        <span>Sous-dossier</span>
+
+        <strong>
+          {{
+            currentProject.source.subdirectory
+            ?? 'Repository complet'
           }}
         </strong>
       </article>
     </section>
+  }
 
-    <section class="detail-card">
-      <header>
+  <section class="analysis-card">
+    <header class="analysis-card__heading">
+      <div>
+        <p class="section-label">
+          Phase 2
+        </p>
+
         <h3>
-          Source GitLab
+          Clone et analyse statique du code
         </h3>
-      </header>
 
-      <div class="detail-grid">
-        <article>
-          <span>Connexion</span>
-
-          <strong>
-            {{
-              projectData.source
-                .connectionName
-            }}
-          </strong>
-        </article>
-
-        <article>
-          <span>Serveur</span>
-
-          <strong>
-            {{
-              projectData.source.baseUrl
-            }}
-          </strong>
-        </article>
-
-        <article>
-          <span>Visibilité</span>
-
-          <strong>
-            {{
-              projectData.source.visibility
-            }}
-          </strong>
-        </article>
-
-        <article>
-          <span>Sous-dossier</span>
-
-          <strong>
-            {{
-              projectData.source.subdirectory
-              ?? 'Racine du repository'
-            }}
-          </strong>
-        </article>
+        <p>
+          Piximind télécharge le commit choisi,
+          détecte les composants et prépare les
+          informations nécessaires à Docker,
+          Helm et Argo CD.
+        </p>
       </div>
-    </section>
 
-    <section class="detail-card">
+      @if (analysis()) {
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="isRefreshing()"
+          (click)="refreshAnalysis()"
+        >
+          {{
+            isRefreshing()
+              ? 'Actualisation…'
+              : 'Actualiser'
+          }}
+        </button>
+      }
+    </header>
+
+    @if (isLoadingAnalysis()) {
+      <section class="loading-card">
+        Chargement de la dernière analyse…
+      </section>
+    } @else {
+      <section class="commit-policy">
+        <h4>
+          Version du code à analyser
+        </h4>
+
+        <div class="policy-grid">
+          <button
+            type="button"
+            class="policy-card"
+            [class.policy-card--selected]="
+              commitPolicy() === 'validated'
+            "
+            [disabled]="analysisRunning()"
+            (click)="
+              selectCommitPolicy('validated')
+            "
+          >
+            <strong>
+              Commit validé en phase 1
+            </strong>
+
+            <span>
+              Analyse exactement la version
+              précédemment vérifiée.
+            </span>
+          </button>
+
+          <button
+            type="button"
+            class="policy-card"
+            [class.policy-card--selected]="
+              commitPolicy() === 'latest'
+            "
+            [disabled]="analysisRunning()"
+            (click)="
+              selectCommitPolicy('latest')
+            "
+          >
+            <strong>
+              Dernier commit de la branche
+            </strong>
+
+            <span>
+              Vérifie la branche et analyse
+              son commit le plus récent.
+            </span>
+          </button>
+        </div>
+
+        <button
+          class="primary-button"
+          type="button"
+          [disabled]="
+            analysisRunning()
+            || isStartingAnalysis()
+          "
+          (click)="startAnalysis()"
+        >
+          @if (isStartingAnalysis()) {
+            Lancement de l’analyse…
+          } @else if (analysis()) {
+            Relancer une analyse
+          } @else {
+            Lancer l’analyse du code
+          }
+        </button>
+      </section>
+    }
+  </section>
+
+  @if (analysis(); as currentAnalysis) {
+    <section class="progress-card">
       <header>
-        <h3>
-          Environnements autorisés
-        </h3>
+        <div>
+          <p class="section-label">
+            Exécution #{{ currentAnalysis.id }}
+          </p>
+
+          <h3>
+            {{
+              analysisStatusLabel(
+                currentAnalysis.status
+              )
+            }}
+          </h3>
+
+          <p>
+            {{
+              stepLabel(
+                currentAnalysis.currentStep
+              )
+            }}
+          </p>
+        </div>
+
+        <span
+          class="status-badge"
+          [class.status-badge--success]="
+            currentAnalysis.status === 'completed'
+            || currentAnalysis.status === 'confirmed'
+          "
+          [class.status-badge--error]="
+            currentAnalysis.status === 'failed'
+          "
+        >
+          {{
+            analysisStatusLabel(
+              currentAnalysis.status
+            )
+          }}
+        </span>
       </header>
 
-      <div class="environment-grid">
-        @for (
-          environment of
-            projectData.environments;
-          track environment.id
-        ) {
-          <article>
-            <div>
-              <strong>
-                {{ environment.name }}
-              </strong>
+      <div class="progress-track">
+        <div
+          class="progress-value"
+          [style.width.%]="
+            currentAnalysis.progress
+          "
+        ></div>
+      </div>
 
-              <span>
-                {{
-                  environmentTypeLabel(
-                    environment.environmentType
-                  )
-                }}
-                ·
-                {{ environment.namespace }}
+      <div class="progress-meta">
+        <span>
+          {{ currentAnalysis.progress }} %
+        </span>
+
+        <span>
+          Politique :
+          {{
+            currentAnalysis.commitPolicy
+              === 'validated'
+                ? 'commit validé'
+                : 'dernier commit'
+          }}
+        </span>
+      </div>
+
+      @if (
+        currentAnalysis.branchHeadSha
+        && currentAnalysis.requestedCommitSha
+        && currentAnalysis.branchHeadSha
+          !== currentAnalysis.requestedCommitSha
+      ) {
+        <section class="message message--warning">
+          <strong>
+            La branche a changé
+          </strong>
+
+          <p>
+            Commit validé :
+            {{
+              shortSha(
+                currentAnalysis.requestedCommitSha
+              )
+            }}
+          </p>
+
+          <p>
+            Commit actuel :
+            {{
+              shortSha(
+                currentAnalysis.branchHeadSha
+              )
+            }}
+          </p>
+
+          <p>
+            Commit analysé :
+            {{
+              shortSha(
+                currentAnalysis.analyzedCommitSha
+              )
+            }}
+          </p>
+        </section>
+      }
+
+      @if (currentAnalysis.error) {
+        <section class="message message--error">
+          <strong>
+            {{ currentAnalysis.error.code }}
+          </strong>
+
+          <p>
+            {{ currentAnalysis.error.message }}
+          </p>
+        </section>
+      }
+    </section>
+
+    <section class="events-card">
+      <header>
+        <div>
+          <h3>
+            Journal de l’analyse
+          </h3>
+
+          <p>
+            Progression enregistrée par le backend.
+          </p>
+        </div>
+      </header>
+
+      @if (events().length === 0) {
+        <p class="empty-text">
+          Aucun événement enregistré.
+        </p>
+      } @else {
+        <div class="event-list">
+          @for (
+            event of events();
+            track event.id
+          ) {
+            <article
+              class="event-item"
+              [class.event-item--success]="
+                event.level === 'success'
+              "
+              [class.event-item--warning]="
+                event.level === 'warning'
+              "
+              [class.event-item--error]="
+                event.level === 'error'
+              "
+            >
+              <span class="event-icon">
+                @switch (event.level) {
+                  @case ('success') {
+                    ✓
+                  }
+
+                  @case ('warning') {
+                    !
+                  }
+
+                  @case ('error') {
+                    ×
+                  }
+
+                  @default {
+                    •
+                  }
+                }
               </span>
-            </div>
 
-            @if (environment.isDefault) {
-              <small>
-                Par défaut
-              </small>
-            }
+              <div>
+                <strong>
+                  {{ event.message }}
+                </strong>
+
+                <small>
+                  {{ event.step }}
+
+                  @if (event.createdAt) {
+                    ·
+                    {{
+                      event.createdAt
+                      | date:
+                        'dd/MM/yyyy HH:mm:ss'
+                    }}
+                  }
+                </small>
+              </div>
+            </article>
+          }
+        </div>
+      }
+    </section>
+
+    @if (
+      currentAnalysis.status === 'completed'
+      || currentAnalysis.status === 'confirmed'
+    ) {
+      <section class="result-card">
+        <header>
+          <div>
+            <p class="section-label">
+              Rapport
+            </p>
+
+            <h3>
+              Résultat de l’analyse
+            </h3>
+          </div>
+        </header>
+
+        <div class="result-grid">
+          <article>
+            <span>Fichiers analysés</span>
+
+            <strong>
+              {{
+                currentAnalysis.summary
+                  .inventory?.fileCount
+                ?? 0
+              }}
+            </strong>
           </article>
+
+          <article>
+            <span>Taille analysée</span>
+
+            <strong>
+              {{
+                formatBytes(
+                  currentAnalysis.summary
+                    .inventory?.totalSizeBytes
+                )
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>Composants</span>
+
+            <strong>
+              {{
+                currentAnalysis.summary
+                  .componentCount
+                ?? currentAnalysis
+                  .components.length
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>Déployables</span>
+
+            <strong>
+              {{
+                currentAnalysis.summary
+                  .deployableComponentCount
+                ?? 0
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>Dockerfiles</span>
+
+            <strong>
+              {{
+                currentAnalysis.summary
+                  .dockerfiles?.length
+                ?? 0
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>Charts Helm</span>
+
+            <strong>
+              {{
+                currentAnalysis.summary
+                  .helmCharts?.length
+                ?? 0
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>Manifests Kubernetes</span>
+
+            <strong>
+              {{
+                currentAnalysis.summary
+                  .kubernetesManifests?.length
+                ?? 0
+              }}
+            </strong>
+          </article>
+
+          <article>
+            <span>Applications Argo CD existantes</span>
+
+            <strong>
+              {{
+                currentAnalysis.summary
+                  .argoCd
+                  ?.existingApplicationCount
+                ?? 0
+              }}
+            </strong>
+          </article>
+        </div>
+
+        @if (
+          (
+            currentAnalysis.summary
+              .warnings
+            ?? []
+          ).length > 0
+        ) {
+          <section class="warning-list">
+            <h4>
+              Points à vérifier
+            </h4>
+
+            @for (
+              warning of
+                currentAnalysis.summary
+                  .warnings ?? [];
+              track warning
+            ) {
+              <article>
+                <span>!</span>
+                {{ warning }}
+              </article>
+            }
+          </section>
         }
-      </div>
-    </section>
+      </section>
 
-    <section class="next-step">
-      <strong>
-        Phase suivante
-      </strong>
+      <section class="components-section">
+        <header>
+          <div>
+            <p class="section-label">
+              Applications détectées
+            </p>
 
-      <p>
-        Le projet est maintenant enregistré.
-        La prochaine phase téléchargera le code
-        et détectera les technologies,
-        Dockerfile et charts Helm.
-      </p>
-    </section>
+            <h3>
+              Composants du projet
+            </h3>
+
+            <p>
+              Corrigez les valeurs avant de
+              confirmer l’analyse.
+            </p>
+          </div>
+        </header>
+
+        @if (componentError()) {
+          <section class="message message--error">
+            {{ componentError() }}
+          </section>
+        }
+
+        <div class="component-list">
+          @for (
+            component of
+              currentAnalysis.components;
+            track component.id
+          ) {
+            <article class="component-card">
+              <header>
+                <div>
+                  <span class="component-path">
+                    {{ component.rootPath }}
+                  </span>
+
+                  <h4>
+                    {{ component.name }}
+                  </h4>
+                </div>
+
+                <span class="confidence-badge">
+                  Confiance :
+                  {{ component.confidence }} %
+                </span>
+              </header>
+
+              <div class="component-form">
+                <div class="form-field">
+                  <label>
+                    Nom
+                  </label>
+
+                  <input
+                    type="text"
+                    [(ngModel)]="component.name"
+                    [ngModelOptions]="{
+                      standalone: true
+                    }"
+                    [disabled]="
+                      !analysisEditable()
+                    "
+                  />
+                </div>
+
+                <div class="form-field">
+                  <label>
+                    Type
+                  </label>
+
+                  <select
+                    [(ngModel)]="
+                      component.componentType
+                    "
+                    [ngModelOptions]="{
+                      standalone: true
+                    }"
+                    [disabled]="
+                      !analysisEditable()
+                    "
+                  >
+                    <option value="frontend">
+                      Frontend
+                    </option>
+
+                    <option value="backend">
+                      Backend
+                    </option>
+
+                    <option value="fullstack">
+                      Fullstack
+                    </option>
+
+                    <option value="worker">
+                      Worker
+                    </option>
+
+                    <option value="container">
+                      Conteneur
+                    </option>
+
+                    <option value="unknown">
+                      Inconnu
+                    </option>
+                  </select>
+                </div>
+
+                <div class="form-field">
+                  <label>
+                    Runtime
+                  </label>
+
+                  <input
+                    type="text"
+                    [(ngModel)]="
+                      component.runtime
+                    "
+                    [ngModelOptions]="{
+                      standalone: true
+                    }"
+                    [disabled]="
+                      !analysisEditable()
+                    "
+                    placeholder="Node.js, Python…"
+                  />
+                </div>
+
+                <div class="form-field">
+                  <label>
+                    Framework
+                  </label>
+
+                  <input
+                    type="text"
+                    [(ngModel)]="
+                      component.framework
+                    "
+                    [ngModelOptions]="{
+                      standalone: true
+                    }"
+                    [disabled]="
+                      !analysisEditable()
+                    "
+                    placeholder="Angular, Flask…"
+                  />
+                </div>
+
+                <div class="form-field">
+                  <label>
+                    Gestionnaire de paquets
+                  </label>
+
+                  <input
+                    type="text"
+                    [(ngModel)]="
+                      component.packageManager
+                    "
+                    [ngModelOptions]="{
+                      standalone: true
+                    }"
+                    [disabled]="
+                      !analysisEditable()
+                    "
+                    placeholder="npm, pip…"
+                  />
+                </div>
+
+                <div class="form-field">
+                  <label>
+                    Port
+                  </label>
+
+                  <input
+                    type="number"
+                    min="1"
+                    max="65535"
+                    [(ngModel)]="
+                      component.detectedPort
+                    "
+                    [ngModelOptions]="{
+                      standalone: true
+                    }"
+                    [disabled]="
+                      !analysisEditable()
+                    "
+                  />
+                </div>
+
+                <div class="form-field form-field--wide">
+                  <label>
+                    Commande de build
+                  </label>
+
+                  <input
+                    type="text"
+                    [(ngModel)]="
+                      component.buildCommand
+                    "
+                    [ngModelOptions]="{
+                      standalone: true
+                    }"
+                    [disabled]="
+                      !analysisEditable()
+                    "
+                    placeholder="npm run build"
+                  />
+                </div>
+
+                <div class="form-field form-field--wide">
+                  <label>
+                    Commande de démarrage
+                  </label>
+
+                  <input
+                    type="text"
+                    [(ngModel)]="
+                      component.startCommand
+                    "
+                    [ngModelOptions]="{
+                      standalone: true
+                    }"
+                    [disabled]="
+                      !analysisEditable()
+                    "
+                    placeholder="flask --app wsgi run"
+                  />
+                </div>
+              </div>
+
+              <div class="component-assets">
+                <article>
+                  <span>Dockerfile</span>
+
+                  <strong>
+                    {{
+                      component.dockerfilePath
+                      ?? 'Absent'
+                    }}
+                  </strong>
+                </article>
+
+                <article>
+                  <span>Chart Helm</span>
+
+                  <strong>
+                    {{
+                      component.helmChartPath
+                      ?? 'Absent'
+                    }}
+                  </strong>
+                </article>
+
+                <article>
+                  <span>Variables détectées</span>
+
+                  <strong>
+                    {{
+                      component
+                        .environmentVariables
+                        .length
+                    }}
+                  </strong>
+                </article>
+              </div>
+
+              @if (
+                component.environmentVariables
+                  .length > 0
+              ) {
+                <div class="environment-variable-list">
+                  @for (
+                    variable of
+                      component.environmentVariables;
+                    track variable.name
+                  ) {
+                    <span
+                      [class.variable--sensitive]="
+                        variable.sensitive
+                      "
+                    >
+                      {{ variable.name }}
+
+                      @if (variable.sensitive) {
+                        · sensible
+                      }
+                    </span>
+                  }
+                </div>
+              }
+
+              <footer>
+                <label class="deployable-control">
+                  <input
+                    type="checkbox"
+                    [(ngModel)]="
+                      component.deployable
+                    "
+                    [ngModelOptions]="{
+                      standalone: true
+                    }"
+                    [disabled]="
+                      !analysisEditable()
+                    "
+                  />
+
+                  Composant déployable
+                </label>
+
+                @if (analysisEditable()) {
+                  <button
+                    class="secondary-button"
+                    type="button"
+                    [disabled]="
+                      savingComponentId()
+                      === component.id
+                    "
+                    (click)="
+                      saveComponent(component)
+                    "
+                  >
+                    {{
+                      savingComponentId()
+                      === component.id
+                        ? 'Enregistrement…'
+                        : 'Enregistrer les corrections'
+                    }}
+                  </button>
+                }
+              </footer>
+            </article>
+          }
+        </div>
+      </section>
+
+      <section class="argocd-card">
+        <header>
+          <span class="argocd-icon">
+            CD
+          </span>
+
+          <div>
+            <h3>
+              Préparation Argo CD
+            </h3>
+
+            <p>
+              La plateforme doit créer une
+              Application Argo CD, mais aucun objet
+              n’est appliqué pendant cette phase.
+            </p>
+          </div>
+        </header>
+
+        <div class="argocd-flow">
+          <article>
+            <span>Phase 2</span>
+
+            <strong>
+              Détecter l’existant
+            </strong>
+          </article>
+
+          <article>
+            <span>Phase 3</span>
+
+            <strong>
+              Préparer Docker, Helm et Application
+            </strong>
+          </article>
+
+          <article>
+            <span>Phase 4</span>
+
+            <strong>
+              Confirmation humaine
+            </strong>
+          </article>
+
+          <article>
+            <span>Phase 5</span>
+
+            <strong>
+              Créer l’objet Argo CD et synchroniser
+            </strong>
+          </article>
+        </div>
+
+        <p class="argocd-note">
+          L’AppProject Argo CD sera associé à
+          l’environnement. L’Application Argo CD sera
+          associée au projet et à son environnement de
+          déploiement.
+        </p>
+      </section>
+
+      <footer class="confirmation-footer">
+        <div>
+          @if (analysisConfirmed()) {
+            <strong>
+              Analyse confirmée
+            </strong>
+
+            <span>
+              La phase IA et génération est maintenant
+              disponible.
+            </span>
+          } @else {
+            <strong>
+              Confirmation requise
+            </strong>
+
+            <span>
+              Vérifiez les composants avant de
+              continuer vers la génération.
+            </span>
+          }
+        </div>
+
+        @if (confirmationError()) {
+          <section class="message message--error">
+            {{ confirmationError() }}
+          </section>
+        }
+
+        @if (
+          currentAnalysis.status === 'completed'
+        ) {
+          <button
+            class="primary-button"
+            type="button"
+            [disabled]="isConfirming()"
+            (click)="confirmAnalysis()"
+          >
+            {{
+              isConfirming()
+                ? 'Confirmation…'
+                : 'Confirmer l’analyse'
+            }}
+          </button>
+        } @else if (
+          currentAnalysis.status === 'confirmed'
+        ) {
+          <button
+            class="primary-button"
+            type="button"
+          >
+            Continuer vers IA & génération
+          </button>
+        }
+      </footer>
+    }
   }
 </section>
