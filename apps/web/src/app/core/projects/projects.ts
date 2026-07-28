@@ -19,6 +19,16 @@ import {
 } from '../auth/auth';
 
 
+export type ProjectOperationMode =
+  | 'new_application'
+  | 'adopt_existing';
+
+
+export type ProjectSourceType =
+  | 'git'
+  | 'zip';
+
+
 export type RepositoryVisibility =
   | 'public'
   | 'private';
@@ -27,6 +37,11 @@ export type RepositoryVisibility =
 export type GitTransport =
   | 'https'
   | 'ssh';
+
+
+export type SourceTransport =
+  | GitTransport
+  | 'archive';
 
 
 export type CredentialSource =
@@ -59,10 +74,8 @@ export type ProjectStatus =
 
 export interface GitConnectionOption {
   id: number;
-
   name: string;
   baseUrl: string;
-
   status: string;
   verifySsl: boolean;
 
@@ -85,40 +98,60 @@ export interface GitConnectionOption {
 export interface ProjectEnvironmentOption {
   id: number;
   name: string;
-
   environmentType: string;
-
   namespace: string;
   domain: string | null;
-
   configurationStatus: string;
+}
+
+
+export interface ArchiveLimits {
+  maxBytes: number;
+  maxMegabytes: number;
+  maxEntries: number;
 }
 
 
 export interface ProjectOptions {
   gitConnections: GitConnectionOption[];
+  environments: ProjectEnvironmentOption[];
+  archiveLimits: ArchiveLimits;
+}
 
-  environments:
-    ProjectEnvironmentOption[];
+
+export interface ArchiveValidationDetails {
+  originalName: string;
+  sizeBytes: number;
+  sha256: string;
+  entryCount: number;
+  uncompressedBytes: number;
+  topLevelEntries: string[];
 }
 
 
 export interface SourceValidationResult {
-  repositoryUrl: string;
-  repositoryPath: string;
-  repositoryHost: string;
+  sourceType: ProjectSourceType;
 
-  branch: string;
-  commitSha: string;
+  repositoryUrl: string | null;
+  repositoryPath: string | null;
+  repositoryHost: string | null;
 
-  visibility: RepositoryVisibility;
-  transport: GitTransport;
+  branch: string | null;
+  commitSha: string | null;
+
+  visibility: RepositoryVisibility | null;
+  transport: SourceTransport;
+
+  archive:
+    ArchiveValidationDetails | null;
 
   validationMethod: string;
 }
 
 
-export interface ValidateSourceRequest {
+export interface ValidateGitSourceRequest {
+  sourceType: 'git';
+
   sourceConnectionId: number;
 
   repositoryUrl: string;
@@ -140,29 +173,38 @@ export interface ValidateSourceRequest {
 }
 
 
-export interface CreateProjectRequest
-  extends ValidateSourceRequest {
-  name: string;
+export interface CreateGitProjectRequest
+  extends ValidateGitSourceRequest {
+  operationMode: ProjectOperationMode;
 
+  name: string;
   description: string | null;
 
-  allowedEnvironmentIds: number[];
+  environmentId: number;
+}
 
-  defaultEnvironmentId: number;
+
+export interface ProjectArchive {
+  originalName: string;
+  sizeBytes: number;
+  sha256: string;
+  entryCount: number;
+  uncompressedBytes: number;
 }
 
 
 export interface ProjectSource {
+  type: ProjectSourceType;
+
   connectionId: number | null;
   connectionName: string | null;
-
   baseUrl: string | null;
 
   repositoryUrl: string | null;
   repositoryPath: string | null;
 
   visibility: RepositoryVisibility;
-  transport: GitTransport;
+  transport: SourceTransport;
 
   credentialSource: CredentialSource;
   authMethod: SourceAuthMethod;
@@ -176,6 +218,8 @@ export interface ProjectSource {
   branch: string;
   subdirectory: string | null;
 
+  archive: ProjectArchive | null;
+
   status: string;
   error: string | null;
 
@@ -187,10 +231,8 @@ export interface ProjectSource {
 export interface ProjectEnvironment {
   id: number;
   name: string;
-
   environmentType: string;
   namespace: string;
-
   isDefault: boolean;
 }
 
@@ -198,7 +240,6 @@ export interface ProjectEnvironment {
 export interface ProjectDefaultEnvironment {
   id: number;
   name: string;
-
   environmentType: string;
   namespace: string;
 }
@@ -206,11 +247,13 @@ export interface ProjectDefaultEnvironment {
 
 export interface Project {
   id: number;
-
   name: string;
   slug: string;
 
   description: string | null;
+
+  operationMode:
+    ProjectOperationMode;
 
   status: ProjectStatus;
 
@@ -239,21 +282,18 @@ export interface ProjectCreationResult {
 
 export interface ProjectFilters {
   status?: ProjectStatus | null;
-
   search?: string | null;
 }
 
 
 export interface ProjectListResult {
   projects: Project[];
-
   total: number;
 }
 
 
 interface OptionsResponse {
   success: boolean;
-
   data: ProjectOptions;
 }
 
@@ -270,14 +310,12 @@ interface ValidationResponse {
 
 interface CreationResponse {
   success: boolean;
-
   data: ProjectCreationResult;
 }
 
 
 interface ProjectListResponse {
   success: boolean;
-
   data: ProjectListResult;
 }
 
@@ -313,15 +351,15 @@ export class ProjectsService {
       )
       .pipe(
         map(
-          response =>
-            response.data,
+          response => response.data,
         ),
       );
   }
 
 
   validateSource(
-    request: ValidateSourceRequest,
+    request:
+      ValidateGitSourceRequest | FormData,
   ): Observable<SourceValidationResult> {
     return this.http
       .post<ValidationResponse>(
@@ -341,7 +379,8 @@ export class ProjectsService {
 
 
   createProject(
-    request: CreateProjectRequest,
+    request:
+      CreateGitProjectRequest | FormData,
   ): Observable<ProjectCreationResult> {
     return this.http
       .post<CreationResponse>(
@@ -353,8 +392,7 @@ export class ProjectsService {
       )
       .pipe(
         map(
-          response =>
-            response.data,
+          response => response.data,
         ),
       );
   }
@@ -363,8 +401,7 @@ export class ProjectsService {
   getProjects(
     filters: ProjectFilters = {},
   ): Observable<ProjectListResult> {
-    let params =
-      new HttpParams();
+    let params = new HttpParams();
 
     const search =
       filters.search?.trim();
@@ -393,8 +430,7 @@ export class ProjectsService {
       )
       .pipe(
         map(
-          response =>
-            response.data,
+          response => response.data,
         ),
       );
   }

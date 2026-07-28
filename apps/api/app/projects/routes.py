@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from typing import Any
 
 from flask import (
@@ -8,6 +10,10 @@ from flask import (
     g,
     jsonify,
     request,
+)
+
+from werkzeug.datastructures import (
+    FileStorage,
 )
 
 from app.auth.decorators import (
@@ -20,7 +26,8 @@ from app.projects.service import (
     get_project_by_id,
     get_project_options,
     get_projects,
-    validate_source,
+    validate_git_source,
+    validate_zip_source,
 )
 
 from app.projects.validators import (
@@ -77,126 +84,422 @@ def error_response(
     )
 
 
-def validation_json(
+def read_request_payload() -> tuple[
+    dict[str, Any],
+    FileStorage | None,
+]:
+    if request.is_json:
+        payload = request.get_json(
+            silent=True
+        )
+
+        if not isinstance(payload, dict):
+            raise ProjectValidationError(
+                "INVALID_JSON",
+                "Le corps JSON est invalide.",
+            )
+
+        return payload, None
+
+    payload_text = request.form.get(
+        "payload",
+        "",
+    ).strip()
+
+    if not payload_text:
+        raise ProjectValidationError(
+            "INVALID_MULTIPART_PAYLOAD",
+            (
+                "Le formulaire multipart ne contient "
+                "pas le champ payload."
+            ),
+        )
+
+    try:
+        payload = json.loads(
+            payload_text
+        )
+
+    except json.JSONDecodeError as error:
+        raise ProjectValidationError(
+            "INVALID_JSON",
+            (
+                "Le champ payload contient "
+                "un JSON invalide."
+            ),
+        ) from error
+
+    if not isinstance(payload, dict):
+        raise ProjectValidationError(
+            "INVALID_JSON",
+            (
+                "Le champ payload doit contenir "
+                "un objet JSON."
+            ),
+        )
+
+    return (
+        payload,
+        request.files.get("archiveFile"),
+    )
+
+
+def git_validation_json(
     validation: dict[str, Any],
 ) -> dict[str, Any]:
     return {
+        "sourceType": "git",
+
         "repositoryUrl":
-            validation["repository_url"],
+            validation.get(
+                "repository_url"
+            ),
 
         "repositoryPath":
-            validation["repository_path"],
+            validation.get(
+                "repository_path"
+            ),
 
         "repositoryHost":
-            validation["repository_host"],
+            validation.get(
+                "repository_host"
+            ),
 
         "branch":
-            validation["branch"],
+            validation.get("branch"),
 
         "commitSha":
-            validation["commit_sha"],
+            validation.get("commit_sha"),
 
         "visibility":
-            validation["visibility"],
+            validation.get("visibility"),
 
         "transport":
-            validation["transport"],
+            validation.get(
+                "transport",
+                "https",
+            ),
+
+        "archive": None,
 
         "validationMethod":
-            validation["validation_method"],
+            validation.get(
+                "validation_method",
+                "git_ls_remote",
+            ),
     }
+
+
+def zip_validation_json(
+    validation: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "sourceType": "zip",
+
+        "repositoryUrl": None,
+        "repositoryPath": None,
+        "repositoryHost": None,
+
+        "branch": None,
+        "commitSha": None,
+
+        "visibility": None,
+        "transport": "archive",
+
+        "archive": {
+            "originalName":
+                validation.get(
+                    "original_name"
+                ),
+
+            "sizeBytes":
+                validation.get(
+                    "size_bytes"
+                ),
+
+            "sha256":
+                validation.get(
+                    "sha256"
+                ),
+
+            "entryCount":
+                validation.get(
+                    "entry_count"
+                ),
+
+            "uncompressedBytes":
+                validation.get(
+                    "uncompressed_bytes"
+                ),
+
+            "topLevelEntries":
+                validation.get(
+                    "top_level_entries"
+                )
+                or [],
+        },
+
+        "validationMethod":
+            validation.get(
+                "validation_method",
+                "zip_inspection",
+            ),
+    }
+
+
+def source_validation_json(
+    validation: dict[str, Any],
+) -> dict[str, Any]:
+    source_type = validation.get(
+        "source_type"
+    )
+
+    if source_type is None:
+        source_type = (
+            "zip"
+            if "original_name" in validation
+            else "git"
+        )
+
+    if source_type == "zip":
+        return zip_validation_json(
+            validation
+        )
+
+    return git_validation_json(
+        validation
+    )
 
 
 def project_json(
     project: dict[str, Any],
 ) -> dict[str, Any]:
+    source_type = (
+        project.get("source_type")
+        or "git"
+    )
+
+    is_zip = source_type == "zip"
+
+    if is_zip:
+        repository_path = project.get(
+            "archive_original_name"
+        )
+
+        visibility = "private"
+        transport = "archive"
+        branch = "Archive ZIP"
+
+        credential_source = "none"
+        auth_method = "none"
+        token_type = None
+        username = None
+
+        credential_configured = True
+
+    else:
+        repository_path = project.get(
+            "repository_path"
+        )
+
+        visibility = (
+            project.get(
+                "repository_visibility"
+            )
+            or "private"
+        )
+
+        transport = (
+            project.get(
+                "source_transport"
+            )
+            or "https"
+        )
+
+        branch = (
+            project.get(
+                "default_branch"
+            )
+            or "main"
+        )
+
+        credential_source = (
+            project.get(
+                "source_credential_source"
+            )
+            or "none"
+        )
+
+        auth_method = (
+            project.get(
+                "source_auth_method"
+            )
+            or "none"
+        )
+
+        token_type = project.get(
+            "source_token_type"
+        )
+
+        username = project.get(
+            "source_username"
+        )
+
+        credential_configured = bool(
+            project.get(
+                "source_credential_configured"
+            )
+        )
+
+    last_checked_at = project.get(
+        "last_source_check_at"
+    )
+
+    created_at = project.get(
+        "created_at"
+    )
+
+    updated_at = project.get(
+        "updated_at"
+    )
+
+    default_environment_id = (
+        project.get(
+            "default_environment_id"
+        )
+    )
+
     return {
-        "id": project["id"],
-        "name": project["name"],
-        "slug": project["slug"],
-        "description": project["description"],
-        "status": project["status"],
+        "id":
+            project["id"],
+
+        "name":
+            project["name"],
+
+        "slug":
+            project["slug"],
+
+        "description":
+            project.get(
+                "description"
+            ),
+
+        "operationMode":
+            project.get(
+                "operation_mode"
+            )
+            or "new_application",
+
+        "status":
+            project["status"],
 
         "source": {
+            "type":
+                source_type,
+
             "connectionId":
-                project[
+                project.get(
                     "source_connection_id"
-                ],
+                ),
 
             "connectionName":
-                project[
+                project.get(
                     "source_connection_name"
-                ],
+                ),
 
             "baseUrl":
-                project[
+                project.get(
                     "source_base_url"
-                ],
+                ),
 
             "repositoryUrl":
-                project["repository_url"],
+                project.get(
+                    "repository_url"
+                ),
 
             "repositoryPath":
-                project["repository_path"],
+                repository_path,
 
             "visibility":
-                project[
-                    "repository_visibility"
-                ],
+                visibility,
 
             "transport":
-                project["source_transport"],
+                transport,
 
             "credentialSource":
-                project[
-                    "source_credential_source"
-                ],
+                credential_source,
 
             "authMethod":
-                project[
-                    "source_auth_method"
-                ],
+                auth_method,
 
             "tokenType":
-                project[
-                    "source_token_type"
-                ],
+                token_type,
 
             "username":
-                project["source_username"],
+                username,
 
             "credentialConfigured":
-                project[
-                    "source_credential_configured"
-                ],
+                credential_configured,
 
             "branch":
-                project["default_branch"],
+                branch,
 
             "subdirectory":
-                project[
+                project.get(
                     "source_subdirectory"
-                ],
+                ),
+
+            "archive": (
+                {
+                    "originalName":
+                        project.get(
+                            "archive_original_name"
+                        ),
+
+                    "sizeBytes":
+                        project.get(
+                            "archive_size_bytes"
+                        ),
+
+                    "sha256":
+                        project.get(
+                            "archive_sha256"
+                        ),
+
+                    "entryCount":
+                        project.get(
+                            "archive_entry_count"
+                        ),
+
+                    "uncompressedBytes":
+                        project.get(
+                            "archive_uncompressed_bytes"
+                        ),
+                }
+
+                if is_zip
+                else None
+            ),
 
             "status":
-                project["source_status"],
+                project.get(
+                    "source_status"
+                ),
 
             "error":
-                project["source_error"],
+                project.get(
+                    "source_error"
+                ),
 
             "lastCommitSha":
-                project[
+                project.get(
                     "last_source_commit_sha"
-                ],
+                ),
 
             "lastCheckedAt": (
-                project[
-                    "last_source_check_at"
-                ].isoformat()
+                last_checked_at.isoformat()
 
-                if project[
-                    "last_source_check_at"
-                ]
+                if last_checked_at
                 else None
             ),
         },
@@ -204,56 +507,66 @@ def project_json(
         "defaultEnvironment": (
             {
                 "id":
-                    project[
-                        "default_environment_id"
-                    ],
+                    default_environment_id,
 
                 "name":
-                    project[
+                    project.get(
                         "default_environment_name"
-                    ],
+                    ),
 
                 "environmentType":
-                    project[
+                    project.get(
                         "default_environment_type"
-                    ],
+                    ),
 
                 "namespace":
-                    project[
+                    project.get(
                         "default_environment_namespace"
-                    ],
+                    ),
             }
 
-            if project[
-                "default_environment_id"
-            ]
+            if default_environment_id
             else None
         ),
 
         "environments":
-            project["environments"] or [],
+            project.get(
+                "environments"
+            )
+            or [],
 
         "createdBy":
-            project["created_by"],
+            project.get(
+                "created_by"
+            ),
 
         "createdAt": (
-            project["created_at"].isoformat()
-            if project["created_at"]
+            created_at.isoformat()
+            if created_at
             else None
         ),
 
         "updatedAt": (
-            project["updated_at"].isoformat()
-            if project["updated_at"]
+            updated_at.isoformat()
+            if updated_at
             else None
         ),
     }
 
 
-@projects_blueprint.get("/options")
+@projects_blueprint.get(
+    "/options"
+)
 @require_auth
 def options_route():
     options = get_project_options()
+
+    maximum_bytes = int(
+        current_app.config.get(
+            "PROJECT_ARCHIVE_MAX_BYTES",
+            100 * 1024 * 1024,
+        )
+    )
 
     return jsonify(
         {
@@ -269,32 +582,22 @@ def options_route():
                             connection["name"],
 
                         "baseUrl":
-                            connection[
-                                "base_url"
-                            ],
+                            connection["base_url"],
 
                         "status":
                             connection["status"],
 
                         "verifySsl":
-                            connection[
-                                "verify_ssl"
-                            ],
+                            connection["verify_ssl"],
 
                         "sshHost":
-                            connection[
-                                "ssh_host"
-                            ],
+                            connection["ssh_host"],
 
                         "sshPort":
-                            connection[
-                                "ssh_port"
-                            ],
+                            connection["ssh_port"],
 
                         "sshUsername":
-                            connection[
-                                "ssh_username"
-                            ],
+                            connection["ssh_username"],
 
                         "credentialConfigured":
                             connection[
@@ -346,8 +649,30 @@ def options_route():
                     }
 
                     for environment
-                    in options["environments"]
+                    in options[
+                        "environments"
+                    ]
                 ],
+
+                "archiveLimits": {
+                    "maxBytes":
+                        maximum_bytes,
+
+                    "maxMegabytes":
+                        round(
+                            maximum_bytes
+                            / 1024
+                            / 1024
+                        ),
+
+                    "maxEntries":
+                        int(
+                            current_app.config.get(
+                                "PROJECT_ARCHIVE_MAX_ENTRIES",
+                                20_000,
+                            )
+                        ),
+                },
             },
         }
     )
@@ -358,24 +683,35 @@ def options_route():
 )
 @require_auth
 def validate_source_route():
-    payload = request.get_json(
-        silent=True
-    )
-
-    if not isinstance(payload, dict):
-        return error_response(
-            "INVALID_JSON",
-            "Le corps JSON est invalide.",
-            400,
-        )
-
     try:
-        data = read_source_payload(payload)
-
-        validation, _ = validate_source(
-            user_id=current_user_id(),
-            data=data,
+        payload, archive_file = (
+            read_request_payload()
         )
+
+        data = read_source_payload(
+            payload
+        )
+
+        if data["source_type"] == "zip":
+            validation = (
+                validate_zip_source(
+                    user_id=
+                        current_user_id(),
+
+                    archive_file=
+                        archive_file,
+                )
+            )
+
+        else:
+            validation, _ = (
+                validate_git_source(
+                    user_id=
+                        current_user_id(),
+
+                    data=data,
+                )
+            )
 
     except ProjectValidationError as error:
         return error_response(
@@ -393,12 +729,18 @@ def validate_source_route():
 
     except Exception:
         current_app.logger.exception(
-            "Erreur pendant le test Git."
+            (
+                "Erreur pendant la validation "
+                "de la source."
+            )
         )
 
         return error_response(
             "SOURCE_VALIDATION_FAILED",
-            "Le test du repository a échoué.",
+            (
+                "La validation de la source "
+                "a échoué."
+            ),
             500,
         )
 
@@ -408,7 +750,7 @@ def validate_source_route():
 
             "data": {
                 "sourceValidation":
-                    validation_json(
+                    source_validation_json(
                         validation.to_dict()
                     ),
             },
@@ -419,26 +761,22 @@ def validate_source_route():
 @projects_blueprint.post("")
 @require_auth
 def create_project_route():
-    payload = request.get_json(
-        silent=True
-    )
-
-    if not isinstance(payload, dict):
-        return error_response(
-            "INVALID_JSON",
-            "Le corps JSON est invalide.",
-            400,
+    try:
+        payload, archive_file = (
+            read_request_payload()
         )
 
-    try:
-        data = read_create_project_payload(
-            payload
+        data = (
+            read_create_project_payload(
+                payload
+            )
         )
 
         result = create_new_project(
             user_id=current_user_id(),
             roles=current_user_roles(),
             data=data,
+            archive_file=archive_file,
         )
 
     except ProjectValidationError as error:
@@ -457,12 +795,18 @@ def create_project_route():
 
     except Exception:
         current_app.logger.exception(
-            "Erreur pendant la création du projet."
+            (
+                "Erreur pendant la création "
+                "du projet."
+            )
         )
 
         return error_response(
             "PROJECT_CREATE_FAILED",
-            "La création du projet a échoué.",
+            (
+                "La création du projet "
+                "a échoué."
+            ),
             500,
         )
 
@@ -474,11 +818,13 @@ def create_project_route():
                 "data": {
                     "project":
                         project_json(
-                            result["project"]
+                            result[
+                                "project"
+                            ]
                         ),
 
                     "sourceValidation":
-                        validation_json(
+                        source_validation_json(
                             result[
                                 "sourceValidation"
                             ]
@@ -493,7 +839,9 @@ def create_project_route():
 @projects_blueprint.get("")
 @require_auth
 def list_projects_route():
-    status = request.args.get("status")
+    status = request.args.get(
+        "status"
+    )
 
     if (
         status
@@ -522,10 +870,13 @@ def list_projects_route():
             "data": {
                 "projects": [
                     project_json(project)
-                    for project in projects
+
+                    for project
+                    in projects
                 ],
 
-                "total": len(projects),
+                "total":
+                    len(projects),
             },
         }
     )
@@ -556,7 +907,9 @@ def project_detail_route(
 
             "data": {
                 "project":
-                    project_json(project),
+                    project_json(
+                        project
+                    ),
             },
         }
     )

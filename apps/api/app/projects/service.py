@@ -2,14 +2,23 @@ from __future__ import annotations
 
 from typing import Any
 
+from werkzeug.datastructures import FileStorage
+
 from app.integrations.security import (
     decrypt_credential,
     encrypt_credential,
 )
 
+from app.projects.archive_provider import (
+    ArchiveProviderError,
+    ArchiveValidationResult,
+    archive_source_provider,
+)
+
 from app.projects.repository import (
-    create_project,
-    find_environments,
+    create_git_project,
+    create_zip_project,
+    find_environment,
     find_git_connection,
     find_project,
     list_available_environments,
@@ -39,13 +48,18 @@ class ProjectServiceError(RuntimeError):
         self.http_status = http_status
 
 
+PROJECT_CREATE_ROLES = {
+    "admin",
+    "administrator",
+    "devops",
+    "developer",
+}
+
+
 def get_project_options() -> dict[str, Any]:
     return {
-        "gitConnections":
-            list_git_connections(),
-
-        "environments":
-            list_available_environments(),
+        "gitConnections": list_git_connections(),
+        "environments": list_available_environments(),
     }
 
 
@@ -75,6 +89,22 @@ def get_project_by_id(
     return project
 
 
+def ensure_project_create_role(
+    roles: set[str],
+) -> None:
+    if not roles.intersection(
+        PROJECT_CREATE_ROLES
+    ):
+        raise ProjectServiceError(
+            "PROJECT_CREATE_FORBIDDEN",
+            (
+                "Votre rôle ne permet pas "
+                "de créer un projet."
+            ),
+            403,
+        )
+
+
 def resolve_credential(
     *,
     connection: dict[str, Any],
@@ -97,7 +127,6 @@ def resolve_credential(
                     "La connexion GitLab ne contient "
                     "aucun credential."
                 ),
-                400,
             )
 
         integration_auth_type = (
@@ -120,7 +149,6 @@ def resolve_credential(
                     "Le credential de la connexion "
                     "n'est pas compatible avec Git."
                 ),
-                400,
             )
 
         if (
@@ -133,7 +161,6 @@ def resolve_credential(
                     "La connexion contient une clé SSH, "
                     "mais HTTPS a été sélectionné."
                 ),
-                400,
             )
 
         if (
@@ -146,14 +173,11 @@ def resolve_credential(
                     "La connexion ne contient pas "
                     "de clé privée SSH."
                 ),
-                400,
             )
 
         return {
             "credential_source": "integration",
-
-            "auth_method":
-                auth_method,
+            "auth_method": auth_method,
 
             "token_type": (
                 "generic_token"
@@ -161,17 +185,15 @@ def resolve_credential(
                 else None
             ),
 
-            "username":
-                connection[
-                    "credential_username"
-                ],
+            "username": connection[
+                "credential_username"
+            ],
 
-            "secret":
-                decrypt_credential(
-                    connection[
-                        "secret_ciphertext"
-                    ]
-                ),
+            "secret": decrypt_credential(
+                connection[
+                    "secret_ciphertext"
+                ]
+            ),
         }
 
     return {
@@ -183,7 +205,7 @@ def resolve_credential(
     }
 
 
-def validate_source(
+def validate_git_source(
     *,
     user_id: int,
     data: dict[str, Any],
@@ -216,24 +238,14 @@ def validate_source(
             git_source_provider
             .validate_repository(
                 connection=connection,
-
-                repository_url=
-                    data["repository_url"],
-
-                visibility=
-                    data["visibility"],
-
-                transport=
-                    data["transport"],
-
-                branch=
-                    data["branch"],
-
-                username=
-                    credential["username"],
-
-                secret=
-                    credential["secret"],
+                repository_url=(
+                    data["repository_url"]
+                ),
+                visibility=data["visibility"],
+                transport=data["transport"],
+                branch=data["branch"],
+                username=credential["username"],
+                secret=credential["secret"],
             )
         )
 
@@ -243,11 +255,13 @@ def validate_source(
                 project_id=None,
                 user_id=user_id,
 
-                source_connection_id=
-                    data["source_connection_id"],
+                source_connection_id=(
+                    data["source_connection_id"]
+                ),
 
-                repository_path=
-                    data["repository_url"],
+                repository_path=(
+                    data["repository_url"]
+                ),
 
                 branch=data["branch"],
 
@@ -263,19 +277,17 @@ def validate_source(
                 error_message=error.message,
 
                 details={
-                    "visibility":
-                        data["visibility"],
+                    "sourceType": "git",
+                    "visibility": data["visibility"],
+                    "transport": data["transport"],
 
-                    "transport":
-                        data["transport"],
+                    "credentialSource": credential[
+                        "credential_source"
+                    ],
 
-                    "credentialSource":
-                        credential[
-                            "credential_source"
-                        ],
-
-                    "authMethod":
-                        credential["auth_method"],
+                    "authMethod": credential[
+                        "auth_method"
+                    ],
                 },
             )
 
@@ -290,19 +302,17 @@ def validate_source(
             project_id=None,
             user_id=user_id,
 
-            source_connection_id=
-                data["source_connection_id"],
+            source_connection_id=(
+                data["source_connection_id"]
+            ),
 
-            repository_path=
-                validation.repository_path,
+            repository_path=(
+                validation.repository_path
+            ),
 
-            branch=
-                validation.branch,
-
+            branch=validation.branch,
             status="valid",
-
-            commit_sha=
-                validation.commit_sha,
+            commit_sha=validation.commit_sha,
 
             error_code=None,
             error_message=None,
@@ -310,17 +320,90 @@ def validate_source(
             details={
                 **validation.to_dict(),
 
-                "credentialSource":
-                    credential[
-                        "credential_source"
-                    ],
+                "credentialSource": credential[
+                    "credential_source"
+                ],
 
-                "authMethod":
-                    credential["auth_method"],
+                "authMethod": credential[
+                    "auth_method"
+                ],
             },
         )
 
     return validation, credential
+
+
+def validate_zip_source(
+    *,
+    user_id: int,
+    archive_file: FileStorage | None,
+    save_check: bool = True,
+) -> ArchiveValidationResult:
+    try:
+        validation = (
+            archive_source_provider
+            .validate_upload(archive_file)
+        )
+
+    except ArchiveProviderError as error:
+        if save_check:
+            save_source_check(
+                project_id=None,
+                user_id=user_id,
+                source_connection_id=None,
+
+                repository_path=(
+                    archive_file.filename
+                    if archive_file
+                    and archive_file.filename
+                    else "archive.zip"
+                ),
+
+                branch="archive",
+
+                status=(
+                    "error"
+                    if error.http_status >= 500
+                    else "invalid"
+                ),
+
+                commit_sha=None,
+
+                error_code=error.code,
+                error_message=error.message,
+
+                details={
+                    "sourceType": "zip",
+                },
+            )
+
+        raise ProjectServiceError(
+            error.code,
+            error.message,
+            error.http_status,
+        ) from error
+
+    if save_check:
+        save_source_check(
+            project_id=None,
+            user_id=user_id,
+            source_connection_id=None,
+
+            repository_path=(
+                validation.original_name
+            ),
+
+            branch="archive",
+            status="valid",
+            commit_sha=None,
+
+            error_code=None,
+            error_message=None,
+
+            details=validation.to_dict(),
+        )
+
+    return validation
 
 
 def create_new_project(
@@ -328,63 +411,42 @@ def create_new_project(
     user_id: int,
     roles: set[str],
     data: dict[str, Any],
+    archive_file: FileStorage | None = None,
 ) -> dict[str, Any]:
-    allowed_roles = {
-        "admin",
-        "administrator",
-        "devops",
-        "developer",
-    }
+    ensure_project_create_role(roles)
 
-    if not roles.intersection(
-        allowed_roles
-    ):
-        raise ProjectServiceError(
-            "PROJECT_CREATE_FORBIDDEN",
-            (
-                "Votre rôle ne permet pas "
-                "de créer un projet."
-            ),
-            403,
-        )
-
-    environment_ids = (
-        data["allowed_environment_ids"]
+    environment = find_environment(
+        data["environment_id"]
     )
 
-    environments = find_environments(
-        environment_ids
+    if environment is None:
+        raise ProjectServiceError(
+            "INVALID_ENVIRONMENT",
+            (
+                "L'environnement sélectionné est "
+                "introuvable ou archivé."
+            ),
+        )
+
+    if data["source_type"] == "zip":
+        return create_zip_source_project(
+            user_id=user_id,
+            data=data,
+            archive_file=archive_file,
+        )
+
+    return create_git_source_project(
+        user_id=user_id,
+        data=data,
     )
 
-    found_ids = {
-        int(environment["id"])
-        for environment in environments
-    }
 
-    if found_ids != set(environment_ids):
-        raise ProjectServiceError(
-            "INVALID_ENVIRONMENTS",
-            (
-                "Un ou plusieurs environnements "
-                "sont introuvables ou archivés."
-            ),
-            400,
-        )
-
-    if (
-        data["default_environment_id"]
-        not in found_ids
-    ):
-        raise ProjectServiceError(
-            "INVALID_DEFAULT_ENVIRONMENT",
-            (
-                "L'environnement par défaut "
-                "n'est pas autorisé."
-            ),
-            400,
-        )
-
-    validation, credential = validate_source(
+def create_git_source_project(
+    *,
+    user_id: int,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    validation, credential = validate_git_source(
         user_id=user_id,
         data=data,
         save_check=False,
@@ -400,56 +462,61 @@ def create_new_project(
             credential["secret"]
         )
 
-    project = create_project(
+    project = create_git_project(
         name=data["name"],
         description=data["description"],
 
-        source_connection_id=
-            data["source_connection_id"],
+        operation_mode=data[
+            "operation_mode"
+        ],
 
-        repository_url=
-            validation.repository_url,
+        source_connection_id=(
+            data["source_connection_id"]
+        ),
 
-        repository_path=
-            validation.repository_path,
+        repository_url=(
+            validation.repository_url
+        ),
 
-        repository_visibility=
-            validation.visibility,
+        repository_path=(
+            validation.repository_path
+        ),
 
-        source_transport=
-            validation.transport,
+        repository_visibility=(
+            validation.visibility
+        ),
 
-        credential_source=
-            credential[
-                "credential_source"
-            ],
+        source_transport=(
+            validation.transport
+        ),
 
-        auth_method=
-            credential["auth_method"],
+        credential_source=credential[
+            "credential_source"
+        ],
 
-        token_type=
-            credential["token_type"],
+        auth_method=credential[
+            "auth_method"
+        ],
 
-        username=
-            credential["username"],
+        token_type=credential[
+            "token_type"
+        ],
 
-        encrypted_secret=
-            encrypted_secret,
+        username=credential["username"],
 
-        branch=
-            validation.branch,
+        encrypted_secret=encrypted_secret,
 
-        source_subdirectory=
-            data["source_subdirectory"],
+        branch=validation.branch,
 
-        commit_sha=
-            validation.commit_sha,
+        source_subdirectory=(
+            data["source_subdirectory"]
+        ),
 
-        environment_ids=
-            environment_ids,
+        commit_sha=validation.commit_sha,
 
-        default_environment_id=
-            data["default_environment_id"],
+        environment_id=data[
+            "environment_id"
+        ],
 
         user_id=user_id,
     )
@@ -458,11 +525,13 @@ def create_new_project(
         project_id=int(project["id"]),
         user_id=user_id,
 
-        source_connection_id=
-            data["source_connection_id"],
+        source_connection_id=(
+            data["source_connection_id"]
+        ),
 
-        repository_path=
-            validation.repository_path,
+        repository_path=(
+            validation.repository_path
+        ),
 
         branch=validation.branch,
         status="valid",
@@ -474,18 +543,151 @@ def create_new_project(
         details={
             **validation.to_dict(),
 
-            "credentialSource":
-                credential[
-                    "credential_source"
-                ],
+            "operationMode": data[
+                "operation_mode"
+            ],
 
-            "authMethod":
-                credential["auth_method"],
+            "credentialSource": credential[
+                "credential_source"
+            ],
+
+            "authMethod": credential[
+                "auth_method"
+            ],
+
+            "environmentId": data[
+                "environment_id"
+            ],
         },
     )
 
     return {
         "project": project,
+
         "sourceValidation":
             validation.to_dict(),
+    }
+
+
+def create_zip_source_project(
+    *,
+    user_id: int,
+    data: dict[str, Any],
+    archive_file: FileStorage | None,
+) -> dict[str, Any]:
+    stored_archive:ArchiveValidationResult | None = None
+
+    try:
+        stored_archive = (
+            archive_source_provider
+            .store_upload(archive_file)
+        )
+
+        if (
+            not stored_archive.stored_name
+            or not stored_archive.storage_path
+        ):
+            raise ProjectServiceError(
+                "ARCHIVE_STORAGE_FAILED",
+                "L'archive n'a pas pu être enregistrée.",
+                500,
+            )
+
+        project = create_zip_project(
+            name=data["name"],
+
+            description=data["description"],
+
+            operation_mode=data[
+                "operation_mode"
+            ],
+
+            source_subdirectory=(
+                data["source_subdirectory"]
+            ),
+
+            archive_original_name=(
+                stored_archive.original_name
+            ),
+
+            archive_stored_name=(
+                stored_archive.stored_name
+            ),
+
+            archive_storage_path=(
+                stored_archive.storage_path
+            ),
+
+            archive_size_bytes=(
+                stored_archive.size_bytes
+            ),
+
+            archive_sha256=(
+                stored_archive.sha256
+            ),
+
+            archive_entry_count=(
+                stored_archive.entry_count
+            ),
+
+            archive_uncompressed_bytes=(
+                stored_archive.uncompressed_bytes
+            ),
+
+            environment_id=data[
+                "environment_id"
+            ],
+
+            user_id=user_id,
+        )
+
+    except ArchiveProviderError as error:
+        raise ProjectServiceError(
+            error.code,
+            error.message,
+            error.http_status,
+        ) from error
+
+    except Exception:
+        if stored_archive is not None:
+            archive_source_provider.remove_stored_archive(
+                stored_archive.storage_path
+            )
+
+        raise
+
+    save_source_check(
+        project_id=int(project["id"]),
+        user_id=user_id,
+        source_connection_id=None,
+
+        repository_path=(
+            stored_archive.original_name
+        ),
+
+        branch="archive",
+        status="valid",
+        commit_sha=None,
+
+        error_code=None,
+        error_message=None,
+
+        details={
+            **stored_archive.to_dict(),
+
+            "operationMode": data[
+                "operation_mode"
+            ],
+
+            "environmentId": data[
+                "environment_id"
+            ],
+        },
+    )
+
+    return {
+        "project": project,
+
+        "sourceValidation":
+            stored_archive.to_dict(),
     }

@@ -16,6 +16,8 @@ PROJECT_SELECT = """
         project.name,
         project.slug,
         project.description,
+        project.operation_mode,
+        project.source_type,
         project.status,
 
         project.source_connection_id,
@@ -39,6 +41,13 @@ PROJECT_SELECT = """
         project.default_branch,
         project.source_subdirectory,
 
+        project.archive_original_name,
+        project.archive_stored_name,
+        project.archive_size_bytes,
+        project.archive_sha256,
+        project.archive_entry_count,
+        project.archive_uncompressed_bytes,
+
         project.source_status,
         project.source_error,
         project.last_source_commit_sha,
@@ -60,6 +69,9 @@ PROJECT_SELECT = """
         project.updated_at,
 
         CASE
+            WHEN project.source_type = 'zip'
+                THEN TRUE
+
             WHEN project.source_credential_source = 'project'
                 THEN project_credential.secret_ciphertext
                     IS NOT NULL
@@ -83,9 +95,7 @@ PROJECT_SELECT = """
                         'isDefault',
                             project_environment.is_default
                     )
-                    ORDER BY
-                        project_environment.is_default DESC,
-                        environment.name
+                    ORDER BY environment.name
                 )
 
                 FROM project_environments
@@ -247,32 +257,32 @@ def list_available_environments() -> list[dict[str, Any]]:
         ).fetchall()
 
 
-def find_environments(
-    environment_ids: list[int],
-) -> list[dict[str, Any]]:
-    if not environment_ids:
-        return []
-
+def find_environment(
+    environment_id: int,
+) -> dict[str, Any] | None:
     query = """
         SELECT
             id,
             name,
             environment_type,
             namespace,
+            domain,
             configuration_status
 
         FROM deployment_environments
 
         WHERE
-            id = ANY(%s::BIGINT[])
-            AND configuration_status <> 'archived';
+            id = %s
+            AND configuration_status <> 'archived'
+
+        LIMIT 1;
     """
 
     with get_database_connection() as connection:
         return connection.execute(
             query,
-            (environment_ids,),
-        ).fetchall()
+            (environment_id,),
+        ).fetchone()
 
 
 def list_projects(
@@ -299,6 +309,9 @@ def list_projects(
 
                 OR project.repository_path ILIKE
                     '%%' || %s || '%%'
+
+                OR project.archive_original_name ILIKE
+                    '%%' || %s || '%%'
             )
 
         ORDER BY
@@ -312,7 +325,7 @@ def list_projects(
             (
                 status,
                 status,
-
+                search,
                 search,
                 search,
                 search,
@@ -338,10 +351,11 @@ def find_project(
         ).fetchone()
 
 
-def create_project(
+def create_git_project(
     *,
     name: str,
     description: str | None,
+    operation_mode: str,
 
     source_connection_id: int,
 
@@ -358,12 +372,9 @@ def create_project(
 
     branch: str,
     source_subdirectory: str | None,
-
     commit_sha: str,
 
-    environment_ids: list[int],
-    default_environment_id: int,
-
+    environment_id: int,
     user_id: int,
 ) -> dict[str, Any]:
     with get_database_connection() as connection:
@@ -378,30 +389,25 @@ def create_project(
                     name,
                     slug,
                     description,
-
+                    operation_mode,
+                    source_type,
                     source_provider,
                     source_connection_id,
-
                     repository_url,
                     repository_path,
                     repository_visibility,
                     source_transport,
-
                     source_credential_source,
                     source_auth_method,
                     source_token_type,
                     source_username,
-
                     default_branch,
                     source_subdirectory,
-
                     source_status,
                     source_error,
                     last_source_commit_sha,
                     last_source_check_at,
-
                     default_environment_id,
-
                     status,
                     created_by
                 )
@@ -409,30 +415,25 @@ def create_project(
                     %s,
                     %s,
                     %s,
-
+                    %s,
+                    'git',
                     'gitlab',
                     %s,
-
                     %s,
                     %s,
                     %s,
                     %s,
-
                     %s,
                     %s,
                     %s,
                     %s,
-
                     %s,
                     %s,
-
                     'valid',
                     NULL,
                     %s,
                     CURRENT_TIMESTAMP,
-
                     %s,
-
                     'active',
                     %s
                 )
@@ -442,26 +443,20 @@ def create_project(
                 name,
                 slug,
                 description,
-
+                operation_mode,
                 source_connection_id,
-
                 repository_url,
                 repository_path,
                 repository_visibility,
                 source_transport,
-
                 credential_source,
                 auth_method,
                 token_type,
                 username,
-
                 branch,
                 source_subdirectory,
-
                 commit_sha,
-
-                default_environment_id,
-
+                environment_id,
                 user_id,
             ),
         ).fetchone()
@@ -491,105 +486,276 @@ def create_project(
                 ),
             )
 
-        for environment_id in environment_ids:
-            connection.execute(
-                """
-                    INSERT INTO project_environments (
-                        project_id,
-                        environment_id,
-                        is_default
-                    )
-                    VALUES (
-                        %s,
-                        %s,
-                        %s
-                    )
+        attach_environment(
+            database_connection=connection,
+            project_id=project_id,
+            environment_id=environment_id,
+        )
 
-                    ON CONFLICT (
-                        project_id,
-                        environment_id
-                    )
-                    DO UPDATE SET
-                        is_default =
-                            EXCLUDED.is_default;
-                """,
-                (
-                    project_id,
-                    environment_id,
-                    environment_id
-                    == default_environment_id,
-                ),
-            )
+        add_project_activity(
+            database_connection=connection,
+            project_id=project_id,
+            user_id=user_id,
+            action="project.created",
+            details={
+                "operationMode": operation_mode,
+                "sourceType": "git",
+                "repositoryPath": repository_path,
+                "visibility": repository_visibility,
+                "transport": source_transport,
+                "credentialSource": credential_source,
+                "authMethod": auth_method,
+                "branch": branch,
+                "commitSha": commit_sha,
+                "environmentId": environment_id,
+            },
+        )
 
-        connection.execute(
+        return read_project_in_transaction(
+            database_connection=connection,
+            project_id=project_id,
+        )
+
+
+def create_zip_project(
+    *,
+    name: str,
+    description: str | None,
+    operation_mode: str,
+    source_subdirectory: str | None,
+
+    archive_original_name: str,
+    archive_stored_name: str,
+    archive_storage_path: str,
+    archive_size_bytes: int,
+    archive_sha256: str,
+    archive_entry_count: int,
+    archive_uncompressed_bytes: int,
+
+    environment_id: int,
+    user_id: int,
+) -> dict[str, Any]:
+    with get_database_connection() as connection:
+        slug = find_available_slug(
+            database_connection=connection,
+            slug_base=create_slug(name),
+        )
+
+        row = connection.execute(
             """
-                INSERT INTO project_activity_logs (
-                    project_id,
-                    user_id,
-                    action,
-                    details
+                INSERT INTO projects (
+                    name,
+                    slug,
+                    description,
+                    operation_mode,
+                    source_type,
+                    source_provider,
+                    source_connection_id,
+                    repository_url,
+                    repository_path,
+                    repository_visibility,
+                    source_transport,
+                    source_credential_source,
+                    source_auth_method,
+                    source_token_type,
+                    source_username,
+                    default_branch,
+                    source_subdirectory,
+                    archive_original_name,
+                    archive_stored_name,
+                    archive_storage_path,
+                    archive_size_bytes,
+                    archive_sha256,
+                    archive_entry_count,
+                    archive_uncompressed_bytes,
+                    source_status,
+                    source_error,
+                    last_source_commit_sha,
+                    last_source_check_at,
+                    default_environment_id,
+                    status,
+                    created_by
                 )
                 VALUES (
                     %s,
                     %s,
-                    'project.created',
-                    %s::JSONB
-                );
+                    %s,
+                    %s,
+                    'zip',
+                    'archive',
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    NULL,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    'valid',
+                    NULL,
+                    NULL,
+                    CURRENT_TIMESTAMP,
+                    %s,
+                    'active',
+                    %s
+                )
+                RETURNING id;
             """,
             (
-                project_id,
+                name,
+                slug,
+                description,
+                operation_mode,
+                source_subdirectory,
+                archive_original_name,
+                archive_stored_name,
+                archive_storage_path,
+                archive_size_bytes,
+                archive_sha256,
+                archive_entry_count,
+                archive_uncompressed_bytes,
+                environment_id,
                 user_id,
-                json.dumps(
-                    {
-                        "repositoryPath":
-                            repository_path,
-
-                        "visibility":
-                            repository_visibility,
-
-                        "transport":
-                            source_transport,
-
-                        "credentialSource":
-                            credential_source,
-
-                        "authMethod":
-                            auth_method,
-
-                        "branch":
-                            branch,
-
-                        "commitSha":
-                            commit_sha,
-                    }
-                ),
             ),
-        )
-
-        project = connection.execute(
-            f"""
-                {PROJECT_SELECT}
-
-                WHERE project.id = %s
-
-                LIMIT 1;
-            """,
-            (project_id,),
         ).fetchone()
 
-        if project is None:
+        if row is None:
             raise RuntimeError(
-                "Impossible de relire le projet."
+                "Le projet n'a pas été créé."
             )
 
-        return project
+        project_id = int(row["id"])
+
+        attach_environment(
+            database_connection=connection,
+            project_id=project_id,
+            environment_id=environment_id,
+        )
+
+        add_project_activity(
+            database_connection=connection,
+            project_id=project_id,
+            user_id=user_id,
+            action="project.created",
+            details={
+                "operationMode": operation_mode,
+                "sourceType": "zip",
+                "archiveName": archive_original_name,
+                "archiveSha256": archive_sha256,
+                "environmentId": environment_id,
+            },
+        )
+
+        return read_project_in_transaction(
+            database_connection=connection,
+            project_id=project_id,
+        )
+
+
+def attach_environment(
+    *,
+    database_connection,
+    project_id: int,
+    environment_id: int,
+) -> None:
+    database_connection.execute(
+        """
+            INSERT INTO project_environments (
+                project_id,
+                environment_id,
+                is_default
+            )
+            VALUES (
+                %s,
+                %s,
+                TRUE
+            )
+
+            ON CONFLICT (
+                project_id,
+                environment_id
+            )
+            DO UPDATE SET
+                is_default = TRUE;
+        """,
+        (
+            project_id,
+            environment_id,
+        ),
+    )
+
+
+def add_project_activity(
+    *,
+    database_connection,
+    project_id: int,
+    user_id: int,
+    action: str,
+    details: dict[str, Any],
+) -> None:
+    database_connection.execute(
+        """
+            INSERT INTO project_activity_logs (
+                project_id,
+                user_id,
+                action,
+                details
+            )
+            VALUES (
+                %s,
+                %s,
+                %s,
+                %s::JSONB
+            );
+        """,
+        (
+            project_id,
+            user_id,
+            action,
+            json.dumps(details),
+        ),
+    )
+
+
+def read_project_in_transaction(
+    *,
+    database_connection,
+    project_id: int,
+) -> dict[str, Any]:
+    project = database_connection.execute(
+        f"""
+            {PROJECT_SELECT}
+
+            WHERE project.id = %s
+
+            LIMIT 1;
+        """,
+        (project_id,),
+    ).fetchone()
+
+    if project is None:
+        raise RuntimeError(
+            "Impossible de relire le projet."
+        )
+
+    return project
 
 
 def save_source_check(
     *,
     project_id: int | None,
     user_id: int,
-    source_connection_id: int,
+    source_connection_id: int | None,
     repository_path: str,
     branch: str,
     status: str,
@@ -682,8 +848,6 @@ def find_available_slug(
         if row is None:
             return candidate
 
-        candidate = (
-            f"{slug_base}-{suffix}"
-        )
+        candidate = f"{slug_base}-{suffix}"
 
         suffix += 1

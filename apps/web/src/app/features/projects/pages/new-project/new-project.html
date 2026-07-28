@@ -2,97 +2,66 @@
   <header class="page-heading">
     <div>
       <p class="eyebrow">
-        Assistant de déploiement
+        PIXIMIND / PROJETS
       </p>
 
-      <h2>
+      <h1>
         Nouveau projet
-      </h2>
+      </h1>
 
       <p>
-        Configurez la source Git et les environnements
-        avant de lancer l’analyse du code.
+        Ajoutez une application à Piximind, puis lancez son analyse.
       </p>
     </div>
   </header>
 
-  <section class="workflow">
-    <article class="workflow-step workflow-step--active">
+  <nav
+    class="workflow"
+    aria-label="Étapes de déploiement"
+  >
+    <div class="workflow-step workflow-step--active">
       <span>1</span>
+      <strong>Création</strong>
+    </div>
 
-      <div>
-        <strong>Création</strong>
-        <small>Source et environnements</small>
-      </div>
-    </article>
-
-    <article class="workflow-step">
+    <div class="workflow-step">
       <span>2</span>
+      <strong>Analyse</strong>
+    </div>
 
-      <div>
-        <strong>Analyse</strong>
-        <small>Code et technologies</small>
-      </div>
-    </article>
-
-    <article class="workflow-step">
+    <div class="workflow-step">
       <span>3</span>
+      <strong>Génération</strong>
+    </div>
 
-      <div>
-        <strong>IA & génération</strong>
-        <small>Docker et Helm</small>
-      </div>
-    </article>
-
-    <article class="workflow-step">
+    <div class="workflow-step">
       <span>4</span>
+      <strong>Confirmation</strong>
+    </div>
 
-      <div>
-        <strong>Confirmation</strong>
-        <small>Validation humaine</small>
-      </div>
-    </article>
-
-    <article class="workflow-step">
+    <div class="workflow-step">
       <span>5</span>
+      <strong>Déploiement</strong>
+    </div>
+  </nav>
 
-      <div>
-        <strong>Déploiement</strong>
-        <small>Exécution et logs</small>
-      </div>
-    </article>
-  </section>
-
-  <section class="phase-notice">
-    <strong>
-      Phase 1 — Création du projet
-    </strong>
-
-    <p>
-      Cette phase vérifie l’accès au repository avec
-      <code>git ls-remote</code>.
-      Le téléchargement du code commencera pendant la phase Analyse.
-    </p>
-  </section>
+  <aside class="page-note">
+    Pour publier une nouvelle version d’un projet déjà géré par
+    Piximind, ouvrez directement ce projet depuis la liste des projets.
+  </aside>
 
   @if (pageError()) {
     <section
       class="message message--error"
       role="alert"
     >
-      <strong>
-        Chargement impossible
-      </strong>
-
-      <span>
-        {{ pageError() }}
-      </span>
+      {{ pageError() }}
     </section>
   }
 
   @if (isLoading()) {
     <section class="loading-card">
-      Chargement des connexions GitLab et des environnements…
+      Chargement des connexions et des environnements…
     </section>
   } @else {
     <form
@@ -100,663 +69,542 @@
       [formGroup]="form"
       (ngSubmit)="createProject()"
     >
-      <!-- =====================================================
-           SECTION 1 : INFORMATIONS GÉNÉRALES
-           ===================================================== -->
-
       <section class="form-card">
-        <header class="form-card__heading">
-          <span class="section-number">
-            1
-          </span>
+        <header class="form-card__header">
+          <span class="step-number">1</span>
 
           <div>
-            <h3>
-              Informations générales
-            </h3>
+            <h2>Projet</h2>
 
             <p>
-              Définissez l’identité du projet.
+              Définissez le scénario et l’identité de l’application.
             </p>
           </div>
         </header>
 
-        <div class="form-grid">
-          <div class="form-field">
-            <label for="projectName">
-              Nom du projet
-            </label>
+        <div class="form-card__body">
+          <div class="compact-choice-grid">
+            <button
+              type="button"
+              class="compact-choice"
+              [class.compact-choice--active]="
+                operationMode() === 'new_application'
+              "
+              (click)="selectOperationMode('new_application')"
+            >
+              <strong>Nouvelle application</strong>
 
-            <input
-              id="projectName"
-              type="text"
-              formControlName="name"
-              placeholder="Exemple : SApixi Platform"
-            />
+              <span>
+                Premier déploiement avec Piximind.
+              </span>
+            </button>
 
-            @if (
-              form.controls.name.touched
-              && form.controls.name.hasError('required')
-            ) {
-              <small class="field-error">
-                Le nom du projet est obligatoire.
-              </small>
-            }
+            <button
+              type="button"
+              class="compact-choice"
+              [class.compact-choice--active]="
+                operationMode() === 'adopt_existing'
+              "
+              (click)="selectOperationMode('adopt_existing')"
+            >
+              <strong>Application déjà déployée</strong>
 
-            @if (
-              form.controls.name.touched
-              && form.controls.name.hasError('minlength')
-            ) {
-              <small class="field-error">
-                Le nom doit contenir au moins 3 caractères.
-              </small>
-            }
-
-            @if (
-              form.controls.name.touched
-              && form.controls.name.hasError('maxlength')
-            ) {
-              <small class="field-error">
-                Le nom ne peut pas dépasser 140 caractères.
-              </small>
-            }
+              <span>
+                Import et suivi d’un déploiement existant.
+              </span>
+            </button>
           </div>
 
-          <div class="form-field form-field--wide">
-            <label for="projectDescription">
-              Description
-            </label>
+          @if (
+            operationMode() === 'adopt_existing'
+          ) {
+            <p class="inline-note">
+              Piximind enregistrera le projet sans modifier le
+              déploiement existant. La découverte Kubernetes et
+              Argo CD sera effectuée pendant la phase d’analyse.
+            </p>
+          }
 
-            <textarea
-              id="projectDescription"
-              rows="4"
-              formControlName="description"
-              placeholder="Décrivez brièvement le rôle de cette application…"
-            ></textarea>
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="projectName">
+                Nom du projet
+              </label>
 
-            <small>
-              La description est facultative.
-            </small>
+              <input
+                id="projectName"
+                type="text"
+                formControlName="name"
+                placeholder="Exemple : sapixi-platform"
+              />
+
+              @if (
+                form.controls.name.touched
+                && form.controls.name.invalid
+              ) {
+                <small class="field-error">
+                  Le nom doit contenir entre 3 et 140 caractères.
+                </small>
+              }
+            </div>
+
+            <div class="form-field">
+              <label for="projectDescription">
+                Description
+              </label>
+
+              <textarea
+                id="projectDescription"
+                rows="3"
+                formControlName="description"
+                placeholder="Description courte du projet"
+              ></textarea>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- =====================================================
-           SECTION 2 : SOURCE GITLAB
-           ===================================================== -->
-
       <section class="form-card">
-        <header class="form-card__heading">
-          <span class="section-number">
-            2
-          </span>
+        <header class="form-card__header">
+          <span class="step-number">2</span>
 
           <div>
-            <h3>
-              Source GitLab
-            </h3>
+            <h2>Source du code</h2>
 
             <p>
-              Configurez l’accès au repository sans encore
-              télécharger son contenu.
+              Choisissez un repository Git ou une archive ZIP.
             </p>
           </div>
         </header>
 
-        <div class="source-content">
-          <!-- Serveur GitLab -->
-
-          <div class="form-field">
-            <label for="sourceConnectionId">
-              Serveur GitLab
-            </label>
-
-            <select
-              id="sourceConnectionId"
-              formControlName="sourceConnectionId"
-              (change)="onConnectionChanged()"
+        <div class="form-card__body">
+          <div class="compact-choice-grid">
+            <button
+              type="button"
+              class="compact-choice"
+              [class.compact-choice--active]="
+                sourceType() === 'git'
+              "
+              (click)="selectSourceType('git')"
             >
-              <option [value]="0">
-                Sélectionner un serveur GitLab
-              </option>
+              <strong>Repository Git</strong>
+              <span>GitLab public ou privé.</span>
+            </button>
 
-              @for (
-                connection of options()?.gitConnections ?? [];
-                track connection.id
-              ) {
-                <option [value]="connection.id">
-                  {{ connection.name }}
-                  —
-                  {{ connection.baseUrl }}
-                </option>
-              }
-            </select>
+            <button
+              type="button"
+              class="compact-choice"
+              [class.compact-choice--active]="
+                sourceType() === 'zip'
+              "
+              (click)="selectSourceType('zip')"
+            >
+              <strong>Archive ZIP</strong>
 
-            @if (selectedConnection()) {
-              <small>
-                État :
-                {{ selectedConnection()?.status }}
-                ·
-                SSL :
-                {{
-                  selectedConnection()?.verifySsl
-                    ? 'vérifié'
-                    : 'désactivé'
-                }}
-              </small>
-            } @else {
-              <small>
-                Les serveurs GitLab sont configurés depuis la page
-                Intégrations.
-              </small>
-            }
+              <span>
+                Projet fourni sous forme compressée.
+              </span>
+            </button>
           </div>
 
-          <!-- Visibilité -->
-
-          <div class="choice-section">
-            <h4>
-              Visibilité du repository
-            </h4>
-
-            <div class="choice-grid">
-              <label
-                class="choice-card"
-                [class.choice-card--selected]="
-                  visibility() === 'public'
-                "
-              >
-                <input
-                  type="radio"
-                  formControlName="visibility"
-                  value="public"
-                  (change)="onVisibilityChanged('public')"
-                />
-
-                <strong>
-                  Repository public
-                </strong>
-
-                <span>
-                  Accès HTTPS sans username, token ou mot de passe.
-                </span>
-              </label>
-
-              <label
-                class="choice-card"
-                [class.choice-card--selected]="
-                  visibility() === 'private'
-                "
-              >
-                <input
-                  type="radio"
-                  formControlName="visibility"
-                  value="private"
-                  (change)="onVisibilityChanged('private')"
-                />
-
-                <strong>
-                  Repository privé
-                </strong>
-
-                <span>
-                  Utilise un credential HTTPS ou une clé SSH.
-                </span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Configuration privée -->
-
-          @if (visibility() === 'private') {
-            <!-- Transport -->
-
-            <div class="choice-section">
-              <h4>
-                Méthode d’accès privée
-              </h4>
-
-              <div class="choice-grid">
-                <label
-                  class="choice-card"
-                  [class.choice-card--selected]="
-                    transport() === 'https'
-                  "
-                >
-                  <input
-                    type="radio"
-                    formControlName="transport"
-                    value="https"
-                    (change)="onTransportChanged('https')"
-                  />
-
-                  <strong>
-                    HTTPS
-                  </strong>
-
-                  <span>
-                    Username et mot de passe ou username et token.
-                  </span>
-                </label>
-
-                <label
-                  class="choice-card"
-                  [class.choice-card--selected]="
-                    transport() === 'ssh'
-                  "
-                >
-                  <input
-                    type="radio"
-                    formControlName="transport"
-                    value="ssh"
-                    (change)="onTransportChanged('ssh')"
-                  />
-
-                  <strong>
-                    SSH
-                  </strong>
-
-                  <span>
-                    Clé privée liée à une Deploy Key GitLab.
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Origine du credential -->
-
-            <div class="choice-section">
-              <h4>
-                Origine du credential
-              </h4>
-
-              <div class="choice-grid">
-                <label
-                  class="choice-card"
-                  [class.choice-card--selected]="
-                    credentialSource() === 'integration'
-                  "
-                  [class.choice-card--disabled]="
-                    !integrationCredentialCompatible()
-                  "
-                >
-                  <input
-                    type="radio"
-                    formControlName="credentialSource"
-                    value="integration"
-                    [disabled]="
-                      !integrationCredentialCompatible()
-                    "
-                    (change)="
-                      onCredentialSourceChanged('integration')
-                    "
-                  />
-
-                  <strong>
-                    Credential de la connexion
-                  </strong>
-
-                  <span>
-                    Réutilise le credential déjà enregistré
-                    dans la page Intégrations.
-                  </span>
-                </label>
-
-                <label
-                  class="choice-card"
-                  [class.choice-card--selected]="
-                    credentialSource() === 'project'
-                  "
-                >
-                  <input
-                    type="radio"
-                    formControlName="credentialSource"
-                    value="project"
-                    (change)="
-                      onCredentialSourceChanged('project')
-                    "
-                  />
-
-                  <strong>
-                    Credential propre au projet
-                  </strong>
-
-                  <span>
-                    Fournissez un mot de passe, un token
-                    ou une clé privée spécifique.
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Credential venant de la connexion -->
-
-            @if (credentialSource() === 'integration') {
-              <section class="public-access-note">
-                <strong>
-                  Credential de la connexion sélectionné
-                </strong>
-
-                <p>
-                  Type :
-                  {{ credentialAuthLabel() }}
-                </p>
-
-                <p>
-                  Username :
-                  {{
-                    selectedConnection()?.credentialUsername
-                    ?? 'Non défini'
-                  }}
-                </p>
-
-                <p>
-                  Le secret est déjà chiffré dans la base de données.
-                  Il sera utilisé par Flask pour tester le repository.
-                </p>
-              </section>
-            }
-
-            <!-- Credential propre HTTPS -->
-
-            @if (
-              credentialSource() === 'project'
-              && transport() === 'https'
-            ) {
-              <div class="choice-section">
-                <h4>
-                  Authentification HTTPS
-                </h4>
-
-                <div class="choice-grid">
-                  <label
-                    class="choice-card"
-                    [class.choice-card--selected]="
-                      authMethod() === 'https_password'
-                    "
-                  >
-                    <input
-                      type="radio"
-                      formControlName="authMethod"
-                      value="https_password"
-                      (change)="
-                        onAuthMethodChanged('https_password')
-                      "
-                    />
-
-                    <strong>
-                      Username et mot de passe
-                    </strong>
-
-                    <span>
-                      Utilise le mot de passe du compte GitLab.
-                    </span>
-                  </label>
-
-                  <label
-                    class="choice-card"
-                    [class.choice-card--selected]="
-                      authMethod() === 'https_token'
-                    "
-                  >
-                    <input
-                      type="radio"
-                      formControlName="authMethod"
-                      value="https_token"
-                      (change)="
-                        onAuthMethodChanged('https_token')
-                      "
-                    />
-
-                    <strong>
-                      Username et token
-                    </strong>
-
-                    <span>
-                      Personal, Project, Group ou Deploy Token.
-                    </span>
-                  </label>
-                </div>
-              </div>
-
-              <!-- Type de token -->
-
-              @if (authMethod() === 'https_token') {
-                <div class="form-field">
-                  <label for="tokenType">
-                    Type de token GitLab
-                  </label>
-
-                  <select
-                    id="tokenType"
-                    formControlName="tokenType"
-                    (change)="onTokenTypeChanged()"
-                  >
-                    <option value="personal_access_token">
-                      Personal Access Token
-                    </option>
-
-                    <option value="project_access_token">
-                      Project Access Token
-                    </option>
-
-                    <option value="group_access_token">
-                      Group Access Token
-                    </option>
-
-                    <option value="deploy_token">
-                      Deploy Token
-                    </option>
-
-                    <option value="generic_token">
-                      Autre token compatible
-                    </option>
-                  </select>
-
-                  @if (
-                    form.controls.tokenType.value === 'deploy_token'
-                  ) {
-                    <small>
-                      Utilisez le username fourni par GitLab,
-                      par exemple
-                      <code>gitlab+deploy-token-12</code>.
-                    </small>
-                  } @else {
-                    <small>
-                      Pour un Personal, Project ou Group Access Token,
-                      vous pouvez utiliser
-                      <code>oauth2</code>
-                      comme username Git.
-                    </small>
-                  }
-                </div>
-              }
-
-              <!-- Username et secret HTTPS -->
-
-              <div class="form-grid form-grid--source">
-                <div class="form-field">
-                  <label for="gitUsername">
-                    Username Git
-                  </label>
-
-                  <input
-                    id="gitUsername"
-                    type="text"
-                    formControlName="username"
-                    placeholder="oauth2"
-                    autocomplete="username"
-                    (input)="invalidateSource()"
-                  />
-
-                  @if (
-                    authMethod() === 'https_password'
-                  ) {
-                    <small>
-                      Utilisez le nom d’utilisateur du compte GitLab.
-                    </small>
-                  } @else if (
-                    form.controls.tokenType.value === 'deploy_token'
-                  ) {
-                    <small>
-                      Utilisez le username exact fourni avec le Deploy Token.
-                    </small>
-                  } @else {
-                    <small>
-                      La valeur
-                      <code>oauth2</code>
-                      convient généralement pour les Access Tokens.
-                    </small>
-                  }
-                </div>
-
-                <div class="form-field">
-                  <label for="gitSecret">
-                    @if (authMethod() === 'https_token') {
-                      Token GitLab
-                    } @else {
-                      Mot de passe GitLab
-                    }
-                  </label>
-
-                  <input
-                    id="gitSecret"
-                    type="password"
-                    formControlName="secret"
-                    autocomplete="new-password"
-                    placeholder="Saisissez le secret"
-                    (input)="invalidateSource()"
-                  />
-
-                  <small>
-                    Le secret n’est jamais affiché dans les logs
-                    ni enregistré dans l’URL du repository.
-                  </small>
-                </div>
-              </div>
-
-              @if (authMethod() === 'https_password') {
-                <section class="public-access-note">
-                  <strong>
-                    Attention
-                  </strong>
-
-                  <p>
-                    Le mot de passe GitLab peut être refusé lorsque
-                    l’authentification à deux facteurs est activée
-                    ou lorsque le serveur impose l’utilisation de tokens.
-                  </p>
-                </section>
-              }
-            }
-
-            <!-- Credential propre SSH -->
-
-            @if (
-              credentialSource() === 'project'
-              && transport() === 'ssh'
-            ) {
+          @if (sourceType() === 'git') {
+            <div class="source-section">
               <div class="form-field">
-                <label for="sshPrivateKey">
-                  Clé privée SSH
+                <label for="sourceConnectionId">
+                  Serveur GitLab
                 </label>
 
-                <textarea
-                  id="sshPrivateKey"
-                  rows="9"
-                  formControlName="secret"
-                  autocomplete="off"
-                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                  (input)="invalidateSource()"
-                ></textarea>
+                <select
+                  id="sourceConnectionId"
+                  formControlName="sourceConnectionId"
+                  (change)="onConnectionChanged()"
+                >
+                  <option [value]="0">
+                    Sélectionner un serveur
+                  </option>
 
-                <small>
-                  La clé publique correspondante doit être ajoutée
-                  dans GitLab comme Deploy Key en lecture seule.
-                </small>
+                  @for (
+                    connection of
+                      options()?.gitConnections ?? [];
+                    track connection.id
+                  ) {
+                    <option [value]="connection.id">
+                      {{ connection.name }}
+                      —
+                      {{ connection.baseUrl }}
+                    </option>
+                  }
+                </select>
+
+                @if (selectedConnection()) {
+                  <small class="field-help">
+                    {{ selectedConnection()?.status }}
+                    · SSL
+                    {{
+                      selectedConnection()?.verifySsl
+                        ? 'vérifié'
+                        : 'désactivé'
+                    }}
+                  </small>
+                }
               </div>
 
-              <section class="public-access-note">
-                <strong>
-                  Fonctionnement SSH
-                </strong>
+              <div class="subsection">
+                <h3>Visibilité</h3>
 
-                <p>
-                  Piximind utilisera temporairement cette clé privée.
-                  La clé publique doit être autorisée dans le repository
-                  GitLab.
-                </p>
-              </section>
-            }
+                <div class="compact-choice-grid">
+                  <button
+                    type="button"
+                    class="compact-choice"
+                    [class.compact-choice--active]="
+                      visibility() === 'public'
+                    "
+                    (click)="onVisibilityChanged('public')"
+                  >
+                    <strong>Public</strong>
+                    <span>Aucun credential.</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    class="compact-choice"
+                    [class.compact-choice--active]="
+                      visibility() === 'private'
+                    "
+                    (click)="onVisibilityChanged('private')"
+                  >
+                    <strong>Privé</strong>
+                    <span>Accès HTTPS ou SSH.</span>
+                  </button>
+                </div>
+              </div>
+
+              @if (visibility() === 'private') {
+                <div class="subsection">
+                  <h3>Méthode d’accès</h3>
+
+                  <div class="compact-choice-grid">
+                    <button
+                      type="button"
+                      class="compact-choice"
+                      [class.compact-choice--active]="
+                        transport() === 'https'
+                      "
+                      (click)="onTransportChanged('https')"
+                    >
+                      <strong>HTTPS</strong>
+                      <span>Mot de passe ou token.</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      class="compact-choice"
+                      [class.compact-choice--active]="
+                        transport() === 'ssh'
+                      "
+                      (click)="onTransportChanged('ssh')"
+                    >
+                      <strong>SSH</strong>
+                      <span>Clé privée SSH.</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="subsection">
+                  <h3>Credential</h3>
+
+                  <div class="compact-choice-grid">
+                    <button
+                      type="button"
+                      class="compact-choice"
+                      [class.compact-choice--active]="
+                        credentialSource() === 'integration'
+                      "
+                      [disabled]="
+                        !integrationCredentialCompatible()
+                      "
+                      (click)="
+                        onCredentialSourceChanged('integration')
+                      "
+                    >
+                      <strong>Connexion existante</strong>
+
+                      <span>
+                        Réutiliser le secret d’Intégrations.
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      class="compact-choice"
+                      [class.compact-choice--active]="
+                        credentialSource() === 'project'
+                      "
+                      (click)="
+                        onCredentialSourceChanged('project')
+                      "
+                    >
+                      <strong>Propre au projet</strong>
+
+                      <span>
+                        Saisir un secret spécifique.
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                @if (
+                  credentialSource() === 'integration'
+                ) {
+                  <div class="credential-summary">
+                    <strong>
+                      {{ credentialAuthLabel() }}
+                    </strong>
+
+                    <span>
+                      Username :
+                      {{
+                        selectedConnection()?.credentialUsername
+                        ?? 'non défini'
+                      }}
+                    </span>
+                  </div>
+                }
+
+                @if (
+                  credentialSource() === 'project'
+                  && transport() === 'https'
+                ) {
+                  <div class="subsection">
+                    <h3>Authentification HTTPS</h3>
+
+                    <div class="compact-choice-grid">
+                      <button
+                        type="button"
+                        class="compact-choice"
+                        [class.compact-choice--active]="
+                          authMethod() === 'https_password'
+                        "
+                        (click)="
+                          onAuthMethodChanged('https_password')
+                        "
+                      >
+                        <strong>Mot de passe</strong>
+
+                        <span>
+                          Compte GitLab classique.
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        class="compact-choice"
+                        [class.compact-choice--active]="
+                          authMethod() === 'https_token'
+                        "
+                        (click)="
+                          onAuthMethodChanged('https_token')
+                        "
+                      >
+                        <strong>Token</strong>
+
+                        <span>
+                          Personal, Project, Group ou Deploy Token.
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+
+                  @if (
+                    authMethod() === 'https_token'
+                  ) {
+                    <div class="form-field">
+                      <label for="tokenType">
+                        Type de token
+                      </label>
+
+                      <select
+                        id="tokenType"
+                        formControlName="tokenType"
+                        (change)="onTokenTypeChanged()"
+                      >
+                        <option value="personal_access_token">
+                          Personal Access Token
+                        </option>
+
+                        <option value="project_access_token">
+                          Project Access Token
+                        </option>
+
+                        <option value="group_access_token">
+                          Group Access Token
+                        </option>
+
+                        <option value="deploy_token">
+                          Deploy Token
+                        </option>
+
+                        <option value="generic_token">
+                          Autre token compatible
+                        </option>
+                      </select>
+                    </div>
+                  }
+
+                  <div class="form-grid">
+                    <div class="form-field">
+                      <label for="gitUsername">
+                        Username Git
+                      </label>
+
+                      <input
+                        id="gitUsername"
+                        type="text"
+                        formControlName="username"
+                        placeholder="oauth2"
+                        autocomplete="username"
+                        (input)="invalidateSource()"
+                      />
+
+                      <small class="field-help">
+                        Pour un Deploy Token, utilisez le username
+                        fourni par GitLab.
+                      </small>
+                    </div>
+
+                    <div class="form-field">
+                      <label for="gitSecret">
+                        @if (
+                          authMethod() === 'https_token'
+                        ) {
+                          Token GitLab
+                        } @else {
+                          Mot de passe GitLab
+                        }
+                      </label>
+
+                      <input
+                        id="gitSecret"
+                        type="password"
+                        formControlName="secret"
+                        autocomplete="new-password"
+                        (input)="invalidateSource()"
+                      />
+                    </div>
+                  </div>
+                }
+
+                @if (
+                  credentialSource() === 'project'
+                  && transport() === 'ssh'
+                ) {
+                  <div class="form-field">
+                    <label for="sshPrivateKey">
+                      Clé privée SSH
+                    </label>
+
+                    <textarea
+                      id="sshPrivateKey"
+                      rows="7"
+                      formControlName="secret"
+                      autocomplete="off"
+                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                      (input)="invalidateSource()"
+                    ></textarea>
+
+                    <small class="field-help">
+                      La clé publique correspondante doit être
+                      autorisée dans GitLab.
+                    </small>
+                  </div>
+                }
+              }
+
+              <div class="form-grid form-grid--repository">
+                <div class="form-field form-field--wide">
+                  <label for="repositoryUrl">
+                    URL de clonage
+                  </label>
+
+                  <input
+                    id="repositoryUrl"
+                    type="text"
+                    formControlName="repositoryUrl"
+                    [placeholder]="
+                      transport() === 'ssh'
+                      && visibility() === 'private'
+                        ? 'git@gitlab.example.com:groupe/projet.git'
+                        : 'https://gitlab.example.com/groupe/projet.git'
+                    "
+                    autocomplete="off"
+                    (input)="invalidateSource()"
+                  />
+                </div>
+
+                <div class="form-field">
+                  <label for="branch">
+                    Branche
+                  </label>
+
+                  <input
+                    id="branch"
+                    type="text"
+                    formControlName="branch"
+                    placeholder="main"
+                    autocomplete="off"
+                    (input)="invalidateSource()"
+                  />
+                </div>
+              </div>
+            </div>
           } @else {
-            <!-- Repository public -->
+            <div class="source-section">
+              <div class="upload-field">
+                <input
+                  id="archiveFile"
+                  type="file"
+                  accept=".zip,application/zip"
+                  (change)="onArchiveSelected($event)"
+                />
 
-            <section class="public-access-note">
-              <strong>
-                Accès public HTTPS
-              </strong>
+                <label for="archiveFile">
+                  <strong>
+                    Choisir une archive ZIP
+                  </strong>
 
-              <p>
-                Aucun username, mot de passe, token ou clé SSH
-                ne sera envoyé à Git.
+                  <span>
+                    Taille maximale :
+                    {{
+                      options()?.archiveLimits?.maxMegabytes
+                      ?? 100
+                    }}
+                    Mo
+                  </span>
+                </label>
+
+                @if (
+                  selectedArchiveFile();
+                  as file
+                ) {
+                  <div class="selected-file">
+                    <strong>
+                      {{ file.name }}
+                    </strong>
+
+                    <span>
+                      {{ formatBytes(file.size) }}
+                    </span>
+                  </div>
+                }
+              </div>
+
+              <p class="inline-note">
+                L’archive est contrôlée en phase 1, puis extraite
+                dans un workspace sécurisé pendant la phase
+                d’analyse.
               </p>
-            </section>
+            </div>
           }
-
-          <!-- URL et branche -->
-
-          <div class="form-grid form-grid--source">
-            <div class="form-field form-field--wide">
-              <label for="repositoryUrl">
-                URL de clonage Git
-              </label>
-
-              <input
-                id="repositoryUrl"
-                type="text"
-                formControlName="repositoryUrl"
-                [placeholder]="
-                  transport() === 'ssh'
-                  && visibility() === 'private'
-                    ? 'git@gitlab.example.com:groupe/projet.git'
-                    : 'https://gitlab.example.com/groupe/projet.git'
-                "
-                autocomplete="off"
-                (input)="invalidateSource()"
-              />
-
-              <small>
-                Copiez l’adresse exacte depuis GitLab →
-                <strong>Clone</strong> →
-                HTTPS ou SSH.
-              </small>
-            </div>
-
-            <div class="form-field">
-              <label for="branch">
-                Branche
-              </label>
-
-              <input
-                id="branch"
-                type="text"
-                formControlName="branch"
-                placeholder="main"
-                autocomplete="off"
-                (input)="invalidateSource()"
-              />
-
-              <small>
-                Exemple :
-                <code>main</code>,
-                <code>develop</code>
-                ou
-                <code>release</code>.
-              </small>
-            </div>
-          </div>
-
-          <!-- Options avancées -->
 
           <details class="advanced-options">
             <summary>
@@ -777,515 +625,196 @@
                 (input)="invalidateSource()"
               />
 
-              <small>
-                Laissez vide lorsque l’application se trouve
-                à la racine du repository.
+              <small class="field-help">
+                Laissez vide pour analyser toute la source.
               </small>
             </div>
           </details>
 
-          <!-- Test du repository -->
-
-          <div class="source-test-area">
+          <div class="source-actions">
             <button
               class="secondary-button"
               type="button"
               [disabled]="isTesting()"
               (click)="validateSource()"
             >
-              @if (isTesting()) {
-                Test de l’accès en cours…
-              } @else {
-                Tester l’accès au repository
-              }
+              {{
+                isTesting()
+                  ? 'Vérification…'
+                  : 'Vérifier la source'
+              }}
             </button>
 
             @if (sourceError()) {
-              <section
-                class="inline-message inline-message--error"
+              <div
+                class="message message--error"
                 role="alert"
               >
-                <strong>
-                  Impossible d’accéder au repository
-                </strong>
-
-                <p>
-                  {{ sourceError() }}
-                </p>
-              </section>
+                {{ sourceError() }}
+              </div>
             }
 
             @if (
               sourceValidation();
               as validation
             ) {
-              <section
-                class="inline-message inline-message--success"
+              <div
+                class="validation-card"
                 role="status"
               >
-                <header>
+                <div class="validation-card__heading">
+                  <span>✓</span>
+
                   <div>
-                    <strong>
-                      Accès au repository validé
-                    </strong>
-
-                    <p>
-                      {{
-                        sourceSuccess()
-                        ?? 'Le repository et la branche sont accessibles.'
-                      }}
-                    </p>
+                    <strong>Source validée</strong>
+                    <p>{{ sourceSuccess() }}</p>
                   </div>
-
-                  <span>
-                    Valide
-                  </span>
-                </header>
-
-                <div class="validation-list">
-                  <article>
-                    <i>✓</i>
-                    Serveur GitLab accessible
-                  </article>
-
-                  <article>
-                    <i>✓</i>
-
-                    @if (validation.visibility === 'public') {
-                      Aucun credential nécessaire
-                    } @else {
-                      Authentification acceptée
-                    }
-                  </article>
-
-                  <article>
-                    <i>✓</i>
-                    Repository accessible
-                  </article>
-
-                  <article>
-                    <i>✓</i>
-                    Branche
-                    {{ validation.branch }}
-                    trouvée
-                  </article>
-
-                  <article>
-                    <i>✓</i>
-                    Commit
-                    {{ validation.commitSha.slice(0, 12) }}
-                    détecté
-                  </article>
-
-                  <article class="pending-step">
-                    <i>○</i>
-                    Le code sera cloné pendant la phase Analyse
-                  </article>
                 </div>
 
-                <div class="validation-details">
-                  <article>
-                    <span>Repository</span>
+                @if (
+                  validation.sourceType === 'git'
+                ) {
+                  <dl class="validation-data">
+                    <div>
+                      <dt>Repository</dt>
+                      <dd>{{ validation.repositoryPath }}</dd>
+                    </div>
 
-                    <strong>
-                      {{ validation.repositoryPath }}
-                    </strong>
-                  </article>
+                    <div>
+                      <dt>Branche</dt>
+                      <dd>{{ validation.branch }}</dd>
+                    </div>
 
-                  <article>
-                    <span>Serveur</span>
+                    <div>
+                      <dt>Commit</dt>
 
-                    <strong>
-                      {{ validation.repositoryHost }}
-                    </strong>
-                  </article>
+                      <dd>
+                        {{
+                          validation.commitSha
+                            ?.slice(0, 12)
+                        }}
+                      </dd>
+                    </div>
+                  </dl>
+                } @else if (
+                  validation.archive;
+                  as archive
+                ) {
+                  <dl class="validation-data">
+                    <div>
+                      <dt>Archive</dt>
+                      <dd>{{ archive.originalName }}</dd>
+                    </div>
 
-                  <article>
-                    <span>Transport</span>
+                    <div>
+                      <dt>Fichiers</dt>
+                      <dd>{{ archive.entryCount }}</dd>
+                    </div>
 
-                    <strong>
-                      {{ validation.transport.toUpperCase() }}
-                    </strong>
-                  </article>
-
-                  <article>
-                    <span>Visibilité</span>
-
-                    <strong>
-                      {{
-                        validation.visibility === 'public'
-                          ? 'Public'
-                          : 'Privé'
-                      }}
-                    </strong>
-                  </article>
-                </div>
-              </section>
+                    <div>
+                      <dt>Taille</dt>
+                      <dd>{{ formatBytes(archive.sizeBytes) }}</dd>
+                    </div>
+                  </dl>
+                }
+              </div>
             }
           </div>
         </div>
       </section>
 
-      <!-- =====================================================
-           SECTION 3 : ENVIRONNEMENTS
-           ===================================================== -->
-
       <section class="form-card">
-        <header class="form-card__heading">
-          <span class="section-number">
-            3
-          </span>
+        <header class="form-card__header">
+          <span class="step-number">3</span>
 
           <div>
-            <h3>
-              Environnements autorisés
-            </h3>
+            <h2>Environnement</h2>
 
             <p>
-              Sélectionnez les infrastructures dans lesquelles
-              ce projet pourra être déployé.
+              Sélectionnez une seule cible de déploiement.
             </p>
           </div>
         </header>
 
-        @if (environments().length === 0) {
-          <section class="empty-environments">
-            <strong>
-              Aucun environnement disponible
-            </strong>
-
-            <p>
-              Créez d’abord un environnement depuis
-              la page Infrastructure.
-            </p>
-          </section>
-        } @else {
-          <div class="environment-grid">
-            @for (
-              environment of environments();
-              track environment.id
-            ) {
-              <article
-                class="environment-card"
-                [class.environment-card--selected]="
-                  isEnvironmentSelected(environment.id)
-                "
-              >
-                <header>
-                  <label>
-                    <input
-                      type="checkbox"
-                      [checked]="
-                        isEnvironmentSelected(environment.id)
-                      "
-                      (change)="
-                        toggleEnvironment(
-                          environment.id,
-                          $any($event.target).checked
-                        )
-                      "
-                    />
-
-                    <strong>
-                      {{ environment.name }}
-                    </strong>
-                  </label>
-
-                  <span class="context-badge">
-                    {{ environment.environmentType }}
-                  </span>
-                </header>
-
-                <dl>
-                  <div>
-                    <dt>
-                      Namespace
-                    </dt>
-
-                    <dd>
-                      {{ environment.namespace }}
-                    </dd>
-                  </div>
-
-                  <div>
-                    <dt>
-                      Domaine
-                    </dt>
-
-                    <dd>
-                      {{
-                        environment.domain
-                        ?? 'Non défini'
-                      }}
-                    </dd>
-                  </div>
-
-                  <div>
-                    <dt>
-                      Configuration
-                    </dt>
-
-                    <dd>
-                      {{ environment.configurationStatus }}
-                    </dd>
-                  </div>
-                </dl>
-
-                <label class="default-control">
+        <div class="form-card__body">
+          @if (environments().length === 0) {
+            <div class="empty-state">
+              Aucun environnement n’est disponible.
+            </div>
+          } @else {
+            <div class="environment-list">
+              @for (
+                environment of environments();
+                track environment.id
+              ) {
+                <label
+                  class="environment-option"
+                  [class.environment-option--selected]="
+                    selectedEnvironmentId()
+                    === environment.id
+                  "
+                >
                   <input
                     type="radio"
-                    name="defaultEnvironment"
+                    name="environment"
                     [checked]="
-                      defaultEnvironmentId() === environment.id
+                      selectedEnvironmentId()
+                      === environment.id
                     "
                     (change)="
-                      selectDefaultEnvironment(environment.id)
+                      selectEnvironment(
+                        environment.id
+                      )
                     "
                   />
 
-                  Définir comme environnement par défaut
-                </label>
-              </article>
-            }
-          </div>
-        }
-
-        @if (environmentError()) {
-          <section
-            class="section-message section-message--error"
-            role="alert"
-          >
-            {{ environmentError() }}
-          </section>
-        }
-      </section>
-
-      <!-- =====================================================
-           SECTION 4 : RÉSUMÉ
-           ===================================================== -->
-
-      <section class="form-card">
-        <header class="form-card__heading">
-          <span class="section-number">
-            4
-          </span>
-
-          <div>
-            <h3>
-              Résumé de la phase 1
-            </h3>
-
-            <p>
-              Vérifiez la configuration avant d’enregistrer
-              le projet.
-            </p>
-          </div>
-        </header>
-
-        <div class="summary-grid">
-          <article>
-            <span>
-              Projet
-            </span>
-
-            <strong>
-              {{
-                form.controls.name.value
-                || 'Non défini'
-              }}
-            </strong>
-          </article>
-
-          <article>
-            <span>
-              Serveur GitLab
-            </span>
-
-            <strong>
-              {{
-                selectedConnection()?.name
-                ?? 'Non défini'
-              }}
-            </strong>
-          </article>
-
-          <article>
-            <span>
-              Repository
-            </span>
-
-            <strong>
-              {{
-                form.controls.repositoryUrl.value
-                || 'Non défini'
-              }}
-            </strong>
-          </article>
-
-          <article>
-            <span>
-              Visibilité
-            </span>
-
-            <strong>
-              {{
-                visibility() === 'public'
-                  ? 'Public'
-                  : 'Privé'
-              }}
-            </strong>
-          </article>
-
-          <article>
-            <span>
-              Transport
-            </span>
-
-            <strong>
-              {{
-                (
-                  visibility() === 'public'
-                    ? 'https'
-                    : transport()
-                ).toUpperCase()
-              }}
-            </strong>
-          </article>
-
-          <article>
-            <span>
-              Credential
-            </span>
-
-            <strong>
-              @if (visibility() === 'public') {
-                Aucun
-              } @else if (
-                credentialSource() === 'integration'
-              ) {
-                Connexion GitLab
-              } @else if (
-                transport() === 'ssh'
-              ) {
-                Clé SSH du projet
-              } @else if (
-                authMethod() === 'https_password'
-              ) {
-                Username et mot de passe
-              } @else {
-                Username et token
-              }
-            </strong>
-          </article>
-
-          <article>
-            <span>
-              Branche
-            </span>
-
-            <strong>
-              {{
-                form.controls.branch.value
-                || 'Non définie'
-              }}
-            </strong>
-          </article>
-
-          <article>
-            <span>
-              Source validée
-            </span>
-
-            <strong
-              [class.summary-value--valid]="
-                sourceValidation()
-              "
-            >
-              {{
-                sourceValidation()
-                  ? 'Oui'
-                  : 'Non'
-              }}
-            </strong>
-          </article>
-
-          <article>
-            <span>
-              Environnements autorisés
-            </span>
-
-            <strong>
-              {{ selectedEnvironmentIds().length }}
-            </strong>
-          </article>
-
-          <article>
-            <span>
-              Environnement par défaut
-            </span>
-
-            <strong>
-              @if (defaultEnvironmentId() === null) {
-                Non défini
-              } @else {
-                @for (
-                  environment of environments();
-                  track environment.id
-                ) {
-                  @if (
-                    environment.id === defaultEnvironmentId()
-                  ) {
+                  <span>
                     {{ environment.name }}
-                  }
-                }
+                  </span>
+                </label>
               }
-            </strong>
-          </article>
+            </div>
+          }
+
+          @if (environmentError()) {
+            <div
+              class="message message--error"
+              role="alert"
+            >
+              {{ environmentError() }}
+            </div>
+          }
         </div>
       </section>
 
-      <!-- =====================================================
-           CRÉATION
-           ===================================================== -->
+      <footer class="form-footer">
+        <a
+          class="cancel-button"
+          routerLink="/projects"
+        >
+          Annuler
+        </a>
 
-      <footer class="creation-footer">
-        <div>
-          <strong>
-            Prochaine phase
-          </strong>
-
-          <span>
-            Clone temporaire du repository et analyse
-            des technologies utilisées.
-          </span>
-        </div>
-
-        <div class="creation-actions">
+        <div class="form-footer__actions">
           @if (creationError()) {
-            <section
-              class="section-message section-message--error"
+            <div
+              class="message message--error"
               role="alert"
             >
               {{ creationError() }}
-            </section>
+            </div>
           }
 
           <button
             class="primary-button"
             type="submit"
-            [disabled]="
-              form.invalid
-              || !sourceValidation()
-              || selectedEnvironmentIds().length === 0
-              || defaultEnvironmentId() === null
-              || isCreating()
-            "
+            [disabled]="!canCreate()"
           >
-            @if (isCreating()) {
-              Création du projet…
-            } @else {
-              Créer le projet
-            }
+            {{
+              isCreating()
+                ? 'Création…'
+                : 'Créer le projet'
+            }}
           </button>
         </div>
       </footer>

@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from flask import (
     Flask,
     jsonify,
+)
+
+from werkzeug.exceptions import (
+    RequestEntityTooLarge,
+)
+
+from app.analysis import (
+    analysis_blueprint,
 )
 
 from app.auth.routes import (
@@ -40,20 +50,14 @@ from app.integrations.routes import (
 from app.projects.routes import (
     projects_blueprint,
 )
-from app.analysis import (
-    analysis_blueprint,
-)
+
 
 def create_app() -> Flask:
-    """
-    Crée et configure l'application Flask.
-    """
+    """Crée et configure l'application Flask."""
 
     app = Flask(__name__)
 
-    app.config.from_object(
-        Config
-    )
+    app.config.from_object(Config)
 
     if not app.config["SECRET_KEY"]:
         raise RuntimeError(
@@ -72,6 +76,15 @@ def create_app() -> Flask:
             "CREDENTIAL_ENCRYPTION_KEY "
             "n'est pas configurée."
         )
+
+    archive_root = Path(
+        app.config["PROJECT_ARCHIVE_ROOT"]
+    )
+
+    archive_root.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
     app.register_blueprint(
         auth_blueprint,
@@ -92,19 +105,46 @@ def create_app() -> Flask:
         infrastructure_blueprint,
         url_prefix="/api/infrastructure",
     )
-    app.register_blueprint(
-        analysis_blueprint,
-        url_prefix="/api/projects",
-    )
 
     app.register_blueprint(
         projects_blueprint,
         url_prefix="/api/projects",
     )
 
+    app.register_blueprint(
+        analysis_blueprint,
+        url_prefix="/api/projects",
+    )
+
     register_commands(app)
 
     register_integration_commands(app)
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def archive_too_large(
+        _error: RequestEntityTooLarge,
+    ):
+        maximum_megabytes = round(
+            app.config["PROJECT_ARCHIVE_MAX_BYTES"]
+            / 1024
+            / 1024
+        )
+
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": {
+                        "code": "ARCHIVE_TOO_LARGE",
+                        "message": (
+                            "L'archive dépasse la limite "
+                            f"de {maximum_megabytes} Mo."
+                        ),
+                    },
+                }
+            ),
+            413,
+        )
 
     @app.get("/api/health")
     def health():
@@ -113,11 +153,9 @@ def create_app() -> Flask:
                 jsonify(
                     {
                         "success": False,
-
                         "error": {
                             "code":
                                 "DATABASE_UNAVAILABLE",
-
                             "message":
                                 "PostgreSQL est "
                                 "inaccessible.",
@@ -130,17 +168,10 @@ def create_app() -> Flask:
         return jsonify(
             {
                 "success": True,
-
                 "data": {
-                    "service":
-                        "piximind-api",
-
-                    "status":
-                        "healthy",
-
-                    "database":
-                        "connected",
-
+                    "service": "piximind-api",
+                    "status": "healthy",
+                    "database": "connected",
                     "environment":
                         app.config["APP_ENV"],
                 },

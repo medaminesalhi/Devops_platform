@@ -5,6 +5,16 @@ import re
 from typing import Any
 
 
+PROJECT_OPERATION_MODES = {
+    "new_application",
+    "adopt_existing",
+}
+
+SOURCE_TYPES = {
+    "git",
+    "zip",
+}
+
 VISIBILITIES = {
     "public",
     "private",
@@ -58,9 +68,9 @@ def normalize_text(
 def normalize_optional_text(
     value: Any,
 ) -> str | None:
-    value = normalize_text(value)
+    normalized = normalize_text(value)
 
-    return value or None
+    return normalized or None
 
 
 def positive_integer(
@@ -85,28 +95,70 @@ def positive_integer(
     return identifier
 
 
-def identifier_list(
-    value: Any,
-    field_name: str,
-) -> list[int]:
-    if not isinstance(value, list):
+def read_source_type(
+    payload: dict[str, Any],
+) -> str:
+    source_type = normalize_text(
+        payload.get("sourceType")
+    ) or "git"
+
+    if source_type not in SOURCE_TYPES:
         raise ProjectValidationError(
-            "INVALID_IDENTIFIER_LIST",
-            f"Le champ {field_name} doit être une liste.",
+            "INVALID_SOURCE_TYPE",
+            "Le type de source est invalide.",
         )
 
-    result: list[int] = []
+    return source_type
 
-    for item in value:
-        identifier = positive_integer(
-            item,
-            field_name,
+
+def read_operation_mode(
+    payload: dict[str, Any],
+) -> str:
+    operation_mode = normalize_text(
+        payload.get("operationMode")
+    ) or "new_application"
+
+    if operation_mode not in PROJECT_OPERATION_MODES:
+        raise ProjectValidationError(
+            "INVALID_OPERATION_MODE",
+            "Le type de projet est invalide.",
         )
 
-        if identifier not in result:
-            result.append(identifier)
+    return operation_mode
 
-    return result
+
+def validate_project_name(
+    value: Any,
+) -> str:
+    name = normalize_text(value)
+
+    if len(name) < 3 or len(name) > 140:
+        raise ProjectValidationError(
+            "INVALID_PROJECT_NAME",
+            (
+                "Le nom du projet doit contenir "
+                "entre 3 et 140 caractères."
+            ),
+        )
+
+    return name
+
+
+def validate_description(
+    value: Any,
+) -> str | None:
+    description = normalize_optional_text(value)
+
+    if description and len(description) > 1000:
+        raise ProjectValidationError(
+            "PROJECT_DESCRIPTION_TOO_LONG",
+            (
+                "La description ne peut pas dépasser "
+                "1000 caractères."
+            ),
+        )
+
+    return description
 
 
 def validate_repository_url(
@@ -127,14 +179,14 @@ def validate_repository_url(
         )
 
     if re.match(
-        r"^https://[^/\s]+@",
+        r"^https?://[^/\s]+@",
         repository_url,
     ):
         raise ProjectValidationError(
             "CREDENTIAL_IN_URL_NOT_ALLOWED",
             (
-                "Ne placez pas le username, "
-                "le mot de passe ou le token dans l'URL."
+                "Ne placez pas le username, le mot de passe "
+                "ou le token dans l'URL."
             ),
         )
 
@@ -203,9 +255,7 @@ def validate_branch(
 def validate_subdirectory(
     value: Any,
 ) -> str | None:
-    subdirectory = normalize_optional_text(
-        value
-    )
+    subdirectory = normalize_optional_text(value)
 
     if subdirectory is None:
         return None
@@ -233,7 +283,7 @@ def validate_subdirectory(
     return normalized
 
 
-def read_source_payload(
+def read_git_source_payload(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
     visibility = normalize_text(
@@ -302,8 +352,8 @@ def read_source_payload(
         raise ProjectValidationError(
             "TRANSPORT_URL_MISMATCH",
             (
-                "Le transport choisi ne correspond "
-                "pas à l'URL du repository."
+                "Le transport choisi ne correspond pas "
+                "à l'URL du repository."
             ),
         )
 
@@ -394,107 +444,98 @@ def read_source_payload(
                 )
 
     return {
-        "source_connection_id":
-            positive_integer(
-                payload.get("sourceConnectionId"),
-                "sourceConnectionId",
-            ),
+        "source_type": "git",
 
-        "repository_url":
-            repository_url,
+        "source_connection_id": positive_integer(
+            payload.get("sourceConnectionId"),
+            "sourceConnectionId",
+        ),
 
-        "visibility":
-            visibility,
+        "repository_url": repository_url,
+        "visibility": visibility,
+        "transport": transport,
+        "credential_source": credential_source,
+        "auth_method": auth_method,
+        "token_type": token_type,
+        "username": username,
+        "secret": secret,
 
-        "transport":
-            transport,
+        "branch": validate_branch(
+            payload.get("branch")
+        ),
 
-        "credential_source":
-            credential_source,
-
-        "auth_method":
-            auth_method,
-
-        "token_type":
-            token_type,
-
-        "username":
-            username,
-
-        "secret":
-            secret,
-
-        "branch":
-            validate_branch(
-                payload.get("branch")
-            ),
-
-        "source_subdirectory":
-            validate_subdirectory(
-                payload.get("sourceSubdirectory")
-            ),
+        "source_subdirectory": validate_subdirectory(
+            payload.get("sourceSubdirectory")
+        ),
     }
+
+
+def read_zip_source_payload(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "source_type": "zip",
+
+        "source_subdirectory": validate_subdirectory(
+            payload.get("sourceSubdirectory")
+        ),
+    }
+
+
+def read_source_payload(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    source_type = read_source_type(payload)
+
+    if source_type == "zip":
+        return read_zip_source_payload(payload)
+
+    return read_git_source_payload(payload)
 
 
 def read_create_project_payload(
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    data = read_source_payload(payload)
+    source_data = read_source_payload(payload)
 
-    name = normalize_text(
-        payload.get("name")
+    environment_value = payload.get(
+        "environmentId"
     )
 
-    if len(name) < 3 or len(name) > 140:
-        raise ProjectValidationError(
-            "INVALID_PROJECT_NAME",
-            (
-                "Le nom du projet doit contenir "
-                "entre 3 et 140 caractères."
-            ),
+    # Compatibilité avec l'ancien formulaire.
+    if environment_value in (None, ""):
+        environment_value = payload.get(
+            "defaultEnvironmentId"
         )
 
-    environment_ids = identifier_list(
-        payload.get("allowedEnvironmentIds"),
-        "allowedEnvironmentIds",
-    )
-
-    if not environment_ids:
-        raise ProjectValidationError(
-            "ENVIRONMENT_REQUIRED",
-            (
-                "Sélectionnez au moins "
-                "un environnement."
-            ),
+    if environment_value in (None, ""):
+        old_environment_ids = payload.get(
+            "allowedEnvironmentIds"
         )
 
-    default_environment_id = positive_integer(
-        payload.get("defaultEnvironmentId"),
-        "defaultEnvironmentId",
-    )
-
-    if (
-        default_environment_id
-        not in environment_ids
-    ):
-        environment_ids.append(
-            default_environment_id
-        )
+        if (
+            isinstance(old_environment_ids, list)
+            and old_environment_ids
+        ):
+            environment_value = old_environment_ids[0]
 
     return {
-        **data,
+        **source_data,
 
-        "name":
-            name,
+        "operation_mode": read_operation_mode(
+            payload
+        ),
 
-        "description":
-            normalize_optional_text(
-                payload.get("description")
-            ),
+        "name": validate_project_name(
+            payload.get("name")
+        ),
 
-        "allowed_environment_ids":
-            environment_ids,
+        "description": validate_description(
+            payload.get("description")
+        ),
 
-        "default_environment_id":
-            default_environment_id,
+        "environment_id": positive_integer(
+            environment_value,
+            "environmentId",
+        ),
     }

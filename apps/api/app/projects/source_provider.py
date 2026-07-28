@@ -49,6 +49,7 @@ class SourceValidationResult:
     visibility: str
     transport: str
 
+    source_type: str = "git"
     validation_method: str = "git_ls_remote"
 
     def to_dict(self) -> dict[str, Any]:
@@ -157,7 +158,17 @@ class GitSourceProvider:
     ) -> str:
         environment = os.environ.copy()
 
-        environment["GIT_TERMINAL_PROMPT"] = "0"
+        environment[
+            "GIT_TERMINAL_PROMPT"
+        ] = "0"
+
+        environment[
+            "GIT_ASKPASS_REQUIRE"
+        ] = "force"
+
+        environment[
+            "GIT_CONFIG_NOSYSTEM"
+        ] = "1"
 
         target_url = repository_url
 
@@ -184,9 +195,9 @@ class GitSourceProvider:
                     )
                 )
 
-                environment["GIT_ASKPASS"] = str(
-                    askpass_path
-                )
+                environment[
+                    "GIT_ASKPASS"
+                ] = str(askpass_path)
 
                 environment[
                     "PIXIMIND_GIT_USERNAME"
@@ -257,8 +268,13 @@ class GitSourceProvider:
                 temporary_directory
             )
 
-            key_path = directory / "deploy_key"
-            known_hosts_path = directory / "known_hosts"
+            key_path = (
+                directory / "deploy_key"
+            )
+
+            known_hosts_path = (
+                directory / "known_hosts"
+            )
 
             key_path.write_text(
                 normalized_key.strip() + "\n",
@@ -270,6 +286,7 @@ class GitSourceProvider:
                     key_path,
                     0o600,
                 )
+
             except OSError:
                 pass
 
@@ -317,9 +334,17 @@ class GitSourceProvider:
 
             environment = os.environ.copy()
 
-            environment["GIT_TERMINAL_PROMPT"] = "0"
+            environment[
+                "GIT_TERMINAL_PROMPT"
+            ] = "0"
 
-            environment["GIT_SSH_COMMAND"] = (
+            environment[
+                "GIT_CONFIG_NOSYSTEM"
+            ] = "1"
+
+            environment[
+                "GIT_SSH_COMMAND"
+            ] = (
                 f'ssh -i "{key_path}" '
                 "-o IdentitiesOnly=yes "
                 "-o StrictHostKeyChecking=yes "
@@ -428,6 +453,8 @@ class GitSourceProvider:
             or "access denied" in error
             or "permission denied" in error
             or "http basic" in error
+            or "the provided password or token is incorrect"
+                in error
         ):
             raise SourceProviderError(
                 "GIT_AUTHENTICATION_FAILED",
@@ -441,6 +468,7 @@ class GitSourceProvider:
 
         if (
             "repository not found" in error
+            or "project not found" in error
             or "not found" in error
         ):
             raise SourceProviderError(
@@ -478,6 +506,19 @@ class GitSourceProvider:
                 502,
             )
 
+        if (
+            "connection refused" in error
+            or "failed to connect" in error
+        ):
+            raise SourceProviderError(
+                "GIT_CONNECTION_REFUSED",
+                (
+                    "La connexion au serveur GitLab "
+                    "a été refusée."
+                ),
+                502,
+            )
+
         raise SourceProviderError(
             "GIT_ACCESS_FAILED",
             (
@@ -493,7 +534,9 @@ class GitSourceProvider:
         directory: Path,
     ) -> Path:
         if os.name == "nt":
-            path = directory / "git-askpass.bat"
+            path = (
+                directory / "git-askpass.bat"
+            )
 
             path.write_text(
                 (
@@ -511,7 +554,9 @@ class GitSourceProvider:
 
             return path
 
-        path = directory / "git-askpass.sh"
+        path = (
+            directory / "git-askpass.sh"
+        )
 
         path.write_text(
             (
@@ -528,7 +573,10 @@ class GitSourceProvider:
             encoding="utf-8",
         )
 
-        os.chmod(path, 0o700)
+        os.chmod(
+            path,
+            0o700,
+        )
 
         return path
 
@@ -567,7 +615,10 @@ class GitSourceProvider:
         repository_url: str,
     ) -> str:
         if repository_url.startswith(
-            ("https://", "ssh://")
+            (
+                "https://",
+                "ssh://",
+            )
         ):
             host = urlparse(
                 repository_url
@@ -577,7 +628,10 @@ class GitSourceProvider:
                 return host
 
         match = re.match(
-            r"^[^@\s]+@(?P<host>[^:\s]+):.+$",
+            (
+                r"^[^@\s]+@"
+                r"(?P<host>[^:\s]+):.+$"
+            ),
             repository_url,
         )
 
@@ -586,7 +640,10 @@ class GitSourceProvider:
 
         raise SourceProviderError(
             "GIT_HOST_NOT_FOUND",
-            "Impossible d'identifier le serveur Git.",
+            (
+                "Impossible d'identifier "
+                "le serveur Git."
+            ),
         )
 
 
@@ -595,7 +652,10 @@ class GitSourceProvider:
         repository_url: str,
     ) -> str:
         if repository_url.startswith(
-            ("https://", "ssh://")
+            (
+                "https://",
+                "ssh://",
+            )
         ):
             path = (
                 urlparse(repository_url)
@@ -605,14 +665,21 @@ class GitSourceProvider:
 
         else:
             match = re.match(
-                r"^[^@\s]+@[^:\s]+:(?P<path>.+)$",
+                (
+                    r"^[^@\s]+@"
+                    r"[^:\s]+:"
+                    r"(?P<path>.+)$"
+                ),
                 repository_url,
             )
 
             if not match:
                 raise SourceProviderError(
                     "INVALID_REPOSITORY_PATH",
-                    "Le chemin du repository est invalide.",
+                    (
+                        "Le chemin du repository "
+                        "est invalide."
+                    ),
                 )
 
             path = match.group("path")
@@ -650,4 +717,6 @@ class GitSourceProvider:
         )
 
 
-git_source_provider = GitSourceProvider()
+git_source_provider = (
+    GitSourceProvider()
+)

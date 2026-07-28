@@ -18,6 +18,7 @@ import {
 
 import {
   Router,
+  RouterLink,
 } from '@angular/router';
 
 import {
@@ -25,16 +26,19 @@ import {
 } from 'rxjs';
 
 import {
-  CreateProjectRequest,
+  CreateGitProjectRequest,
   CredentialSource,
   GitTokenType,
   GitTransport,
   ProjectEnvironmentOption,
+  ProjectOperationMode,
   ProjectOptions,
+  ProjectSourceType,
   ProjectsService,
   RepositoryVisibility,
   SourceAuthMethod,
   SourceValidationResult,
+  ValidateGitSourceRequest,
 } from '../../../../core/projects/projects';
 
 
@@ -53,6 +57,7 @@ interface ApiErrorResponse {
 
   imports: [
     ReactiveFormsModule,
+    RouterLink,
   ],
 
   templateUrl: './new-project.html',
@@ -72,37 +77,45 @@ export class NewProject implements OnInit {
   readonly options =
     signal<ProjectOptions | null>(null);
 
+  readonly selectedConnectionId =
+    signal(0);
+
+  readonly operationMode =
+    signal<ProjectOperationMode>(
+      'new_application',
+    );
+
+  readonly sourceType =
+    signal<ProjectSourceType>('git');
+
   readonly visibility =
-    signal<RepositoryVisibility>('private');
+    signal<RepositoryVisibility>('public');
 
   readonly transport =
     signal<GitTransport>('https');
 
   readonly credentialSource =
-    signal<CredentialSource>('integration');
+    signal<CredentialSource>('none');
 
   readonly authMethod =
-    signal<SourceAuthMethod>('https_token');
+    signal<SourceAuthMethod>(
+      'https_token',
+    );
 
-  readonly selectedEnvironmentIds =
-    signal<number[]>([]);
-
-  readonly defaultEnvironmentId =
+  readonly selectedEnvironmentId =
     signal<number | null>(null);
+
+  readonly selectedArchiveFile =
+    signal<File | null>(null);
 
   readonly sourceValidation =
     signal<SourceValidationResult | null>(
       null,
     );
 
-  readonly isLoading =
-    signal(true);
-
-  readonly isTesting =
-    signal(false);
-
-  readonly isCreating =
-    signal(false);
+  readonly isLoading = signal(true);
+  readonly isTesting = signal(false);
+  readonly isCreating = signal(false);
 
   readonly pageError =
     signal<string | null>(null);
@@ -122,6 +135,16 @@ export class NewProject implements OnInit {
 
   readonly form =
     this.formBuilder.nonNullable.group({
+      operationMode:
+        this.formBuilder.nonNullable.control<
+          ProjectOperationMode
+        >('new_application'),
+
+      sourceType:
+        this.formBuilder.nonNullable.control<
+          ProjectSourceType
+        >('git'),
+
       name: [
         '',
         [
@@ -138,34 +161,18 @@ export class NewProject implements OnInit {
         ],
       ],
 
-      sourceConnectionId: [
-        0,
-        [
-          Validators.required,
-          Validators.min(1),
-        ],
-      ],
+      sourceConnectionId: [0],
 
-      repositoryUrl: [
-        '',
-        [
-          Validators.required,
-        ],
-      ],
+      repositoryUrl: [''],
 
-      branch: [
-        'main',
-        [
-          Validators.required,
-        ],
-      ],
+      branch: ['main'],
 
       sourceSubdirectory: [''],
 
       visibility:
         this.formBuilder.nonNullable.control<
           RepositoryVisibility
-        >('private'),
+        >('public'),
 
       transport:
         this.formBuilder.nonNullable.control<
@@ -175,7 +182,7 @@ export class NewProject implements OnInit {
       credentialSource:
         this.formBuilder.nonNullable.control<
           CredentialSource
-        >('integration'),
+        >('none'),
 
       authMethod:
         this.formBuilder.nonNullable.control<
@@ -188,16 +195,15 @@ export class NewProject implements OnInit {
         >('project_access_token'),
 
       username: ['oauth2'],
+
       secret: [''],
     });
 
 
   readonly selectedConnection =
     computed(() => {
-      const connectionId = Number(
-        this.form.controls
-          .sourceConnectionId.value,
-      );
+      const connectionId =
+        this.selectedConnectionId();
 
       return (
         this.options()
@@ -213,7 +219,9 @@ export class NewProject implements OnInit {
 
   readonly environments =
     computed<ProjectEnvironmentOption[]>(
-      () => this.options()?.environments ?? [],
+      () =>
+        this.options()?.environments
+        ?? [],
     );
 
 
@@ -247,12 +255,14 @@ export class NewProject implements OnInit {
 
 
   ngOnInit(): void {
+    this.applySourceValidators();
     this.loadOptions();
   }
 
 
   loadOptions(): void {
     this.isLoading.set(true);
+    this.pageError.set(null);
 
     this.projectsService
       .getOptions()
@@ -265,19 +275,25 @@ export class NewProject implements OnInit {
         next: options => {
           this.options.set(options);
 
-          const first =
+          const firstConnection =
             options.gitConnections[0];
 
-          if (first) {
+          if (firstConnection) {
             this.form.controls
               .sourceConnectionId
-              .setValue(first.id);
+              .setValue(firstConnection.id);
 
-            this.adjustCredentialSource();
+            this.selectedConnectionId.set(
+              firstConnection.id,
+            );
           }
+
+          this.applySourceValidators();
         },
 
-        error: error => {
+        error: (
+          error: HttpErrorResponse,
+        ) => {
           this.pageError.set(
             this.resolveError(error),
           );
@@ -286,8 +302,55 @@ export class NewProject implements OnInit {
   }
 
 
+  selectOperationMode(
+    mode: ProjectOperationMode,
+  ): void {
+    this.operationMode.set(mode);
+
+    this.form.controls
+      .operationMode.setValue(mode);
+  }
+
+
+  selectSourceType(
+    type: ProjectSourceType,
+  ): void {
+    this.sourceType.set(type);
+
+    this.form.controls
+      .sourceType.setValue(type);
+
+    if (type === 'git') {
+      this.visibility.set('public');
+      this.transport.set('https');
+      this.credentialSource.set('none');
+
+      this.form.patchValue({
+        visibility: 'public',
+        transport: 'https',
+        credentialSource: 'none',
+      });
+    }
+
+    this.applySourceValidators();
+    this.invalidateSource();
+  }
+
+
   onConnectionChanged(): void {
-    this.adjustCredentialSource();
+    this.selectedConnectionId.set(
+      Number(
+        this.form.controls
+          .sourceConnectionId.value,
+      ),
+    );
+
+    if (
+      this.visibility() === 'private'
+    ) {
+      this.adjustCredentialSource();
+    }
+
     this.invalidateSource();
   }
 
@@ -302,9 +365,7 @@ export class NewProject implements OnInit {
 
     if (visibility === 'public') {
       this.transport.set('https');
-
       this.credentialSource.set('none');
-
       this.authMethod.set('none');
 
       this.form.patchValue({
@@ -316,17 +377,19 @@ export class NewProject implements OnInit {
       });
     } else {
       this.transport.set('https');
-
       this.authMethod.set('https_token');
 
       this.form.patchValue({
         transport: 'https',
         authMethod: 'https_token',
+        username: 'oauth2',
+        secret: '',
       });
 
       this.adjustCredentialSource();
     }
 
+    this.applySourceValidators();
     this.invalidateSource();
   }
 
@@ -340,7 +403,9 @@ export class NewProject implements OnInit {
       .transport.setValue(transport);
 
     if (transport === 'https') {
-      this.authMethod.set('https_token');
+      this.authMethod.set(
+        'https_token',
+      );
 
       this.form.patchValue({
         authMethod: 'https_token',
@@ -358,6 +423,7 @@ export class NewProject implements OnInit {
     }
 
     this.adjustCredentialSource();
+    this.applySourceValidators();
     this.invalidateSource();
   }
 
@@ -370,6 +436,7 @@ export class NewProject implements OnInit {
     this.form.controls
       .credentialSource.setValue(source);
 
+    this.applySourceValidators();
     this.invalidateSource();
   }
 
@@ -385,6 +452,7 @@ export class NewProject implements OnInit {
     if (method === 'https_token') {
       this.form.controls
         .username.setValue('oauth2');
+
     } else if (
       method === 'https_password'
     ) {
@@ -395,6 +463,7 @@ export class NewProject implements OnInit {
     this.form.controls
       .secret.setValue('');
 
+    this.applySourceValidators();
     this.invalidateSource();
   }
 
@@ -415,23 +484,87 @@ export class NewProject implements OnInit {
   }
 
 
-  adjustCredentialSource(): void {
-    if (this.visibility() === 'public') {
+  onArchiveSelected(
+    event: Event,
+  ): void {
+    const input =
+      event.target as HTMLInputElement;
+
+    const file =
+      input.files?.item(0) ?? null;
+
+    this.selectedArchiveFile.set(file);
+
+    this.invalidateSource();
+
+    if (!file) {
       return;
     }
 
-    const selectedSource =
+    if (
+      !file.name
+        .toLowerCase()
+        .endsWith('.zip')
+    ) {
+      this.sourceError.set(
+        (
+          'Sélectionnez un fichier '
+          + 'avec l’extension .zip.'
+        ),
+      );
+
+      return;
+    }
+
+    const maximumBytes =
+      this.options()
+        ?.archiveLimits.maxBytes;
+
+    if (
+      maximumBytes
+      && file.size > maximumBytes
+    ) {
+      this.sourceError.set(
+        (
+          'L’archive dépasse la limite de '
+          + `${this.options()
+            ?.archiveLimits.maxMegabytes} Mo.`
+        ),
+      );
+    }
+  }
+
+
+  selectEnvironment(
+    environmentId: number,
+  ): void {
+    this.selectedEnvironmentId.set(
+      environmentId,
+    );
+
+    this.environmentError.set(null);
+  }
+
+
+  adjustCredentialSource(): void {
+    if (this.visibility() === 'public') {
+      this.credentialSource.set('none');
+
+      this.form.controls
+        .credentialSource.setValue('none');
+
+      return;
+    }
+
+    const source: CredentialSource =
       this.integrationCredentialCompatible()
         ? 'integration'
         : 'project';
 
-    this.credentialSource.set(
-      selectedSource,
-    );
+    this.credentialSource.set(source);
 
     this.form.controls
-      .credentialSource
-      .setValue(selectedSource);
+      .credentialSource.setValue(source);
   }
 
 
@@ -443,16 +576,17 @@ export class NewProject implements OnInit {
 
 
   validateSource(): void {
+    this.sourceError.set(null);
+    this.sourceSuccess.set(null);
+
     const request =
-      this.buildSourceRequest();
+      this.buildValidationRequest();
 
     if (!request) {
       return;
     }
 
     this.isTesting.set(true);
-    this.sourceError.set(null);
-    this.sourceSuccess.set(null);
 
     this.projectsService
       .validateSource(request)
@@ -466,11 +600,21 @@ export class NewProject implements OnInit {
           this.sourceValidation.set(result);
 
           this.sourceSuccess.set(
-            'Le repository et la branche sont accessibles.',
+            result.sourceType === 'git'
+              ? (
+                  'Le repository et la branche '
+                  + 'sont accessibles.'
+                )
+              : (
+                  'L’archive ZIP est valide '
+                  + 'et prête pour l’analyse.'
+                ),
           );
         },
 
-        error: error => {
+        error: (
+          error: HttpErrorResponse,
+        ) => {
           this.sourceError.set(
             this.resolveError(error),
           );
@@ -480,73 +624,50 @@ export class NewProject implements OnInit {
 
 
   createProject(): void {
+    this.form.controls
+      .name.markAsTouched();
+
     this.creationError.set(null);
     this.environmentError.set(null);
 
-    const sourceRequest =
-      this.buildSourceRequest();
+    if (this.form.controls.name.invalid) {
+      this.creationError.set(
+        'Saisissez un nom de projet valide.',
+      );
 
-    if (!sourceRequest) {
       return;
     }
 
     if (!this.sourceValidation()) {
       this.creationError.set(
         (
-          'Testez l’accès au repository '
-          + 'avant de créer le projet.'
+          'Vérifiez la source avant '
+          + 'de créer le projet.'
         ),
       );
 
       return;
     }
 
-    if (
-      this.selectedEnvironmentIds()
-        .length === 0
-    ) {
+    const environmentId =
+      this.selectedEnvironmentId();
+
+    if (environmentId === null) {
       this.environmentError.set(
-        (
-          'Sélectionnez au moins '
-          + 'un environnement.'
-        ),
+        'Sélectionnez un environnement.',
       );
 
       return;
     }
 
-    const defaultEnvironmentId =
-      this.defaultEnvironmentId();
-
-    if (defaultEnvironmentId === null) {
-      this.environmentError.set(
-        (
-          'Sélectionnez un environnement '
-          + 'par défaut.'
-        ),
+    const request =
+      this.buildCreationRequest(
+        environmentId,
       );
 
+    if (!request) {
       return;
     }
-
-    const values =
-      this.form.getRawValue();
-
-    const request:
-      CreateProjectRequest = {
-        ...sourceRequest,
-
-        name: values.name.trim(),
-
-        description:
-          values.description.trim()
-          || null,
-
-        allowedEnvironmentIds:
-          this.selectedEnvironmentIds(),
-
-        defaultEnvironmentId,
-      };
 
     this.isCreating.set(true);
 
@@ -565,7 +686,9 @@ export class NewProject implements OnInit {
           ]);
         },
 
-        error: error => {
+        error: (
+          error: HttpErrorResponse,
+        ) => {
           this.creationError.set(
             this.resolveError(error),
           );
@@ -574,8 +697,130 @@ export class NewProject implements OnInit {
   }
 
 
-  buildSourceRequest():
-    CreateProjectRequest | null {
+  canCreate(): boolean {
+    return (
+      this.form.controls.name.valid
+      && this.sourceValidation() !== null
+      && this.selectedEnvironmentId()
+        !== null
+      && !this.isCreating()
+    );
+  }
+
+
+  credentialAuthLabel(): string {
+    const connection =
+      this.selectedConnection();
+
+    if (!connection) {
+      return 'Non configuré';
+    }
+
+    const labels:
+      Record<string, string> = {
+        basic:
+          'Username et mot de passe',
+
+        token:
+          'Username et token',
+
+        ssh_key:
+          'Clé privée SSH',
+
+        none:
+          'Aucun credential',
+      };
+
+    return (
+      labels[
+        connection.credentialAuthType
+      ]
+      ?? connection.credentialAuthType
+    );
+  }
+
+
+  formatBytes(
+    value: number | null | undefined,
+  ): string {
+    if (!value) {
+      return '0 o';
+    }
+
+    if (value < 1024) {
+      return `${value} o`;
+    }
+
+    if (value < 1024 * 1024) {
+      return (
+        `${(value / 1024).toFixed(1)} Ko`
+      );
+    }
+
+    return (
+      `${(
+        value
+        / 1024
+        / 1024
+      ).toFixed(1)} Mo`
+    );
+  }
+
+
+  private buildValidationRequest():
+    ValidateGitSourceRequest
+    | FormData
+    | null {
+    if (this.sourceType() === 'zip') {
+      return this.buildZipFormData(false);
+    }
+
+    return this.buildGitSourceRequest();
+  }
+
+
+  private buildCreationRequest(
+    environmentId: number,
+  ): CreateGitProjectRequest
+    | FormData
+    | null {
+    const values =
+      this.form.getRawValue();
+
+    if (this.sourceType() === 'zip') {
+      return this.buildZipFormData(
+        true,
+        environmentId,
+      );
+    }
+
+    const sourceRequest =
+      this.buildGitSourceRequest();
+
+    if (!sourceRequest) {
+      return null;
+    }
+
+    return {
+      ...sourceRequest,
+
+      operationMode:
+        this.operationMode(),
+
+      name:
+        values.name.trim(),
+
+      description:
+        values.description.trim()
+        || null,
+
+      environmentId,
+    };
+  }
+
+
+  private buildGitSourceRequest():
+    ValidateGitSourceRequest | null {
     const values =
       this.form.getRawValue();
 
@@ -609,12 +854,13 @@ export class NewProject implements OnInit {
     const visibility =
       this.visibility();
 
-    const transport =
+    const transport: GitTransport =
       visibility === 'public'
         ? 'https'
         : this.transport();
 
-    const credentialSource =
+    const credentialSource:
+      CredentialSource =
       visibility === 'public'
         ? 'none'
         : this.credentialSource();
@@ -668,11 +914,15 @@ export class NewProject implements OnInit {
 
       if (!secret) {
         this.sourceError.set(
-          (
-            transport === 'ssh'
-              ? 'La clé privée SSH est obligatoire.'
-              : 'Le mot de passe ou le token est obligatoire.'
-          ),
+          transport === 'ssh'
+            ? (
+                'La clé privée SSH '
+                + 'est obligatoire.'
+              )
+            : (
+                'Le mot de passe ou le token '
+                + 'est obligatoire.'
+              ),
         );
 
         return null;
@@ -680,6 +930,8 @@ export class NewProject implements OnInit {
     }
 
     return {
+      sourceType: 'git',
+
       sourceConnectionId:
         Number(values.sourceConnectionId),
 
@@ -688,7 +940,6 @@ export class NewProject implements OnInit {
 
       visibility,
       transport,
-
       credentialSource,
       authMethod,
       tokenType,
@@ -701,102 +952,175 @@ export class NewProject implements OnInit {
       sourceSubdirectory:
         values.sourceSubdirectory.trim()
         || null,
-
-      name: '',
-      description: null,
-      allowedEnvironmentIds: [],
-      defaultEnvironmentId: 0,
     };
   }
 
 
-  toggleEnvironment(
-    environmentId: number,
-    checked: boolean,
-  ): void {
-    this.environmentError.set(null);
+  private buildZipFormData(
+    includeProject: boolean,
+    environmentId?: number,
+  ): FormData | null {
+    const archiveFile =
+      this.selectedArchiveFile();
 
-    this.selectedEnvironmentIds.update(
-      ids => {
-        if (checked) {
-          return ids.includes(environmentId)
-            ? ids
-            : [...ids, environmentId];
-        }
-
-        return ids.filter(
-          id => id !== environmentId,
-        );
-      },
-    );
-
-    if (
-      !checked
-      && this.defaultEnvironmentId()
-        === environmentId
-    ) {
-      this.defaultEnvironmentId.set(null);
-    }
-  }
-
-
-  selectDefaultEnvironment(
-    environmentId: number,
-  ): void {
-    if (
-      !this.selectedEnvironmentIds()
-        .includes(environmentId)
-    ) {
-      this.selectedEnvironmentIds.update(
-        ids => [...ids, environmentId],
+    if (!archiveFile) {
+      this.sourceError.set(
+        'Sélectionnez une archive ZIP.',
       );
+
+      return null;
     }
 
-    this.defaultEnvironmentId.set(
-      environmentId,
-    );
+    if (
+      !archiveFile.name
+        .toLowerCase()
+        .endsWith('.zip')
+    ) {
+      this.sourceError.set(
+        'Seuls les fichiers .zip sont acceptés.',
+      );
 
-    this.environmentError.set(null);
-  }
-
-
-  isEnvironmentSelected(
-    environmentId: number,
-  ): boolean {
-    return this.selectedEnvironmentIds()
-      .includes(environmentId);
-  }
-
-
-  credentialAuthLabel(): string {
-    const connection =
-      this.selectedConnection();
-
-    if (!connection) {
-      return 'Non configuré';
+      return null;
     }
 
-    const labels:
-      Record<string, string> = {
-        basic:
-          'Username et mot de passe',
+    const maximumBytes =
+      this.options()
+        ?.archiveLimits.maxBytes;
 
-        token:
-          'Username et token',
+    if (
+      maximumBytes
+      && archiveFile.size > maximumBytes
+    ) {
+      this.sourceError.set(
+        (
+          'L’archive dépasse la limite de '
+          + `${this.options()
+            ?.archiveLimits.maxMegabytes} Mo.`
+        ),
+      );
 
-        ssh_key:
-          'Clé privée SSH',
+      return null;
+    }
 
-        none:
-          'Aucun',
+    const values =
+      this.form.getRawValue();
+
+    const payload:
+      Record<string, unknown> = {
+        sourceType: 'zip',
+
+        sourceSubdirectory:
+          values.sourceSubdirectory.trim()
+          || null,
       };
 
-    return (
-      labels[
-        connection.credentialAuthType
-      ]
-      ?? connection.credentialAuthType
+    if (includeProject) {
+      payload['operationMode'] =
+        this.operationMode();
+
+      payload['name'] =
+        values.name.trim();
+
+      payload['description'] =
+        values.description.trim()
+        || null;
+
+      payload['environmentId'] =
+        environmentId;
+    }
+
+    const formData =
+      new FormData();
+
+    formData.append(
+      'payload',
+      JSON.stringify(payload),
     );
+
+    formData.append(
+      'archiveFile',
+      archiveFile,
+      archiveFile.name,
+    );
+
+    return formData;
+  }
+
+
+  private applySourceValidators(): void {
+    const connectionControl =
+      this.form.controls.sourceConnectionId;
+
+    const repositoryControl =
+      this.form.controls.repositoryUrl;
+
+    const branchControl =
+      this.form.controls.branch;
+
+    const usernameControl =
+      this.form.controls.username;
+
+    const secretControl =
+      this.form.controls.secret;
+
+    connectionControl.clearValidators();
+    repositoryControl.clearValidators();
+    branchControl.clearValidators();
+    usernameControl.clearValidators();
+    secretControl.clearValidators();
+
+    if (this.sourceType() === 'git') {
+      connectionControl.setValidators([
+        Validators.required,
+        Validators.min(1),
+      ]);
+
+      repositoryControl.setValidators([
+        Validators.required,
+      ]);
+
+      branchControl.setValidators([
+        Validators.required,
+      ]);
+
+      if (
+        this.visibility() === 'private'
+        && this.credentialSource()
+          === 'project'
+      ) {
+        secretControl.setValidators([
+          Validators.required,
+        ]);
+
+        if (
+          this.transport() === 'https'
+        ) {
+          usernameControl.setValidators([
+            Validators.required,
+          ]);
+        }
+      }
+    }
+
+    connectionControl.updateValueAndValidity({
+      emitEvent: false,
+    });
+
+    repositoryControl.updateValueAndValidity({
+      emitEvent: false,
+    });
+
+    branchControl.updateValueAndValidity({
+      emitEvent: false,
+    });
+
+    usernameControl.updateValueAndValidity({
+      emitEvent: false,
+    });
+
+    secretControl.updateValueAndValidity({
+      emitEvent: false,
+    });
   }
 
 
@@ -810,7 +1134,8 @@ export class NewProject implements OnInit {
     }
 
     const response =
-      error.error as ApiErrorResponse | null;
+      error.error as
+        ApiErrorResponse | null;
 
     return (
       response?.error?.message
