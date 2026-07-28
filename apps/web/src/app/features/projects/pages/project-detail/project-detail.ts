@@ -1,3 +1,5 @@
+import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
   OnDestroy,
@@ -6,24 +8,8 @@ import {
   inject,
   signal,
 } from '@angular/core';
-
-import {
-  DatePipe,
-} from '@angular/common';
-
-import {
-  HttpErrorResponse,
-} from '@angular/common/http';
-
-import {
-  FormsModule,
-} from '@angular/forms';
-
-import {
-  ActivatedRoute,
-  RouterLink,
-} from '@angular/router';
-
+import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import {
   Subscription,
   finalize,
@@ -38,22 +24,27 @@ import {
 
 import {
   AnalysisComponent,
+  AnalysisEvidence,
   AnalysisService,
   AnalysisStatus,
-  CommitPolicy,
   ProjectAnalysis,
   ProjectAnalysisEvent,
 } from '../../../../core/analysis/analysis';
 
 
-interface ApiErrorResponse {
-  success: false;
-
-  error: {
-    code: string;
-    message: string;
-  };
+interface AnalysisStepDefinition {
+  key: string;
+  label: string;
+  description: string;
+  minimumProgress: number;
 }
+
+
+export type AnalysisStepState =
+  | 'waiting'
+  | 'active'
+  | 'completed'
+  | 'failed';
 
 
 @Component({
@@ -89,6 +80,53 @@ export class ProjectDetail
   private lastEventId = 0;
 
 
+  readonly analysisSteps:
+    AnalysisStepDefinition[] = [
+      {
+        key: 'preparing_source',
+        label: 'Préparer la source',
+        description:
+          'Credential et workspace temporaire',
+        minimumProgress: 5,
+      },
+      {
+        key: 'source_ready',
+        label: 'Charger le code',
+        description:
+          'Clone Git ou extraction ZIP',
+        minimumProgress: 25,
+      },
+      {
+        key: 'inventory',
+        label: 'Inventorier les fichiers',
+        description:
+          'Arborescence et fichiers techniques',
+        minimumProgress: 45,
+      },
+      {
+        key: 'technology_detection',
+        label: 'Détecter les technologies',
+        description:
+          'Frameworks, runtimes et dépendances',
+        minimumProgress: 65,
+      },
+      {
+        key: 'deployment_analysis',
+        label: 'Analyser le déploiement',
+        description:
+          'Docker, Helm, Kubernetes et Argo CD',
+        minimumProgress: 82,
+      },
+      {
+        key: 'report_generation',
+        label: 'Construire le rapport',
+        description:
+          'Preuves, alertes et contexte IA',
+        minimumProgress: 95,
+      },
+    ];
+
+
   readonly projectId =
     signal<number | null>(null);
 
@@ -100,10 +138,6 @@ export class ProjectDetail
 
   readonly events =
     signal<ProjectAnalysisEvent[]>([]);
-
-
-  readonly commitPolicy =
-    signal<CommitPolicy>('validated');
 
 
   readonly isLoadingProject =
@@ -124,6 +158,15 @@ export class ProjectDetail
   readonly savingComponentId =
     signal<number | null>(null);
 
+  readonly editingComponentId =
+    signal<number | null>(null);
+
+  readonly componentDraft =
+    signal<AnalysisComponent | null>(null);
+
+  readonly technicalDetailsOpen =
+    signal(false);
+
 
   readonly projectError =
     signal<string | null>(null);
@@ -139,17 +182,11 @@ export class ProjectDetail
 
 
   readonly analysisRunning =
-    computed(() => {
-      const status =
-        this.analysis()?.status;
-
-      return (
-        status === 'pending'
-        || status === 'preparing'
-        || status === 'cloning'
-        || status === 'analyzing'
-      );
-    });
+    computed(() =>
+      this.isRunningStatus(
+        this.analysis()?.status,
+      ),
+    );
 
 
   readonly analysisEditable =
@@ -174,14 +211,151 @@ export class ProjectDetail
     );
 
 
+  readonly deployableComponents =
+    computed(() =>
+      this.analysis()
+        ?.components
+        .filter(
+          component =>
+            component.deployable,
+        )
+      ?? [],
+    );
+
+
+  readonly missingArtifactCount =
+    computed(() => {
+      const readiness =
+        this.analysis()
+          ?.summary
+          .deploymentReadiness;
+
+      return (
+        readiness
+          ?.missingDockerfiles
+          ?.length
+        ?? 0
+      ) + (
+        readiness
+          ?.missingHelmCharts
+          ?.length
+        ?? 0
+      );
+    });
+
+
+  readonly globalConfidence =
+    computed(() => {
+      const summaryValue =
+        this.analysis()
+          ?.summary
+          .globalConfidence;
+
+      if (
+        typeof summaryValue
+        === 'number'
+      ) {
+        return Math.round(
+          summaryValue,
+        );
+      }
+
+      const components =
+        this.analysis()
+          ?.components
+        ?? [];
+
+      if (components.length === 0) {
+        return 0;
+      }
+
+      const total =
+        components.reduce(
+          (
+            sum,
+            component,
+          ) =>
+            sum
+            + Number(
+              component.confidence
+              || 0,
+            ),
+          0,
+        );
+
+      return Math.round(
+        total / components.length,
+      );
+    });
+
+
+  readonly technologyCount =
+    computed(() => {
+      const summaryValue =
+        this.analysis()
+          ?.summary
+          .technologyCount;
+
+      if (
+        typeof summaryValue
+        === 'number'
+      ) {
+        return summaryValue;
+      }
+
+      const technologies =
+        new Set<string>();
+
+      for (
+        const component
+        of this.analysis()
+          ?.components
+        ?? []
+      ) {
+        for (
+          const value of [
+            component.framework,
+            component.runtime,
+            component.packageManager,
+          ]
+        ) {
+          const normalized =
+            value?.trim();
+
+          if (normalized) {
+            technologies.add(
+              normalized.toLowerCase(),
+            );
+          }
+        }
+      }
+
+      return technologies.size;
+    });
+
+
+  readonly canConfirm =
+    computed(() =>
+      this.analysis()?.status
+        === 'completed'
+      && this.deployableComponents()
+        .length > 0
+      && this.editingComponentId()
+        === null
+      && !this.isConfirming(),
+    );
+
+
   ngOnInit(): void {
     const rawProjectId =
-      this.route.snapshot.paramMap.get(
-        'projectId',
-      )
-      ?? this.route.snapshot.paramMap.get(
-        'id',
-      );
+      this.route
+        .snapshot
+        .paramMap
+        .get('projectId')
+      ?? this.route
+        .snapshot
+        .paramMap
+        .get('id');
 
     const projectId =
       Number(rawProjectId);
@@ -204,7 +378,9 @@ export class ProjectDetail
 
     this.loadProject(projectId);
 
-    this.loadLatestAnalysis(projectId);
+    this.loadLatestAnalysis(
+      projectId,
+    );
   }
 
 
@@ -217,13 +393,16 @@ export class ProjectDetail
     projectId: number,
   ): void {
     this.isLoadingProject.set(true);
+
     this.projectError.set(null);
 
     this.projectsService
       .getProject(projectId)
       .pipe(
         finalize(() => {
-          this.isLoadingProject.set(false);
+          this.isLoadingProject.set(
+            false,
+          );
         }),
       )
       .subscribe({
@@ -246,18 +425,25 @@ export class ProjectDetail
     projectId: number,
   ): void {
     this.isLoadingAnalysis.set(true);
+
     this.analysisError.set(null);
 
     this.analysisService
       .getLatestAnalysis(projectId)
       .pipe(
         finalize(() => {
-          this.isLoadingAnalysis.set(false);
+          this.isLoadingAnalysis.set(
+            false,
+          );
         }),
       )
       .subscribe({
         next: analysis => {
-          this.applyAnalysis(analysis);
+          this.resetEvents();
+
+          this.applyAnalysis(
+            analysis,
+          );
 
           if (
             this.isRunningStatus(
@@ -276,7 +462,9 @@ export class ProjectDetail
         ) => {
           if (error.status === 404) {
             this.analysis.set(null);
-            this.events.set([]);
+
+            this.resetEvents();
+
             return;
           }
 
@@ -288,39 +476,32 @@ export class ProjectDetail
   }
 
 
-  selectCommitPolicy(
-    policy: CommitPolicy,
-  ): void {
-    if (this.analysisRunning()) {
-      return;
-    }
-
-    this.commitPolicy.set(policy);
-  }
-
-
   startAnalysis(): void {
     const projectId =
       this.projectId();
 
-    if (projectId === null) {
+    if (
+      projectId === null
+      || this.analysisRunning()
+      || this.isStartingAnalysis()
+    ) {
       return;
     }
 
     this.analysisError.set(null);
-    this.confirmationError.set(null);
     this.componentError.set(null);
+    this.confirmationError.set(null);
 
-    this.isStartingAnalysis.set(true);
+    this.cancelComponentEdit();
 
-    this.events.set([]);
-    this.lastEventId = 0;
+    this.resetEvents();
+
+    this.isStartingAnalysis.set(
+      true,
+    );
 
     this.analysisService
-      .startAnalysis(
-        projectId,
-        this.commitPolicy(),
-      )
+      .startAnalysis(projectId)
       .pipe(
         finalize(() => {
           this.isStartingAnalysis.set(
@@ -330,7 +511,9 @@ export class ProjectDetail
       )
       .subscribe({
         next: analysis => {
-          this.applyAnalysis(analysis);
+          this.applyAnalysis(
+            analysis,
+          );
 
           this.startPolling(
             projectId,
@@ -358,12 +541,14 @@ export class ProjectDetail
 
     if (
       projectId === null
-      || !currentAnalysis
+      || currentAnalysis === null
+      || this.isRefreshing()
     ) {
       return;
     }
 
     this.isRefreshing.set(true);
+
     this.analysisError.set(null);
 
     this.analysisService
@@ -373,12 +558,27 @@ export class ProjectDetail
       )
       .pipe(
         finalize(() => {
-          this.isRefreshing.set(false);
+          this.isRefreshing.set(
+            false,
+          );
         }),
       )
       .subscribe({
         next: analysis => {
-          this.applyAnalysis(analysis);
+          this.applyAnalysis(
+            analysis,
+          );
+
+          if (
+            this.isRunningStatus(
+              analysis.status,
+            )
+          ) {
+            this.startPolling(
+              projectId,
+              analysis.id,
+            );
+          }
         },
 
         error: (
@@ -392,70 +592,140 @@ export class ProjectDetail
   }
 
 
-  saveComponent(
+  startComponentEdit(
     component: AnalysisComponent,
   ): void {
+    if (!this.analysisEditable()) {
+      return;
+    }
+
+    this.componentError.set(null);
+
+    this.editingComponentId.set(
+      component.id,
+    );
+
+    this.componentDraft.set(
+      this.cloneComponent(
+        component,
+      ),
+    );
+  }
+
+
+  cancelComponentEdit(): void {
+    this.editingComponentId.set(
+      null,
+    );
+
+    this.componentDraft.set(
+      null,
+    );
+
+    this.componentError.set(
+      null,
+    );
+  }
+
+
+  saveComponent(): void {
     const projectId =
       this.projectId();
 
     const currentAnalysis =
       this.analysis();
 
+    const draft =
+      this.componentDraft();
+
     if (
       projectId === null
-      || !currentAnalysis
+      || currentAnalysis === null
       || currentAnalysis.status
         !== 'completed'
+      || draft === null
     ) {
+      return;
+    }
+
+    const name =
+      draft.name.trim();
+
+    if (!name) {
+      this.componentError.set(
+        'Le nom du composant est obligatoire.',
+      );
+
+      return;
+    }
+
+    const port =
+      draft.detectedPort;
+
+    if (
+      port !== null
+      && (
+        !Number.isInteger(
+          Number(port),
+        )
+        || Number(port) < 1
+        || Number(port) > 65535
+      )
+    ) {
+      this.componentError.set(
+        'Le port doit être compris entre 1 et 65535.',
+      );
+
       return;
     }
 
     this.componentError.set(null);
 
     this.savingComponentId.set(
-      component.id,
+      draft.id,
     );
 
     this.analysisService
       .updateComponent(
         projectId,
         currentAnalysis.id,
-        component.id,
+        draft.id,
         {
-          name:
-            component.name.trim(),
+          name,
 
           componentType:
-            component.componentType.trim(),
+            draft.componentType.trim(),
 
           runtime:
-            component.runtime?.trim()
+            draft.runtime?.trim()
             || null,
 
           framework:
-            component.framework?.trim()
+            draft.framework?.trim()
             || null,
 
           packageManager:
-            component.packageManager
+            draft.packageManager
               ?.trim()
             || null,
 
           buildCommand:
-            component.buildCommand
+            draft.buildCommand
               ?.trim()
             || null,
 
           startCommand:
-            component.startCommand
+            draft.startCommand
               ?.trim()
             || null,
 
           detectedPort:
-            component.detectedPort,
+            port === null
+              ? null
+              : Number(port),
 
           deployable:
-            component.deployable,
+            draft.deployable,
         },
       )
       .pipe(
@@ -478,15 +748,17 @@ export class ProjectDetail
 
                 components:
                   analysis.components.map(
-                    currentComponent =>
-                      currentComponent.id
+                    component =>
+                      component.id
                       === updatedComponent.id
                         ? updatedComponent
-                        : currentComponent,
+                        : component,
                   ),
               };
             },
           );
+
+          this.cancelComponentEdit();
         },
 
         error: (
@@ -509,15 +781,17 @@ export class ProjectDetail
 
     if (
       projectId === null
-      || !currentAnalysis
-      || currentAnalysis.status
-        !== 'completed'
+      || currentAnalysis === null
+      || !this.canConfirm()
     ) {
       return;
     }
 
     this.isConfirming.set(true);
-    this.confirmationError.set(null);
+
+    this.confirmationError.set(
+      null,
+    );
 
     this.analysisService
       .confirmAnalysis(
@@ -526,12 +800,18 @@ export class ProjectDetail
       )
       .pipe(
         finalize(() => {
-          this.isConfirming.set(false);
+          this.isConfirming.set(
+            false,
+          );
         }),
       )
       .subscribe({
         next: confirmed => {
           if (!confirmed) {
+            this.confirmationError.set(
+              'Le backend n’a pas confirmé l’analyse.',
+            );
+
             return;
           }
 
@@ -549,8 +829,11 @@ export class ProjectDetail
                 currentStep:
                   'confirmed',
 
+                progress: 100,
+
                 confirmedAt:
-                  new Date().toISOString(),
+                  new Date()
+                    .toISOString(),
               };
             },
           );
@@ -572,6 +855,13 @@ export class ProjectDetail
   }
 
 
+  toggleTechnicalDetails(): void {
+    this.technicalDetailsOpen.update(
+      open => !open,
+    );
+  }
+
+
   analysisStatusLabel(
     status: AnalysisStatus,
   ): string {
@@ -584,10 +874,10 @@ export class ProjectDetail
           'Préparation',
 
         cloning:
-          'Clonage du repository',
+          'Chargement du code',
 
         analyzing:
-          'Analyse du code',
+          'Analyse en cours',
 
         completed:
           'Analyse terminée',
@@ -606,59 +896,345 @@ export class ProjectDetail
   }
 
 
-  stepLabel(
+  currentStepLabel(
     step: string,
   ): string {
     const labels:
       Record<string, string> = {
         pending:
-          'En attente',
+          'Analyse en attente de démarrage',
 
         preparing:
-          'Préparation du workspace',
+          'Préparation de la source',
+
+        preparing_source:
+          'Préparation de la source',
 
         cloning:
-          'Clonage du repository',
+          'Téléchargement du repository',
 
         checkout_completed:
-          'Commit téléchargé',
+          'Version du code chargée',
+
+        source_ready:
+          'Code chargé dans le workspace',
 
         inventory:
-          'Inventaire des fichiers',
+          'Inventaire sécurisé des fichiers',
 
         component_detection:
           'Détection des composants',
 
+        technology_detection:
+          'Détection des technologies',
+
+        deployment_analysis:
+          'Analyse de Docker, Helm et Kubernetes',
+
         report_generation:
-          'Génération du rapport',
+          'Construction du rapport',
 
         completed:
-          'Analyse terminée',
+          'Rapport disponible',
 
         confirmed:
-          'Analyse confirmée',
+          'Rapport confirmé',
 
         failed:
-          'Échec de l’analyse',
+          'L’analyse a rencontré une erreur',
       };
 
     return labels[step] ?? step;
   }
 
 
-  shortSha(
-    commitSha: string | null,
-  ): string {
-    if (!commitSha) {
-      return 'Non disponible';
+  analysisActionLabel(): string {
+    const currentAnalysis =
+      this.analysis();
+
+    if (this.isStartingAnalysis()) {
+      return 'Lancement…';
     }
 
-    return commitSha.slice(0, 12);
+    if (!currentAnalysis) {
+      return this.isZipSource()
+        ? 'Analyser l’archive'
+        : 'Lancer l’analyse du code';
+    }
+
+    if (
+      currentAnalysis.status
+      === 'failed'
+    ) {
+      return 'Réessayer l’analyse';
+    }
+
+    if (this.analysisRunning()) {
+      return 'Analyse en cours';
+    }
+
+    return 'Analyser la version actuelle';
+  }
+
+
+  stepState(
+    stepKey: string,
+  ): AnalysisStepState {
+    const currentAnalysis =
+      this.analysis();
+
+    if (!currentAnalysis) {
+      return 'waiting';
+    }
+
+    if (
+      currentAnalysis.status
+        === 'completed'
+      || currentAnalysis.status
+        === 'confirmed'
+    ) {
+      return 'completed';
+    }
+
+    const stepIndex =
+      this.analysisSteps
+        .findIndex(
+          step =>
+            step.key === stepKey,
+        );
+
+    const currentIndex =
+      this.currentStepIndex(
+        currentAnalysis,
+      );
+
+    if (
+      currentAnalysis.status
+      === 'failed'
+    ) {
+      if (stepIndex < currentIndex) {
+        return 'completed';
+      }
+
+      if (stepIndex === currentIndex) {
+        return 'failed';
+      }
+
+      return 'waiting';
+    }
+
+    if (stepIndex < currentIndex) {
+      return 'completed';
+    }
+
+    if (stepIndex === currentIndex) {
+      return 'active';
+    }
+
+    return 'waiting';
+  }
+
+
+  sourceTypeLabel(): string {
+    return this.isZipSource()
+      ? 'Archive ZIP'
+      : 'Repository Git';
+  }
+
+
+  sourceDisplayName(): string {
+    return (
+      this.analysis()
+        ?.summary
+        .source
+        ?.displayName
+
+      || this.project()
+        ?.source
+        .repositoryPath
+
+      || this.project()
+        ?.source
+        .repositoryUrl
+
+      || 'Source du projet'
+    );
+  }
+
+
+  sourceBranchLabel(): string {
+    if (this.isZipSource()) {
+      return 'Archive importée';
+    }
+
+    return (
+      this.project()
+        ?.source
+        .branch
+
+      || this.analysis()
+        ?.summary
+        .source
+        ?.branch
+
+      || 'Branche non disponible'
+    );
+  }
+
+
+  sourceVersion(): string {
+    const summarySource =
+      this.analysis()
+        ?.summary
+        .source;
+
+    if (
+      summarySource
+        ?.shortVersion
+    ) {
+      return summarySource
+        .shortVersion;
+    }
+
+    const version =
+      summarySource?.version
+
+      || this.analysis()
+        ?.analyzedCommitSha
+
+      || this.project()
+        ?.source
+        .lastCommitSha
+
+      || null;
+
+    return this.shortVersion(
+      version,
+    );
+  }
+
+
+  versionCaption(): string {
+    return this.isZipSource()
+      ? 'Empreinte de l’archive'
+      : 'Commit analysé';
+  }
+
+
+  componentEvidence(
+    component: AnalysisComponent,
+  ): AnalysisEvidence[] {
+    const rawEvidence =
+      component.configuration
+        ?.['evidence'];
+
+    if (!Array.isArray(rawEvidence)) {
+      return [];
+    }
+
+    return rawEvidence.filter(
+      value =>
+        this.isAnalysisEvidence(
+          value,
+        ),
+    );
+  }
+
+
+  componentTypeLabel(
+    componentType: string,
+  ): string {
+    const labels:
+      Record<string, string> = {
+        frontend:
+          'Frontend',
+
+        backend:
+          'Backend',
+
+        fullstack:
+          'Fullstack',
+
+        worker:
+          'Worker',
+
+        container:
+          'Conteneur',
+
+        unknown:
+          'À confirmer',
+      };
+
+    return (
+      labels[componentType]
+      ?? componentType
+    );
+  }
+
+
+  componentTechnology(
+    component: AnalysisComponent,
+  ): string {
+    const values = [
+      component.framework,
+      component.runtime,
+      component.packageManager,
+    ]
+      .map(
+        value =>
+          value?.trim(),
+      )
+      .filter(
+        (
+          value,
+        ): value is string =>
+          Boolean(value),
+      );
+
+    return values.length > 0
+      ? Array.from(
+          new Set(values),
+        ).join(' · ')
+      : 'Technologie non détectée';
+  }
+
+
+  displayValue(
+    value:
+      string
+      | number
+      | null
+      | undefined,
+  ): string {
+    if (
+      value === null
+      || value === undefined
+      || String(value).trim() === ''
+    ) {
+      return 'Non détecté';
+    }
+
+    return String(value);
+  }
+
+
+  shortVersion(
+    version:
+      string
+      | null
+      | undefined,
+  ): string {
+    return version
+      ? version.slice(0, 12)
+      : 'Non disponible';
   }
 
 
   formatBytes(
-    value: number | undefined,
+    value:
+      number
+      | null
+      | undefined,
   ): string {
     if (!value) {
       return '0 o';
@@ -668,9 +1244,13 @@ export class ProjectDetail
       return `${value} o`;
     }
 
-    if (value < 1024 * 1024) {
+    if (
+      value < 1024 * 1024
+    ) {
       return (
-        `${(value / 1024).toFixed(1)} Ko`
+        `${(
+          value / 1024
+        ).toFixed(1)} Ko`
       );
     }
 
@@ -703,7 +1283,9 @@ export class ProjectDetail
         )
         .subscribe({
           next: analysis => {
-            this.applyAnalysis(analysis);
+            this.applyAnalysis(
+              analysis,
+            );
 
             if (
               this.isTerminalStatus(
@@ -738,7 +1320,9 @@ export class ProjectDetail
   private applyAnalysis(
     analysis: ProjectAnalysis,
   ): void {
-    this.analysis.set(analysis);
+    this.analysis.set(
+      analysis,
+    );
 
     const projectId =
       this.projectId();
@@ -764,26 +1348,38 @@ export class ProjectDetail
       )
       .subscribe({
         next: newEvents => {
-          if (newEvents.length === 0) {
+          if (
+            newEvents.length === 0
+          ) {
             return;
           }
 
           this.events.update(
-            currentEvents => [
-              ...currentEvents,
-              ...newEvents.filter(
-                newEvent =>
-                  !currentEvents.some(
-                    currentEvent =>
-                      currentEvent.id
-                      === newEvent.id,
+            currentEvents => {
+              const knownIds =
+                new Set(
+                  currentEvents.map(
+                    event => event.id,
                   ),
-              ),
-            ],
+                );
+
+              return [
+                ...currentEvents,
+
+                ...newEvents.filter(
+                  event =>
+                    !knownIds.has(
+                      event.id,
+                    ),
+                ),
+              ];
+            },
           );
 
           this.lastEventId =
             Math.max(
+              this.lastEventId,
+
               ...newEvents.map(
                 event => event.id,
               ),
@@ -791,15 +1387,24 @@ export class ProjectDetail
         },
 
         error: () => {
-          // Une erreur de logs ne doit pas
-          // arrêter l'analyse principale.
+          // Une erreur du journal
+          // ne bloque pas l’analyse.
         },
       });
   }
 
 
+  private resetEvents(): void {
+    this.events.set([]);
+
+    this.lastEventId = 0;
+  }
+
+
   private isRunningStatus(
-    status: AnalysisStatus,
+    status:
+      AnalysisStatus
+      | undefined,
   ): boolean {
     return (
       status === 'pending'
@@ -822,6 +1427,171 @@ export class ProjectDetail
   }
 
 
+  private currentStepIndex(
+    analysis: ProjectAnalysis,
+  ): number {
+    const normalizedStep =
+      this.normalizeStep(
+        analysis.currentStep,
+      );
+
+    const exactIndex =
+      this.analysisSteps
+        .findIndex(
+          step =>
+            step.key
+            === normalizedStep,
+        );
+
+    if (exactIndex >= 0) {
+      return exactIndex;
+    }
+
+    let inferredIndex = 0;
+
+    for (
+      let index = 0;
+      index
+        < this.analysisSteps.length;
+      index += 1
+    ) {
+      if (
+        analysis.progress
+        >= this.analysisSteps[
+          index
+        ].minimumProgress
+      ) {
+        inferredIndex = index;
+      }
+    }
+
+    return inferredIndex;
+  }
+
+
+  private normalizeStep(
+    step: string,
+  ): string {
+    const aliases:
+      Record<string, string> = {
+        pending:
+          'preparing_source',
+
+        preparing:
+          'preparing_source',
+
+        preparing_source:
+          'preparing_source',
+
+        cloning:
+          'source_ready',
+
+        checkout_completed:
+          'source_ready',
+
+        source_ready:
+          'source_ready',
+
+        inventory:
+          'inventory',
+
+        component_detection:
+          'technology_detection',
+
+        technology_detection:
+          'technology_detection',
+
+        deployment_analysis:
+          'deployment_analysis',
+
+        report_generation:
+          'report_generation',
+      };
+
+    return aliases[step] ?? step;
+  }
+
+
+  private isZipSource(): boolean {
+    return (
+      this.analysis()
+        ?.summary
+        .source
+        ?.type
+      === 'zip'
+
+      || String(
+        this.project()
+          ?.source
+          .transport
+        ?? '',
+      ) === 'archive'
+    );
+  }
+
+
+  private cloneComponent(
+    component: AnalysisComponent,
+  ): AnalysisComponent {
+    return {
+      ...component,
+
+      kubernetesPaths: [
+        ...(
+          component.kubernetesPaths
+          ?? []
+        ),
+      ],
+
+      environmentVariables: (
+        component.environmentVariables
+        ?? []
+      ).map(
+        variable => ({
+          ...variable,
+        }),
+      ),
+
+      configuration: {
+        ...(
+          component.configuration
+          ?? {}
+        ),
+      },
+    };
+  }
+
+
+  private isAnalysisEvidence(
+    value: unknown,
+  ): value is AnalysisEvidence {
+    if (
+      typeof value !== 'object'
+      || value === null
+    ) {
+      return false;
+    }
+
+    return (
+      'file' in value
+      && typeof value.file
+        === 'string'
+
+      && 'category' in value
+      && typeof value.category
+        === 'string'
+
+      && 'message' in value
+      && typeof value.message
+        === 'string'
+
+      && 'strength' in value
+      && typeof value.strength
+        === 'string'
+    );
+  }
+
+
   private resolveError(
     error: HttpErrorResponse,
   ): string {
@@ -831,13 +1601,31 @@ export class ProjectDetail
       );
     }
 
-    const response =
-      error.error as
-        ApiErrorResponse | null;
+    const payload =
+      error.error;
+
+    if (
+      typeof payload === 'object'
+      && payload !== null
+      && 'error' in payload
+    ) {
+      const nestedError =
+        payload.error;
+
+      if (
+        typeof nestedError
+          === 'object'
+        && nestedError !== null
+        && 'message' in nestedError
+        && typeof nestedError.message
+          === 'string'
+      ) {
+        return nestedError.message;
+      }
+    }
 
     return (
-      response?.error?.message
-      || `Erreur HTTP ${error.status}.`
+      `Erreur HTTP ${error.status}.`
     );
   }
 }

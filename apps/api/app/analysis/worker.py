@@ -1,20 +1,11 @@
 from __future__ import annotations
 
-from concurrent.futures import (
-    ThreadPoolExecutor,
-)
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask
 
-from app.analysis.detectors import (
-    analyze_repository,
-)
-
-from app.analysis.git_workspace import (
-    GitWorkspaceError,
-    git_workspace_manager,
-)
-
+from app.analysis.detectors import analyze_repository
+from app.analysis.evidence import enrich_analysis_report
 from app.analysis.repository import (
     add_analysis_event,
     complete_analysis,
@@ -24,12 +15,15 @@ from app.analysis.repository import (
     replace_analysis_components,
     update_analysis_progress,
 )
+from app.analysis.source_workspace import (
+    SourceWorkspaceError,
+    source_workspace_manager,
+)
 
 
 analysis_executor = ThreadPoolExecutor(
     max_workers=2,
-    thread_name_prefix=
-        "piximind-analysis",
+    thread_name_prefix="piximind-analysis",
 )
 
 
@@ -62,178 +56,76 @@ def run_analysis_job(
         )
 
         try:
-            project = find_project_source(
-                project_id
-            )
+            project = find_project_source(project_id)
 
             if project is None:
                 raise RuntimeError(
                     "Le projet est introuvable."
                 )
 
-            update_analysis_progress(
-                analysis_run_id=
-                    analysis_run_id,
-
+            set_step(
+                analysis_run_id=analysis_run_id,
                 status="preparing",
-                progress=5,
-                current_step="preparing",
+                progress=8,
+                step="preparing_source",
+                message="Préparation de la source du projet.",
             )
 
-            add_analysis_event(
-                analysis_run_id=
-                    analysis_run_id,
+            with source_workspace_manager.prepare(
+                project
+            ) as prepared_source:
+                source_action = (
+                    "Extraction de l'archive terminée."
+                    if prepared_source.source_type == "zip"
+                    else "Téléchargement du repository terminé."
+                )
 
-                level="info",
-                step="preparing",
-
-                message=(
-                    "Préparation du workspace "
-                    "temporaire."
-                ),
-            )
-
-            update_analysis_progress(
-                analysis_run_id=
-                    analysis_run_id,
-
-                status="cloning",
-                progress=15,
-                current_step="cloning",
-            )
-
-            add_analysis_event(
-                analysis_run_id=
-                    analysis_run_id,
-
-                level="info",
-                step="credential",
-
-                message=(
-                    "Chargement sécurisé "
-                    "du credential Git."
-                ),
-            )
-
-            with git_workspace_manager.checkout(
-                project=project,
-
-                commit_policy=
-                    analysis_run[
-                        "commit_policy"
-                    ],
-            ) as checkout:
                 update_analysis_progress(
-                    analysis_run_id=
-                        analysis_run_id,
-
+                    analysis_run_id=analysis_run_id,
                     status="cloning",
-                    progress=40,
-                    current_step=
-                        "checkout_completed",
-
-                    branch_head_sha=
-                        checkout.branch_head_sha,
-
-                    analyzed_commit_sha=
-                        checkout.analyzed_commit_sha,
+                    progress=30,
+                    current_step="source_ready",
+                    branch_head_sha=(
+                        prepared_source.branch_head
+                        or prepared_source.version
+                    ),
+                    analyzed_commit_sha=(
+                        prepared_source.version
+                    ),
                 )
 
                 add_analysis_event(
-                    analysis_run_id=
-                        analysis_run_id,
-
+                    analysis_run_id=analysis_run_id,
                     level="success",
-                    step="clone",
-
-                    message=(
-                        "Repository téléchargé "
-                        "dans le workspace temporaire."
-                    ),
-
+                    step="source_ready",
+                    message=source_action,
                     details={
-                        "branchHeadSha":
-                            checkout.branch_head_sha,
-
-                        "analyzedCommitSha":
-                            checkout.analyzed_commit_sha,
-
-                        "branchChanged":
-                            checkout.branch_changed,
+                        "sourceType": prepared_source.source_type,
+                        "version": prepared_source.version,
+                        "previousVersion": prepared_source.previous_version,
+                        "sourceChanged": prepared_source.source_changed,
                     },
                 )
 
-                if checkout.branch_changed:
-                    add_analysis_event(
-                        analysis_run_id=
-                            analysis_run_id,
-
-                        level="warning",
-                        step="commit",
-
-                        message=(
-                            "La branche contient un commit "
-                            "différent de celui validé "
-                            "pendant la phase 1."
-                        ),
-
-                        details={
-                            "policy":
-                                analysis_run[
-                                    "commit_policy"
-                                ],
-
-                            "validatedCommit":
-                                project[
-                                    "last_source_commit_sha"
-                                ],
-
-                            "currentBranchHead":
-                                checkout.branch_head_sha,
-
-                            "analyzedCommit":
-                                checkout.analyzed_commit_sha,
-                        },
-                    )
-
-                update_analysis_progress(
-                    analysis_run_id=
-                        analysis_run_id,
-
+                set_step(
+                    analysis_run_id=analysis_run_id,
                     status="analyzing",
-                    progress=50,
-                    current_step="inventory",
-                )
-
-                add_analysis_event(
-                    analysis_run_id=
-                        analysis_run_id,
-
-                    level="info",
+                    progress=45,
                     step="inventory",
-
-                    message=(
-                        "Création de l'inventaire "
-                        "des fichiers."
-                    ),
+                    message="Inventaire sécurisé des fichiers.",
                 )
 
                 report = analyze_repository(
-                    source_root=
-                        checkout.source_path,
-
-                    selected_subdirectory=
-                        project[
-                            "source_subdirectory"
-                        ],
-
+                    source_root=prepared_source.source_path,
+                    selected_subdirectory=(
+                        project.get("source_subdirectory")
+                    ),
                     max_files=int(
                         app.config.get(
                             "ANALYSIS_MAX_FILES",
-                            20000,
+                            20_000,
                         )
                     ),
-
                     max_file_size_bytes=int(
                         app.config.get(
                             "ANALYSIS_MAX_FILE_SIZE_BYTES",
@@ -242,183 +134,197 @@ def run_analysis_job(
                     ),
                 )
 
-                update_analysis_progress(
-                    analysis_run_id=
-                        analysis_run_id,
-
+                set_step(
+                    analysis_run_id=analysis_run_id,
                     status="analyzing",
-                    progress=75,
-                    current_step=
-                        "component_detection",
+                    progress=68,
+                    step="technology_detection",
+                    message="Détection des composants et des technologies.",
                 )
 
-                add_analysis_event(
-                    analysis_run_id=
-                        analysis_run_id,
-
-                    level="info",
-                    step="detection",
-
-                    message=(
-                        f"{len(report.components)} "
-                        "composant(s) détecté(s)."
+                report = enrich_analysis_report(
+                    source_root=prepared_source.source_path,
+                    selected_subdirectory=(
+                        project.get("source_subdirectory")
                     ),
+                    report=report,
+                )
+
+                set_step(
+                    analysis_run_id=analysis_run_id,
+                    status="analyzing",
+                    progress=84,
+                    step="deployment_analysis",
+                    message=(
+                        "Analyse des Dockerfiles, de Helm, "
+                        "de Kubernetes et d'Argo CD."
+                    ),
+                )
+
+                report.summary["source"] = {
+                    "type": prepared_source.source_type,
+                    "displayName": prepared_source.display_name,
+                    "version": prepared_source.version,
+                    "shortVersion": prepared_source.version[:12],
+                    "previousVersion": prepared_source.previous_version,
+                    "sourceChanged": prepared_source.source_changed,
+                    "branch": (
+                        project.get("default_branch")
+                        if prepared_source.source_type == "git"
+                        else None
+                    ),
+                }
+
+                report.summary["project"] = {
+                    "operationMode": (
+                        project.get("operation_mode")
+                        or "new_application"
+                    ),
+                    "environment": {
+                        "id": project.get("default_environment_id"),
+                        "name": project.get("environment_name"),
+                        "namespace": project.get("environment_namespace"),
+                    },
+                }
+
+                set_step(
+                    analysis_run_id=analysis_run_id,
+                    status="analyzing",
+                    progress=94,
+                    step="report_generation",
+                    message="Génération du rapport d'analyse.",
                 )
 
                 component_dicts = [
                     component.to_dict()
-                    for component
-                    in report.components
+                    for component in report.components
                 ]
 
                 replace_analysis_components(
                     project_id=project_id,
-
-                    analysis_run_id=
-                        analysis_run_id,
-
-                    components=
-                        component_dicts,
+                    analysis_run_id=analysis_run_id,
+                    components=component_dicts,
                 )
 
-                update_analysis_progress(
-                    analysis_run_id=
-                        analysis_run_id,
-
-                    status="analyzing",
-                    progress=90,
-                    current_step=
-                        "report_generation",
-                )
-
-                for warning in (
-                    report.summary.get(
-                        "warnings"
-                    )
-                    or []
+                for warning in report.summary.get(
+                    "warnings",
+                    [],
                 ):
                     add_analysis_event(
-                        analysis_run_id=
-                            analysis_run_id,
-
+                        analysis_run_id=analysis_run_id,
                         level="warning",
-                        step="report",
-
+                        step="report_generation",
                         message=warning,
                     )
 
                 complete_analysis(
-                    analysis_run_id=
-                        analysis_run_id,
-
-                    project_id=
-                        project_id,
-
-                    branch_head_sha=
-                        checkout.branch_head_sha,
-
-                    analyzed_commit_sha=
-                        checkout.analyzed_commit_sha,
-
-                    summary=
-                        report.summary,
+                    analysis_run_id=analysis_run_id,
+                    project_id=project_id,
+                    source_type=prepared_source.source_type,
+                    branch_head_sha=(
+                        prepared_source.branch_head
+                        or prepared_source.version
+                    ),
+                    analyzed_commit_sha=prepared_source.version,
+                    summary=report.summary,
                 )
 
                 add_analysis_event(
-                    analysis_run_id=
-                        analysis_run_id,
-
+                    analysis_run_id=analysis_run_id,
                     level="success",
                     step="completed",
-
-                    message=(
-                        "Analyse statique terminée "
-                        "avec succès."
-                    ),
-
+                    message="Analyse du projet terminée.",
                     details={
-                        "componentCount":
-                            len(
-                                report.components
-                            ),
-
-                        "phase3Ready":
-                            report.summary.get(
-                                "phase3Ready"
-                            ),
+                        "componentCount": len(report.components),
+                        "globalConfidence": report.summary.get(
+                            "globalConfidence",
+                            0,
+                        ),
                     },
                 )
 
-        except GitWorkspaceError as error:
-            fail_analysis(
-                analysis_run_id=
-                    analysis_run_id,
-
-                project_id=
-                    project_id,
-
-                error_code=
-                    error.code,
-
-                error_message=
-                    error.message,
+        except SourceWorkspaceError as error:
+            record_failure(
+                analysis_run_id=analysis_run_id,
+                project_id=project_id,
+                code=error.code,
+                message=error.message,
+                step="source",
             )
 
-            add_analysis_event(
-                analysis_run_id=
-                    analysis_run_id,
-
-                level="error",
-                step="git",
-
-                message=
-                    error.message,
-
-                details={
-                    "code":
-                        error.code,
-                },
+        except ValueError as error:
+            record_failure(
+                analysis_run_id=analysis_run_id,
+                project_id=project_id,
+                code="ANALYSIS_CONFIGURATION_INVALID",
+                message=str(error),
+                step="analysis",
             )
 
         except Exception as error:
             app.logger.exception(
-                (
-                    "Erreur pendant l'analyse "
-                    "du projet %s."
-                ),
+                "Erreur pendant l'analyse du projet %s.",
                 project_id,
             )
 
-            fail_analysis(
-                analysis_run_id=
-                    analysis_run_id,
-
-                project_id=
-                    project_id,
-
-                error_code=
-                    "ANALYSIS_FAILED",
-
-                error_message=(
-                    "L'analyse du repository "
-                    "a échoué."
-                ),
-            )
-
-            add_analysis_event(
-                analysis_run_id=
-                    analysis_run_id,
-
-                level="error",
+            record_failure(
+                analysis_run_id=analysis_run_id,
+                project_id=project_id,
+                code="ANALYSIS_FAILED",
+                message="L'analyse du projet a échoué.",
                 step="analysis",
-
-                message=(
-                    "L'analyse du repository "
-                    "a échoué."
-                ),
-
                 details={
-                    "exceptionType":
-                        type(error).__name__,
+                    "exceptionType": type(error).__name__,
                 },
             )
+
+
+def set_step(
+    *,
+    analysis_run_id: int,
+    status: str,
+    progress: int,
+    step: str,
+    message: str,
+) -> None:
+    update_analysis_progress(
+        analysis_run_id=analysis_run_id,
+        status=status,
+        progress=progress,
+        current_step=step,
+    )
+
+    add_analysis_event(
+        analysis_run_id=analysis_run_id,
+        level="info",
+        step=step,
+        message=message,
+    )
+
+
+def record_failure(
+    *,
+    analysis_run_id: int,
+    project_id: int,
+    code: str,
+    message: str,
+    step: str,
+    details: dict | None = None,
+) -> None:
+    fail_analysis(
+        analysis_run_id=analysis_run_id,
+        project_id=project_id,
+        error_code=code,
+        error_message=message,
+    )
+
+    add_analysis_event(
+        analysis_run_id=analysis_run_id,
+        level="error",
+        step=step,
+        message=message,
+        details={
+            "code": code,
+            **(details or {}),
+        },
+    )

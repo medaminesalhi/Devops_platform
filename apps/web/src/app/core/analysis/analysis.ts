@@ -49,6 +49,23 @@ export interface AnalysisEnvironmentVariable {
 }
 
 
+export interface AnalysisEvidence {
+  file: string;
+  category: string;
+  message: string;
+  strength: string;
+}
+
+
+export interface ComponentDeploymentState {
+  dockerfile?: boolean;
+  helmChart?: boolean;
+  kubernetesManifestCount?: number;
+  needsDockerfile?: boolean;
+  needsHelmChart?: boolean;
+}
+
+
 export interface AnalysisComponent {
   id: number;
 
@@ -62,14 +79,12 @@ export interface AnalysisComponent {
 
   buildCommand: string | null;
   startCommand: string | null;
-
   detectedPort: number | null;
 
   deployable: boolean;
 
   dockerfilePath: string | null;
   helmChartPath: string | null;
-
   kubernetesPaths: string[];
 
   environmentVariables:
@@ -95,38 +110,64 @@ export interface AnalysisInventory {
 export interface AnalysisArgoCdSummary {
   existingApplications: string[];
   existingApplicationCount: number;
-
   appProjectManagedByEnvironment: boolean;
-
   applicationCreationPhase: number;
-
   confirmationRequired: boolean;
+}
+
+
+export interface AnalysisSourceSummary {
+  type?: 'git' | 'zip';
+  displayName?: string;
+  version?: string;
+  shortVersion?: string;
+  previousVersion?: string | null;
+  sourceChanged?: boolean;
+  branch?: string | null;
+}
+
+
+export interface DeploymentReadinessSummary {
+  ready?: boolean;
+  missingDockerfiles?: string[];
+  missingHelmCharts?: string[];
+  argoCdApplicationRequired?: boolean;
+  message?: string;
+}
+
+
+export interface AiContextSummary {
+  status?: string;
+  ready?: boolean;
+  selectedFileCount?: number;
+  selectedFiles?: string[];
+  secretsIncluded?: boolean;
+  message?: string;
 }
 
 
 export interface AnalysisSummary {
   analysisRoot?: string;
-
   inventory?: AnalysisInventory;
 
   componentCount?: number;
-
   deployableComponentCount?: number;
+  technologyCount?: number;
+  evidenceCount?: number;
+  globalConfidence?: number;
 
   dockerfiles?: string[];
-
   helmCharts?: string[];
-
   kubernetesManifests?: string[];
-
   gitlabCiFiles?: string[];
-
   composeFiles?: string[];
 
   argoCd?: AnalysisArgoCdSummary;
+  source?: AnalysisSourceSummary;
+  deploymentReadiness?: DeploymentReadinessSummary;
+  aiContext?: AiContextSummary;
 
   warnings?: string[];
-
   phase3Ready?: boolean;
 }
 
@@ -142,23 +183,17 @@ export interface ProjectAnalysis {
   projectId: number;
 
   commitPolicy: CommitPolicy;
-
   requestedCommitSha: string | null;
   branchHeadSha: string | null;
   analyzedCommitSha: string | null;
-
   selectedSubdirectory: string | null;
 
   status: AnalysisStatus;
-
   progress: number;
-
   currentStep: string;
 
   summary: AnalysisSummary;
-
   error: AnalysisError | null;
-
   components: AnalysisComponent[];
 
   createdAt: string | null;
@@ -170,44 +205,29 @@ export interface ProjectAnalysis {
 
 export interface ProjectAnalysisEvent {
   id: number;
-
   level: AnalysisEventLevel;
-
   step: string;
-
   message: string;
-
-  details:
-    Record<string, unknown>;
-
+  details: Record<string, unknown>;
   createdAt: string | null;
 }
 
 
 export interface UpdateAnalysisComponentRequest {
   name?: string;
-
   componentType?: string;
-
   runtime?: string | null;
-
   framework?: string | null;
-
   packageManager?: string | null;
-
   buildCommand?: string | null;
-
   startCommand?: string | null;
-
   detectedPort?: number | null;
-
   deployable?: boolean;
 }
 
 
 interface AnalysisResponse {
   success: boolean;
-
   data: {
     analysis: ProjectAnalysis;
   };
@@ -216,7 +236,6 @@ interface AnalysisResponse {
 
 interface AnalysisEventsResponse {
   success: boolean;
-
   data: {
     events: ProjectAnalysisEvent[];
   };
@@ -225,7 +244,6 @@ interface AnalysisEventsResponse {
 
 interface AnalysisComponentResponse {
   success: boolean;
-
   data: {
     component: AnalysisComponent;
   };
@@ -234,7 +252,6 @@ interface AnalysisComponentResponse {
 
 interface ConfirmAnalysisResponse {
   success: boolean;
-
   data: {
     confirmed: boolean;
   };
@@ -254,13 +271,12 @@ export class AnalysisService {
 
   startAnalysis(
     projectId: number,
-    commitPolicy: CommitPolicy,
   ): Observable<ProjectAnalysis> {
     return this.http
       .post<AnalysisResponse>(
         `/api/projects/${projectId}/analyses`,
         {
-          commitPolicy,
+          commitPolicy: 'latest',
         },
         {
           headers: this.createHeaders(),
@@ -280,10 +296,7 @@ export class AnalysisService {
   ): Observable<ProjectAnalysis> {
     return this.http
       .get<AnalysisResponse>(
-        (
-          `/api/projects/${projectId}`
-          + '/analyses/latest'
-        ),
+        `/api/projects/${projectId}/analyses/latest`,
         {
           headers: this.createHeaders(),
         },
@@ -303,10 +316,7 @@ export class AnalysisService {
   ): Observable<ProjectAnalysis> {
     return this.http
       .get<AnalysisResponse>(
-        (
-          `/api/projects/${projectId}`
-          + `/analyses/${analysisId}`
-        ),
+        `/api/projects/${projectId}/analyses/${analysisId}`,
         {
           headers: this.createHeaders(),
         },
@@ -333,11 +343,7 @@ export class AnalysisService {
 
     return this.http
       .get<AnalysisEventsResponse>(
-        (
-          `/api/projects/${projectId}`
-          + `/analyses/${analysisId}`
-          + '/events'
-        ),
+        `/api/projects/${projectId}/analyses/${analysisId}/events`,
         {
           headers: this.createHeaders(),
           params,
@@ -356,16 +362,11 @@ export class AnalysisService {
     projectId: number,
     analysisId: number,
     componentId: number,
-    request:
-      UpdateAnalysisComponentRequest,
+    request: UpdateAnalysisComponentRequest,
   ): Observable<AnalysisComponent> {
     return this.http
       .patch<AnalysisComponentResponse>(
-        (
-          `/api/projects/${projectId}`
-          + `/analyses/${analysisId}`
-          + `/components/${componentId}`
-        ),
+        `/api/projects/${projectId}/analyses/${analysisId}/components/${componentId}`,
         request,
         {
           headers: this.createHeaders(),
@@ -386,11 +387,7 @@ export class AnalysisService {
   ): Observable<boolean> {
     return this.http
       .post<ConfirmAnalysisResponse>(
-        (
-          `/api/projects/${projectId}`
-          + `/analyses/${analysisId}`
-          + '/confirm'
-        ),
+        `/api/projects/${projectId}/analyses/${analysisId}/confirm`,
         {},
         {
           headers: this.createHeaders(),
@@ -405,8 +402,7 @@ export class AnalysisService {
   }
 
 
-  private createHeaders():
-    HttpHeaders {
+  private createHeaders(): HttpHeaders {
     const accessToken =
       this.auth.getAccessToken();
 
