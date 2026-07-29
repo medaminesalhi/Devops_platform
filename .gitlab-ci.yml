@@ -1,118 +1,51 @@
 stages:
   - diagnostic
 
-runner-and-nexus-diagnostic:
+test-runner-access:
   stage: diagnostic
 
   image: alpine:3.20
 
   script:
-    - echo "========================================"
-    - echo "INFORMATIONS GITLAB RUNNER"
-    - echo "========================================"
-
-    - echo "Runner ID          : ${CI_RUNNER_ID:-inconnu}"
-    - echo "Runner description : ${CI_RUNNER_DESCRIPTION:-inconnue}"
-    - echo "Runner tags        : ${CI_RUNNER_TAGS:-aucun}"
-    - echo "Runner version     : ${CI_RUNNER_VERSION:-inconnue}"
-    - echo "Architecture       : ${CI_RUNNER_EXECUTABLE_ARCH:-inconnue}"
-
-    - echo
-    - echo "========================================"
-    - echo "SYSTEME"
-    - echo "========================================"
-
-    - uname -a || true
-    - id || true
-    - pwd
-    - ls -la
-
-    - echo
-    - echo "========================================"
-    - echo "OUTILS DE CONSTRUCTION DISPONIBLES"
-    - echo "========================================"
-
-    - command -v docker || true
-    - command -v buildah || true
-    - command -v podman || true
-    - command -v nerdctl || true
-    - command -v kaniko || true
-    - command -v curl || true
-    - command -v wget || true
-
     - |
-      if command -v docker >/dev/null 2>&1
-      then
-        echo
-        echo "Docker détecté"
+      echo "========================================"
+      echo "GITLAB RUNNER"
+      echo "========================================"
 
-        docker version || true
-        docker info || true
-      else
-        echo
-        echo "Docker non détecté"
-      fi
+      echo "Runner: ${CI_RUNNER_DESCRIPTION:-inconnu}"
+      echo "Tags: ${CI_RUNNER_TAGS:-aucun}"
 
-    - echo
-    - echo "========================================"
-    - echo "TEST NEXUS 8083"
-    - echo "========================================"
+      echo
+      echo "========================================"
+      echo "TEST NEXUS RESEAU INTERNE"
+      echo "========================================"
 
-    - |
-      if command -v curl >/dev/null 2>&1
-      then
-        curl \
-          --silent \
-          --show-error \
-          --include \
-          --max-time 10 \
-          http://172.16.0.40:8083/v2/ \
-          || true
+      wget \
+        --server-response \
+        --output-document=- \
+        --timeout=10 \
+        http://172.16.0.40:8084/v2/ \
+        || true
 
-      elif command -v wget >/dev/null 2>&1
-      then
-        wget \
-          --server-response \
-          --output-document=- \
-          --timeout=10 \
-          http://172.16.0.40:8083/v2/ \
-          || true
+      echo
+      echo "========================================"
+      echo "TEST NEXUS TAILSCALE"
+      echo "========================================"
 
-      else
-        echo "curl et wget sont absents."
-      fi
+      wget \
+        --server-response \
+        --output-document=- \
+        --timeout=10 \
+        http://100.96.79.120:8084/v2/ \
+        || true
 
-    - echo
-    - echo "========================================"
-    - echo "TEST NEXUS 8084"
-    - echo "========================================"
+      echo
+      echo "========================================"
+      echo "OUTIL DE CONSTRUCTION"
+      echo "========================================"
 
-    - |
-      if command -v curl >/dev/null 2>&1
-      then
-        curl \
-          --silent \
-          --show-error \
-          --include \
-          --max-time 10 \
-          http://172.16.0.40:8084/v2/ \
-          || true
-
-      elif command -v wget >/dev/null 2>&1
-      then
-        wget \
-          --server-response \
-          --output-document=- \
-          --timeout=10 \
-          http://172.16.0.40:8084/v2/ \
-          || true
-
-      else
-        echo "curl et wget sont absents."
-      fi
-
-    - echo
-    - echo "Diagnostic terminé."
+      command -v docker || true
+      docker version || true
 
   rules:
     - if: '$CI_COMMIT_BRANCH'
