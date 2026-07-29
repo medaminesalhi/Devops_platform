@@ -22,13 +22,4 @@ COPY . .
 
 EXPOSE 5000
 
-CMD [
-  "gunicorn",
-  "--workers", "1",
-  "--threads", "4",
-  "--bind", "0.0.0.0:5000",
-  "--timeout", "180",
-  "--access-logfile", "-",
-  "--error-logfile", "-",
-  "wsgi:app"
-]
+CMD ["gunicorn","--workers", "1","--threads", "4","--bind", "0.0.0.0:5000","--timeout", "180","--access-logfile", "-","--error-logfile", "-",  "wsgi:app"]

@@ -1,0 +1,39 @@
+# Environnements Python
+.venv/
+venv/
+env/
+
+# Cache Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Tests et caches
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Variables locales et secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# Docker Compose local
+docker-compose*.yml
