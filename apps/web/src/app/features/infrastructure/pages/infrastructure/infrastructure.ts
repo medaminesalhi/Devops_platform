@@ -25,13 +25,17 @@ import {
 } from 'rxjs';
 
 import {
+  ArchivedEnvironment,
   AvailableConnection,
-  CreateEnvironmentRequest,
   DeploymentEnvironment,
+  EnvironmentService,
   EnvironmentStatus,
   EnvironmentType,
   InfrastructureOverview,
+  InfrastructureProviderType,
   InfrastructureService,
+  IntegrationStatus,
+  SaveEnvironmentRequest,
   ServiceRole,
 } from '../../../../core/infrastructure/infrastructure';
 
@@ -46,150 +50,524 @@ interface ApiErrorResponse {
 }
 
 
+type ConnectionControlName =
+  | 'kubernetesConnectionId'
+  | 'argocdConnectionId'
+  | 'registryConnectionId'
+  | 'gitopsConnectionId'
+  | 'storageConnectionId'
+  | 'aiConnectionId'
+  | 'httpServiceConnectionId';
+
+
+interface ServiceDefinition {
+  role: ServiceRole;
+
+  controlName:
+    ConnectionControlName;
+
+  label: string;
+  description: string;
+
+  required: boolean;
+
+  providers:
+    InfrastructureProviderType[];
+}
+
+
+const SERVICE_DEFINITIONS:
+  ServiceDefinition[] = [
+    {
+      role:
+        'kubernetes',
+
+      controlName:
+        'kubernetesConnectionId',
+
+      label:
+        'Cluster Kubernetes',
+
+      description:
+        (
+          'Cluster dans lequel les '
+          + 'applications seront exécutées.'
+        ),
+
+      required:
+        true,
+
+      providers: [
+        'kubernetes',
+      ],
+    },
+
+
+    {
+      role:
+        'argocd',
+
+      controlName:
+        'argocdConnectionId',
+
+      label:
+        'Argo CD',
+
+      description:
+        (
+          'Service GitOps chargé de '
+          + 'synchroniser les applications.'
+        ),
+
+      required:
+        true,
+
+      providers: [
+        'argocd',
+      ],
+    },
+
+
+    {
+      role:
+        'container_registry',
+
+      controlName:
+        'registryConnectionId',
+
+      label:
+        'Registre de conteneurs',
+
+      description:
+        (
+          'Nexus stocke les images '
+          + 'construites avant '
+          + 'le déploiement.'
+        ),
+
+      required:
+        true,
+
+      providers: [
+        'nexus',
+      ],
+    },
+
+
+    {
+      role:
+        'gitops_repository',
+
+      controlName:
+        'gitopsConnectionId',
+
+      label:
+        'Dépôt GitOps',
+
+      description:
+        (
+          'GitLab stocke les manifests '
+          + 'et charts utilisés '
+          + 'par Argo CD.'
+        ),
+
+      required:
+        true,
+
+      providers: [
+        'gitlab',
+      ],
+    },
+
+
+    {
+      role:
+        'storage',
+
+      controlName:
+        'storageConnectionId',
+
+      label:
+        'Stockage NFS',
+
+      description:
+        (
+          'Stockage partagé pour '
+          + 'les volumes persistants.'
+        ),
+
+      required:
+        false,
+
+      providers: [
+        'nfs',
+      ],
+    },
+
+
+    {
+      role:
+        'ai_provider',
+
+      controlName:
+        'aiConnectionId',
+
+      label:
+        'Fournisseur IA',
+
+      description:
+        (
+          'Ollama, LiteLLM, vLLM '
+          + 'ou une API compatible OpenAI.'
+        ),
+
+      required:
+        false,
+
+      providers: [
+        'ollama',
+        'litellm',
+        'vllm',
+        'openai_compatible',
+      ],
+    },
+
+
+    {
+      role:
+        'custom_http_service',
+
+      controlName:
+        'httpServiceConnectionId',
+
+      label:
+        'Service HTTP personnalisé',
+
+      description:
+        (
+          'Endpoint optionnel de santé '
+          + 'ou de supervision.'
+        ),
+
+      required:
+        false,
+
+      providers: [
+        'generic_http',
+      ],
+    },
+  ];
+
+
 @Component({
-  selector: 'app-infrastructure',
+  selector:
+    'app-infrastructure',
 
   imports: [
     ReactiveFormsModule,
     DatePipe,
   ],
 
-  templateUrl: './infrastructure.html',
-  styleUrl: './infrastructure.scss',
+  templateUrl:
+    './infrastructure.html',
+
+  styleUrl:
+    './infrastructure.scss',
 })
-export class Infrastructure implements OnInit {
+export class Infrastructure
+  implements OnInit {
   private readonly infrastructureService =
-    inject(InfrastructureService);
+    inject(
+      InfrastructureService
+    );
 
   private readonly formBuilder =
-    inject(FormBuilder);
+    inject(
+      FormBuilder
+    );
+
+
+  readonly serviceDefinitions =
+    SERVICE_DEFINITIONS;
 
 
   readonly overview =
-    signal<InfrastructureOverview | null>(
-      null,
+    signal<
+      InfrastructureOverview | null
+    >(
+      null
     );
 
-  readonly selectedEnvironmentId =
-    signal<number | null>(null);
 
-  readonly clientFilter =
-    signal<number | null>(null);
+  /*
+   * Aucun environnement n'est sélectionné
+   * au chargement de la page.
+   */
+  readonly selectedEnvironmentId =
+    signal<number | null>(
+      null
+    );
+
 
   readonly typeFilter =
-    signal<EnvironmentType | null>(null);
+    signal<
+      EnvironmentType | null
+    >(
+      null
+    );
+
 
   readonly editorOpen =
-    signal(false);
+    signal(
+      false
+    );
+
+
+  readonly editingEnvironmentId =
+    signal<number | null>(
+      null
+    );
+
 
   readonly isLoading =
-    signal(true);
+    signal(
+      true
+    );
+
 
   readonly isSaving =
-    signal(false);
+    signal(
+      false
+    );
+
+
+  readonly archivingEnvironmentId =
+    signal<number | null>(
+      null
+    );
+
 
   readonly errorMessage =
-    signal<string | null>(null);
+    signal<string | null>(
+      null
+    );
+
 
   readonly successMessage =
-    signal<string | null>(null);
+    signal<string | null>(
+      null
+    );
 
 
   readonly environmentForm =
-    this.formBuilder.nonNullable.group({
-      clientId: [
-        0,
-        [
-          Validators.required,
-          Validators.min(1),
+    this.formBuilder
+      .nonNullable
+      .group({
+        name: [
+          '',
+
+          [
+            Validators.required,
+            Validators.maxLength(140),
+          ],
         ],
-      ],
 
-      name: [
-        '',
-        [
-          Validators.required,
-          Validators.maxLength(140),
+
+        environmentType: [
+          'lab' as EnvironmentType,
+
+          [
+            Validators.required,
+          ],
         ],
-      ],
 
-      environmentType: [
-        'lab' as EnvironmentType,
-        [
-          Validators.required,
+
+        namespace: [
+          '',
+
+          [
+            Validators.required,
+
+            Validators.maxLength(
+              63
+            ),
+
+            Validators.pattern(
+              (
+                /^[a-z0-9]+ (?:[-a-z0-9]*[a-z0-9])?$/
+              )
+            ),
+          ],
         ],
-      ],
 
-      namespace: [
-        '',
-        [
-          Validators.required,
-          Validators.maxLength(120),
+
+        domain: [
+          '',
+
+          [
+            Validators.maxLength(
+              255
+            ),
+          ],
         ],
-      ],
 
-      domain: [
-        '',
-        [
-          Validators.maxLength(255),
+
+        description: [
+          '',
+
+          [
+            Validators.maxLength(
+              1000
+            ),
+          ],
         ],
-      ],
 
-      description: [
-        '',
-        [
-          Validators.maxLength(1000),
+
+        kubernetesConnectionId: [
+          0,
         ],
-      ],
-
-      kubernetesConnectionId: [
-        0,
-      ],
-
-      argocdConnectionId: [
-        0,
-      ],
-
-      registryConnectionId: [
-        0,
-      ],
-
-      gitopsConnectionId: [
-        0,
-      ],
-
-      aiConnectionId: [
-        0,
-      ],
-    });
 
 
-  readonly selectedEnvironment = computed(
-    (): DeploymentEnvironment | null => {
-      const currentOverview =
-        this.overview();
+        argocdConnectionId: [
+          0,
+        ],
 
-      const selectedId =
-        this.selectedEnvironmentId();
 
-      if (
-        !currentOverview ||
-        selectedId === null
-      ) {
-        return null;
-      }
+        registryConnectionId: [
+          0,
+        ],
 
-      return (
-        currentOverview.environments.find(
-          (
-            environment:
-              DeploymentEnvironment,
-          ) =>
-            environment.id === selectedId,
-        ) ?? null
-      );
-    },
-  );
+
+        gitopsConnectionId: [
+          0,
+        ],
+
+
+        storageConnectionId: [
+          0,
+        ],
+
+
+        aiConnectionId: [
+          0,
+        ],
+
+
+        httpServiceConnectionId: [
+          0,
+        ],
+      });
+
+
+  readonly selectedEnvironment =
+    computed(
+      ():
+        DeploymentEnvironment
+        | null => {
+        const currentOverview =
+          this.overview();
+
+
+        const selectedId =
+          this.selectedEnvironmentId();
+
+
+        if (
+          !currentOverview
+
+          || selectedId === null
+        ) {
+          return null;
+        }
+
+
+        return (
+          currentOverview.environments
+            .find(
+              (
+                environment:
+                  DeploymentEnvironment,
+              ) =>
+                environment.id
+                === selectedId,
+            )
+
+          ?? null
+        );
+      },
+    );
+
+
+  readonly missingRequiredServices =
+    computed(
+      (): string[] => {
+        const environment =
+          this.selectedEnvironment();
+
+
+        if (!environment) {
+          return [];
+        }
+
+
+        const configuredRoles =
+          new Set(
+            environment.services.map(
+              (
+                service:
+                  EnvironmentService,
+              ) =>
+                service.role,
+            ),
+          );
+
+
+        return this.serviceDefinitions
+          .filter(
+            (
+              definition:
+                ServiceDefinition,
+            ) =>
+              definition.required
+
+              && !configuredRoles.has(
+                definition.role,
+              ),
+          )
+          .map(
+            (
+              definition:
+                ServiceDefinition,
+            ) =>
+              definition.label,
+          );
+      },
+    );
+
+
+  readonly requiredConfiguredCount =
+    computed(
+      (): number => {
+        const environment =
+          this.selectedEnvironment();
+
+
+        if (!environment) {
+          return 0;
+        }
+
+
+        return environment.services
+          .filter(
+            (
+              service:
+                EnvironmentService,
+            ) =>
+              service.required,
+          )
+          .length;
+      },
+    );
 
 
   ngOnInit(): void {
@@ -198,27 +576,49 @@ export class Infrastructure implements OnInit {
 
 
   loadOverview(): void {
-    this.isLoading.set(true);
-    this.errorMessage.set(null);
+    this.isLoading.set(
+      true
+    );
+
+    this.errorMessage.set(
+      null
+    );
+
 
     this.infrastructureService
       .getOverview(
-        this.clientFilter(),
-        this.typeFilter(),
+        this.typeFilter()
       )
       .pipe(
-        finalize(() => {
-          this.isLoading.set(false);
-        }),
+        finalize(
+          () =>
+            this.isLoading.set(
+              false
+            ),
+        ),
       )
       .subscribe({
         next: (
-          overview: InfrastructureOverview,
+          overview:
+            InfrastructureOverview,
         ) => {
-          this.overview.set(overview);
+          this.overview.set(
+            overview
+          );
+
 
           const selectedId =
             this.selectedEnvironmentId();
+
+
+          /*
+           * Au premier chargement, selectedId vaut null.
+           * Aucun environnement n'est sélectionné.
+           */
+          if (selectedId === null) {
+            return;
+          }
+
 
           const selectionStillExists =
             overview.environments.some(
@@ -226,49 +626,31 @@ export class Infrastructure implements OnInit {
                 environment:
                   DeploymentEnvironment,
               ) =>
-                environment.id ===
-                selectedId,
+                environment.id
+                === selectedId,
             );
 
-          if (
-            !selectionStillExists &&
-            overview.environments.length > 0
-          ) {
-            this.selectedEnvironmentId.set(
-              overview.environments[0].id,
-            );
-          }
 
-          if (
-            overview.environments.length === 0
-          ) {
-            this.selectedEnvironmentId.set(
-              null,
-            );
+          if (!selectionStillExists) {
+            this.selectedEnvironmentId
+              .set(
+                null
+              );
           }
         },
 
+
         error: (
-          error: HttpErrorResponse,
+          error:
+            HttpErrorResponse,
         ) => {
           this.errorMessage.set(
-            this.resolveError(error),
+            this.resolveError(
+              error
+            ),
           );
         },
       });
-  }
-
-
-  setClientFilter(
-    rawValue: string,
-  ): void {
-    this.clientFilter.set(
-      rawValue
-        ? Number(rawValue)
-        : null,
-    );
-
-    this.loadOverview();
   }
 
 
@@ -277,48 +659,148 @@ export class Infrastructure implements OnInit {
   ): void {
     this.typeFilter.set(
       rawValue
+
         ? rawValue as EnvironmentType
+
         : null,
     );
+
+
+    /*
+     * Fermer le détail lors d'un changement
+     * de filtre.
+     */
+    this.selectedEnvironmentId.set(
+      null
+    );
+
 
     this.loadOverview();
   }
 
 
   selectEnvironment(
-    environment: DeploymentEnvironment,
+    environment:
+      DeploymentEnvironment,
   ): void {
+    const currentId =
+      this.selectedEnvironmentId();
+
+
+    /*
+     * Un clic ouvre le détail.
+     * Un second clic sur la même ligne le ferme.
+     */
     this.selectedEnvironmentId.set(
-      environment.id,
+      currentId === environment.id
+
+        ? null
+
+        : environment.id,
+    );
+  }
+
+
+  closeDetails(): void {
+    this.selectedEnvironmentId.set(
+      null
     );
   }
 
 
   openCreateEditor(): void {
-    const currentOverview =
-      this.overview();
+    this.editingEnvironmentId.set(
+      null
+    );
 
-    const firstClientId =
-      currentOverview?.clients[0]?.id ?? 0;
 
     this.environmentForm.reset({
-      clientId: firstClientId,
-      name: '',
-      environmentType: 'lab',
-      namespace: '',
-      domain: '',
-      description: '',
-      kubernetesConnectionId: 0,
-      argocdConnectionId: 0,
-      registryConnectionId: 0,
-      gitopsConnectionId: 0,
-      aiConnectionId: 0,
+      name:
+        '',
+
+      environmentType:
+        'lab',
+
+      namespace:
+        '',
+
+      domain:
+        '',
+
+      description:
+        '',
+
+      kubernetesConnectionId:
+        0,
+
+      argocdConnectionId:
+        0,
+
+      registryConnectionId:
+        0,
+
+      gitopsConnectionId:
+        0,
+
+      storageConnectionId:
+        0,
+
+      aiConnectionId:
+        0,
+
+      httpServiceConnectionId:
+        0,
     });
 
-    this.errorMessage.set(null);
-    this.successMessage.set(null);
 
-    this.editorOpen.set(true);
+    this.clearMessages();
+
+
+    this.editorOpen.set(
+      true
+    );
+  }
+
+
+  openEditEditor(
+    environment:
+      DeploymentEnvironment,
+  ): void {
+    this.editingEnvironmentId.set(
+      environment.id
+    );
+
+
+    this.environmentForm.reset({
+      name:
+        environment.name,
+
+      environmentType:
+        environment.environmentType,
+
+      namespace:
+        environment.namespace,
+
+      domain:
+        environment.domain
+        ?? '',
+
+      description:
+        environment.description
+        ?? '',
+
+      ...this.connectionValuesFromEnvironment(
+        environment
+      ),
+    });
+
+
+    this.clearMessages();
+
+
+    this.editorOpen.set(
+      true
+    );
   }
 
 
@@ -327,114 +809,200 @@ export class Infrastructure implements OnInit {
       return;
     }
 
-    this.editorOpen.set(false);
+
+    this.editorOpen.set(
+      false
+    );
   }
 
 
-  createEnvironment(): void {
-    this.environmentForm.markAllAsTouched();
+  saveEnvironment(): void {
+    this.environmentForm
+      .markAllAsTouched();
+
 
     if (
-      this.environmentForm.invalid ||
-      this.isSaving()
+      this.environmentForm.invalid
+
+      || this.isSaving()
     ) {
       return;
     }
 
-    const values =
-      this.environmentForm.getRawValue();
 
-    const connectionIds:
-      Partial<Record<ServiceRole, number>> =
-        {};
+    const request =
+      this.buildRequest();
 
-    this.addConnectionIfSelected(
-      connectionIds,
-      'kubernetes',
-      values.kubernetesConnectionId,
+
+    const editingId =
+      this.editingEnvironmentId();
+
+
+    this.isSaving.set(
+      true
     );
 
-    this.addConnectionIfSelected(
-      connectionIds,
-      'argocd',
-      values.argocdConnectionId,
-    );
 
-    this.addConnectionIfSelected(
-      connectionIds,
-      'container_registry',
-      values.registryConnectionId,
-    );
+    this.clearMessages();
 
-    this.addConnectionIfSelected(
-      connectionIds,
-      'gitops_repository',
-      values.gitopsConnectionId,
-    );
 
-    this.addConnectionIfSelected(
-      connectionIds,
-      'ai_provider',
-      values.aiConnectionId,
-    );
+    const request$ =
+      editingId === null
 
-    const request:
-      CreateEnvironmentRequest = {
-        clientId:
-          values.clientId,
+        ? this.infrastructureService
+            .createEnvironment(
+              request
+            )
 
-        name:
-          values.name.trim(),
+        : this.infrastructureService
+            .updateEnvironment(
+              editingId,
+              request,
+            );
 
-        environmentType:
-          values.environmentType,
 
-        namespace:
-          values.namespace.trim(),
-
-        domain:
-          values.domain.trim() || null,
-
-        description:
-          values.description.trim() || null,
-
-        connectionIds,
-      };
-
-    this.isSaving.set(true);
-    this.errorMessage.set(null);
-    this.successMessage.set(null);
-
-    this.infrastructureService
-      .createEnvironment(request)
+    request$
       .pipe(
-        finalize(() => {
-          this.isSaving.set(false);
-        }),
+        finalize(
+          () =>
+            this.isSaving.set(
+              false
+            ),
+        ),
       )
       .subscribe({
         next: (
           environment:
             DeploymentEnvironment,
         ) => {
-          this.editorOpen.set(false);
+          this.editorOpen.set(
+            false
+          );
+
 
           this.successMessage.set(
-            'Environnement créé avec succès.',
+            editingId === null
+
+              ? (
+                  'Environnement créé '
+                  + 'avec succès.'
+                )
+
+              : (
+                  'Environnement modifié '
+                  + 'avec succès.'
+                ),
           );
+
+
+          /*
+           * Après une création ou modification,
+           * afficher le détail de l'élément concerné.
+           */
+          this.selectedEnvironmentId.set(
+            environment.id
+          );
+
 
           this.loadOverview();
-
-          this.selectedEnvironmentId.set(
-            environment.id,
-          );
         },
 
+
         error: (
-          error: HttpErrorResponse,
+          error:
+            HttpErrorResponse,
         ) => {
           this.errorMessage.set(
-            this.resolveError(error),
+            this.resolveError(
+              error
+            ),
+          );
+        },
+      });
+  }
+
+
+  archiveEnvironment(
+    environment:
+      DeploymentEnvironment,
+  ): void {
+    if (
+      this.archivingEnvironmentId()
+      !== null
+    ) {
+      return;
+    }
+
+
+    const confirmed =
+      window.confirm(
+        (
+          'Archiver l’environnement '
+          + `« ${environment.name} » ?`
+          + '\n\n'
+          + 'Il ne sera plus proposé '
+          + 'aux nouveaux projets.'
+        ),
+      );
+
+
+    if (!confirmed) {
+      return;
+    }
+
+
+    this.archivingEnvironmentId.set(
+      environment.id
+    );
+
+
+    this.clearMessages();
+
+
+    this.infrastructureService
+      .archiveEnvironment(
+        environment.id
+      )
+      .pipe(
+        finalize(
+          () =>
+            this.archivingEnvironmentId
+              .set(
+                null
+              ),
+        ),
+      )
+      .subscribe({
+        next: (
+          archived:
+            ArchivedEnvironment,
+        ) => {
+          this.selectedEnvironmentId.set(
+            null
+          );
+
+
+          this.successMessage.set(
+            (
+              'L’environnement '
+              + `« ${archived.name} » `
+              + 'a été archivé.'
+            ),
+          );
+
+
+          this.loadOverview();
+        },
+
+
+        error: (
+          error:
+            HttpErrorResponse,
+        ) => {
+          this.errorMessage.set(
+            this.resolveError(
+              error
+            ),
           );
         },
       });
@@ -442,127 +1010,382 @@ export class Infrastructure implements OnInit {
 
 
   connectionsForRole(
-    serviceRole: ServiceRole,
+    definition:
+      ServiceDefinition,
   ): AvailableConnection[] {
     const currentOverview =
       this.overview();
+
 
     if (!currentOverview) {
       return [];
     }
 
-    const providerByRole:
-      Record<ServiceRole, string> = {
-        kubernetes: 'kubernetes',
-        argocd: 'argocd',
-        container_registry: 'nexus',
-        gitops_repository: 'gitlab',
-        ai_provider: 'ollama',
-      };
 
-    const selectedClientId =
-      this.environmentForm.controls
-        .clientId.value;
+    return currentOverview.connections
+      .filter(
+        (
+          connection:
+            AvailableConnection,
+        ) =>
+          definition.providers.includes(
+            connection.providerType,
+          ),
+      )
+      .sort(
+        (
+          first:
+            AvailableConnection,
 
-    return currentOverview.connections.filter(
-      (
-        connection:
-          AvailableConnection,
-      ) =>
-        connection.providerType ===
-          providerByRole[serviceRole]
+          second:
+            AvailableConnection,
+        ) => {
+          const statusOrder:
+            Record<
+              IntegrationStatus,
+              number
+            > = {
+              online:
+                0,
 
-        && (
-          connection.scope === 'global'
+              degraded:
+                1,
 
-          || connection.clientId ===
-            selectedClientId
-        ),
+              unchecked:
+                2,
+
+              not_configured:
+                3,
+
+              offline:
+                4,
+            };
+
+
+          return (
+            statusOrder[
+              first.status
+            ]
+
+            - statusOrder[
+              second.status
+            ]
+
+            || first.name.localeCompare(
+              second.name
+            )
+          );
+        },
+      );
+  }
+
+
+  serviceForRole(
+    environment:
+      DeploymentEnvironment,
+
+    role:
+      ServiceRole,
+  ): EnvironmentService | null {
+    return (
+      environment.services.find(
+        (
+          service:
+            EnvironmentService,
+        ) =>
+          service.role === role,
+      )
+
+      ?? null
     );
   }
 
 
   environmentTypeLabel(
-    type: EnvironmentType,
+    type:
+      EnvironmentType,
   ): string {
     const labels:
-      Record<EnvironmentType, string> = {
-        lab: 'Lab',
-        staging: 'Staging',
-        production: 'Production',
-        custom: 'Personnalisé',
+      Record<
+        EnvironmentType,
+        string
+      > = {
+        lab:
+          'Lab',
+
+        staging:
+          'Staging',
+
+        production:
+          'Production',
+
+        custom:
+          'Personnalisé',
       };
+
 
     return labels[type];
   }
 
 
   environmentStatusLabel(
-    status: EnvironmentStatus,
+    status:
+      EnvironmentStatus,
   ): string {
     const labels:
-      Record<EnvironmentStatus, string> = {
-        draft: 'Brouillon',
-        ready: 'Opérationnel',
-        degraded: 'Dégradé',
-        offline: 'Hors ligne',
-        archived: 'Archivé',
+      Record<
+        EnvironmentStatus,
+        string
+      > = {
+        draft:
+          'À compléter',
+
+        ready:
+          'Opérationnel',
+
+        degraded:
+          'Dégradé',
+
+        offline:
+          'Hors ligne',
+
+        archived:
+          'Archivé',
       };
+
 
     return labels[status];
   }
 
 
-  serviceRoleLabel(
-    role: ServiceRole,
+  integrationStatusLabel(
+    status:
+      IntegrationStatus,
   ): string {
     const labels:
-      Record<ServiceRole, string> = {
-        kubernetes: 'Kubernetes',
-        argocd: 'Argo CD',
-        container_registry:
-          'Registry Nexus',
-        gitops_repository:
-          'Repository GitOps',
-        ai_provider: 'Fournisseur IA',
+      Record<
+        IntegrationStatus,
+        string
+      > = {
+        not_configured:
+          'Non configuré',
+
+        unchecked:
+          'Non testé',
+
+        online:
+          'Opérationnel',
+
+        degraded:
+          'Dégradé',
+
+        offline:
+          'Hors ligne',
       };
 
-    return labels[role];
+
+    return labels[status];
   }
 
 
-  private addConnectionIfSelected(
-    connections:
-      Partial<Record<ServiceRole, number>>,
-    role: ServiceRole,
-    connectionId: number,
-  ): void {
-    if (connectionId > 0) {
-      connections[role] = connectionId;
+  providerLabel(
+    provider:
+      InfrastructureProviderType,
+  ): string {
+    const labels:
+      Record<
+        InfrastructureProviderType,
+        string
+      > = {
+        gitlab:
+          'GitLab',
+
+        nexus:
+          'Nexus Repository',
+
+        argocd:
+          'Argo CD',
+
+        kubernetes:
+          'Kubernetes',
+
+        nfs:
+          'NFS',
+
+        ollama:
+          'Ollama',
+
+        litellm:
+          'LiteLLM',
+
+        vllm:
+          'vLLM',
+
+        openai_compatible:
+          'API compatible OpenAI',
+
+        generic_http:
+          'Service HTTP personnalisé',
+      };
+
+
+    return labels[provider];
+  }
+
+
+  private buildRequest():
+    SaveEnvironmentRequest {
+    const values =
+      this.environmentForm
+        .getRawValue();
+
+
+    const connectionIds:
+      Partial<
+        Record<
+          ServiceRole,
+          number
+        >
+      > = {};
+
+
+    for (
+      const definition
+      of this.serviceDefinitions
+    ) {
+      const connectionId =
+        values[
+          definition.controlName
+        ];
+
+
+      if (connectionId > 0) {
+        connectionIds[
+          definition.role
+        ] = connectionId;
+      }
     }
+
+
+    return {
+      name:
+        values.name.trim(),
+
+      environmentType:
+        values.environmentType,
+
+      namespace:
+        values.namespace.trim(),
+
+      domain:
+        values.domain.trim()
+        || null,
+
+      description:
+        values.description.trim()
+        || null,
+
+      connectionIds,
+    };
+  }
+
+
+  private connectionValuesFromEnvironment(
+    environment:
+      DeploymentEnvironment,
+  ): Record<
+    ConnectionControlName,
+    number
+  > {
+    const values:
+      Record<
+        ConnectionControlName,
+        number
+      > = {
+        kubernetesConnectionId:
+          0,
+
+        argocdConnectionId:
+          0,
+
+        registryConnectionId:
+          0,
+
+        gitopsConnectionId:
+          0,
+
+        storageConnectionId:
+          0,
+
+        aiConnectionId:
+          0,
+
+        httpServiceConnectionId:
+          0,
+      };
+
+
+    for (
+      const definition
+      of this.serviceDefinitions
+    ) {
+      values[
+        definition.controlName
+      ] = (
+        this.serviceForRole(
+          environment,
+          definition.role,
+        )?.connectionId
+
+        ?? 0
+      );
+    }
+
+
+    return values;
+  }
+
+
+  private clearMessages():
+    void {
+    this.errorMessage.set(
+      null
+    );
+
+    this.successMessage.set(
+      null
+    );
   }
 
 
   private resolveError(
-    error: HttpErrorResponse,
+    error:
+      HttpErrorResponse,
   ): string {
     if (error.status === 0) {
       return (
-        'Le backend Flask est inaccessible. ' +
-        'Vérifiez le port 5000 et le proxy Angular.'
+        'Le backend Flask est inaccessible. '
+        + 'Vérifiez le port 5000 '
+        + 'et le proxy Angular.'
       );
     }
 
-    const response =
-      error.error as ApiErrorResponse | null;
 
-    if (response?.error?.message) {
+    const response =
+      error.error as
+        ApiErrorResponse | null;
+
+
+    if (
+      response?.error?.message
+    ) {
       return response.error.message;
     }
 
+
     return (
-      `Erreur HTTP ` +
-      `${error.status || 'inconnue'}.`
+      'Erreur HTTP '
+      + `${error.status || 'inconnue'}.`
     );
   }
 }

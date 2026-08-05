@@ -11,13 +11,16 @@ from flask import (
     request,
 )
 
-from app.auth.decorators import require_auth
+from app.auth.decorators import (
+    require_auth,
+)
 
 from app.infrastructure.repository import (
+    archive_environment,
     create_environment,
     list_available_connections,
     list_environments,
-    list_visible_clients,
+    update_environment,
 )
 
 
@@ -40,8 +43,31 @@ ALLOWED_SERVICE_ROLES = {
     "argocd",
     "container_registry",
     "gitops_repository",
+    "storage",
     "ai_provider",
+    "custom_http_service",
 }
+
+
+NAMESPACE_PATTERN = re.compile(
+    (
+        r"^[a-z0-9]"
+        r"(?:[-a-z0-9]*[a-z0-9])?$"
+    )
+)
+
+
+DOMAIN_PATTERN = re.compile(
+    r"^(?:\*\.)?"
+    r"[a-zA-Z0-9]"
+    r"(?:[a-zA-Z0-9-]{0,61}"
+    r"[a-zA-Z0-9])?"
+    r"(?:\."
+    r"[a-zA-Z0-9]"
+    r"(?:[a-zA-Z0-9-]{0,61}"
+    r"[a-zA-Z0-9])?"
+    r")*$"
+)
 
 
 def error_response(
@@ -53,6 +79,7 @@ def error_response(
         jsonify(
             {
                 "success": False,
+
                 "error": {
                     "code": code,
                     "message": message,
@@ -63,64 +90,66 @@ def error_response(
     )
 
 
-def current_user_is_global_admin() -> bool:
+def current_user_can_manage(
+) -> bool:
     roles = set(
-        g.current_user.get("roles") or []
-    )
-
-    return "admin" in roles
-
-
-def current_user_can_manage() -> bool:
-    roles = set(
-        g.current_user.get("roles") or []
+        g.current_user.get(
+            "roles"
+        )
+        or []
     )
 
     return bool(
         roles.intersection(
             {
                 "admin",
+                "administrator",
                 "devops",
             }
         )
     )
 
 
-def client_to_json(
-    client: dict[str, Any],
-) -> dict[str, Any]:
-    return {
-        "id": client["id"],
-        "name": client["name"],
-        "slug": client["slug"],
-        "status": client["status"],
-    }
-
-
 def connection_to_json(
     connection: dict[str, Any],
 ) -> dict[str, Any]:
     return {
-        "id": connection["id"],
-        "name": connection["name"],
+        "id":
+            connection["id"],
+
+        "name":
+            connection["name"],
 
         "providerType":
-            connection["provider_type"],
+            connection[
+                "provider_type"
+            ],
 
         "baseUrl":
             connection["base_url"],
 
+        "description":
+            connection["description"],
+
         "status":
             connection["status"],
 
-        "scope":
-            connection["scope"],
+        "lastCheckedAt": (
+            connection[
+                "last_checked_at"
+            ].isoformat()
 
-        "clientId":
-            connection["client_id"],
+            if connection[
+                "last_checked_at"
+            ]
 
-        "clientName":
-            connection["client_name"],
+            else None
+        ),
+
+        "lastLatencyMs":
+            connection[
+                "last_latency_ms"
+            ],
     }
 
 
@@ -128,16 +157,8 @@ def environment_to_json(
     environment: dict[str, Any],
 ) -> dict[str, Any]:
     return {
-        "id": environment["id"],
-
-        "clientId":
-            environment["client_id"],
-
-        "clientName":
-            environment["client_name"],
-
-        "clientSlug":
-            environment["client_slug"],
+        "id":
+            environment["id"],
 
         "name":
             environment["name"],
@@ -146,7 +167,9 @@ def environment_to_json(
             environment["code"],
 
         "environmentType":
-            environment["environment_type"],
+            environment[
+                "environment_type"
+            ],
 
         "description":
             environment["description"],
@@ -163,19 +186,27 @@ def environment_to_json(
             ],
 
         "effectiveStatus":
-            environment["effective_status"],
+            environment[
+                "effective_status"
+            ],
 
         "isDefault":
             environment["is_default"],
 
         "serviceTotal":
-            environment["service_total"],
+            environment[
+                "service_total"
+            ],
 
         "serviceOnline":
-            environment["service_online"],
+            environment[
+                "service_online"
+            ],
 
         "projectCount":
-            environment["project_count"],
+            environment[
+                "project_count"
+            ],
 
         "kubernetesConnectionName":
             environment[
@@ -186,14 +217,17 @@ def environment_to_json(
             environment[
                 "last_checked_at"
             ].isoformat()
+
             if environment[
                 "last_checked_at"
             ]
+
             else None
         ),
 
         "services":
-            environment["services"] or [],
+            environment["services"]
+            or [],
 
         "createdAt":
             environment[
@@ -210,16 +244,9 @@ def environment_to_json(
 def create_code(
     name: str,
 ) -> str:
-    """
-    Convertit un nom en code technique.
-
-    Exemple :
-    Client A Production
-    devient :
-    client-a-production
-    """
-
-    normalized = name.lower().strip()
+    normalized = (
+        name.lower().strip()
+    )
 
     normalized = re.sub(
         r"[^a-z0-9]+",
@@ -230,270 +257,176 @@ def create_code(
     return normalized.strip("-")
 
 
-@infrastructure_blueprint.get(
-    "/overview"
-)
-@require_auth
-def get_overview():
-    raw_client_id = request.args.get(
-        "clientId"
-    )
-
-    raw_environment_type = request.args.get(
-        "environmentType"
-    )
-
-    client_id = None
-
-    if raw_client_id:
-        try:
-            client_id = int(raw_client_id)
-
-        except ValueError:
-            return error_response(
-                "INVALID_CLIENT_ID",
-                "L'identifiant du client est invalide.",
-                400,
-            )
-
-    environment_type = (
-        raw_environment_type
-        if raw_environment_type
-        in ALLOWED_ENVIRONMENT_TYPES
-        else None
-    )
-
-    user_id = int(
-        g.current_user["id"]
-    )
-
-    is_global_admin = (
-        current_user_is_global_admin()
-    )
-
-    clients = list_visible_clients(
-        user_id=user_id,
-        is_global_admin=is_global_admin,
-    )
-
-    connections = (
-        list_available_connections(
-            user_id=user_id,
-            is_global_admin=is_global_admin,
-        )
-    )
-
-    environments = list_environments(
-        user_id=user_id,
-        is_global_admin=is_global_admin,
-        client_id=client_id,
-        environment_type=environment_type,
-    )
-
-    ready_count = sum(
-        1
-        for environment in environments
-        if environment["effective_status"]
-        == "ready"
-    )
-
-    degraded_count = sum(
-        1
-        for environment in environments
-        if environment["effective_status"]
-        == "degraded"
-    )
-
-    offline_count = sum(
-        1
-        for environment in environments
-        if environment["effective_status"]
-        == "offline"
-    )
-
-    draft_count = sum(
-        1
-        for environment in environments
-        if environment["effective_status"]
-        == "draft"
-    )
-
-    return jsonify(
-        {
-            "success": True,
-            "data": {
-                "clients": [
-                    client_to_json(client)
-                    for client in clients
-                ],
-
-                "connections": [
-                    connection_to_json(
-                        connection
-                    )
-                    for connection
-                    in connections
-                ],
-
-                "environments": [
-                    environment_to_json(
-                        environment
-                    )
-                    for environment
-                    in environments
-                ],
-
-                "summary": {
-                    "total":
-                        len(environments),
-
-                    "ready":
-                        ready_count,
-
-                    "degraded":
-                        degraded_count,
-
-                    "offline":
-                        offline_count,
-
-                    "draft":
-                        draft_count,
-                },
-            },
-        }
-    )
-
-
-@infrastructure_blueprint.post(
-    "/environments"
-)
-@require_auth
-def create_new_environment():
-    if not current_user_can_manage():
-        return error_response(
-            "INSUFFICIENT_PERMISSIONS",
-            (
-                "Vous ne pouvez pas créer "
-                "un environnement."
-            ),
-            403,
-        )
-
-    payload = request.get_json(
-        silent=True
-    )
-
-    if not isinstance(payload, dict):
-        return error_response(
-            "INVALID_JSON",
-            "Le corps JSON est invalide.",
-            400,
-        )
-
-    try:
-        client_id = int(
-            payload.get("clientId")
-        )
-
-    except (TypeError, ValueError):
-        return error_response(
-            "INVALID_CLIENT_ID",
-            "Le client est obligatoire.",
-            400,
-        )
-
-    name = str(
-        payload.get("name") or ""
+def normalize_optional_text(
+    value: Any,
+) -> str | None:
+    normalized = str(
+        value or ""
     ).strip()
 
-    environment_type = str(
-        payload.get("environmentType")
+    return normalized or None
+
+
+def read_environment_payload(
+    payload: dict[str, Any],
+) -> tuple[
+    dict[str, Any] | None,
+    str | None,
+]:
+    name = str(
+        payload.get("name")
         or ""
     ).strip()
 
-    namespace = str(
-        payload.get("namespace") or ""
+
+    environment_type = str(
+        payload.get(
+            "environmentType"
+        )
+        or ""
     ).strip()
 
-    raw_description = payload.get(
-        "description"
-    )
+
+    namespace = str(
+        payload.get("namespace")
+        or ""
+    ).strip()
+
 
     description = (
-        str(raw_description).strip()
-        if raw_description
-        else None
+        normalize_optional_text(
+            payload.get(
+                "description"
+            )
+        )
     )
 
-    raw_domain = payload.get("domain")
 
-    domain = (
-        str(raw_domain).strip()
-        if raw_domain
-        else None
+    domain = normalize_optional_text(
+        payload.get("domain")
     )
+
 
     if not name:
-        return error_response(
-            "NAME_REQUIRED",
+        return (
+            None,
+
             (
                 "Le nom de l'environnement "
                 "est obligatoire."
             ),
-            400,
         )
+
+
+    if len(name) > 140:
+        return (
+            None,
+
+            (
+                "Le nom ne peut pas dépasser "
+                "140 caractères."
+            ),
+        )
+
 
     if (
         environment_type
         not in ALLOWED_ENVIRONMENT_TYPES
     ):
-        return error_response(
-            "INVALID_ENVIRONMENT_TYPE",
+        return (
+            None,
+
             (
                 "Le type d'environnement "
                 "est invalide."
             ),
-            400,
         )
 
+
     if not namespace:
-        return error_response(
-            "NAMESPACE_REQUIRED",
+        return (
+            None,
+
             (
                 "Le namespace Kubernetes "
                 "est obligatoire."
             ),
-            400,
         )
+
+
+    if (
+        len(namespace) > 63
+
+        or not NAMESPACE_PATTERN.fullmatch(
+            namespace
+        )
+    ):
+        return (
+            None,
+
+            (
+                "Le namespace doit contenir "
+                "uniquement des lettres "
+                "minuscules, des chiffres "
+                "et des tirets, sur "
+                "63 caractères maximum."
+            ),
+        )
+
+
+    if (
+        domain
+
+        and (
+            len(domain) > 255
+
+            or not DOMAIN_PATTERN.fullmatch(
+                domain
+            )
+        )
+    ):
+        return (
+            None,
+            "Le domaine saisi est invalide.",
+        )
+
 
     raw_connections = payload.get(
         "connectionIds",
         {},
     )
 
+
     if not isinstance(
         raw_connections,
         dict,
     ):
-        return error_response(
-            "INVALID_CONNECTIONS",
+        return (
+            None,
+
             (
                 "La liste des connexions "
                 "est invalide."
             ),
-            400,
         )
 
-    connection_ids: dict[str, int] = {}
 
-    for service_role, raw_connection_id in (
-        raw_connections.items()
-    ):
+    connection_ids: dict[
+        str,
+        int,
+    ] = {}
+
+
+    for (
+        service_role,
+        raw_connection_id,
+    ) in raw_connections.items():
         if (
             service_role
             not in ALLOWED_SERVICE_ROLES
         ):
             continue
+
 
         if raw_connection_id in {
             None,
@@ -503,32 +436,234 @@ def create_new_environment():
         }:
             continue
 
+
         try:
-            connection_ids[service_role] = (
-                int(raw_connection_id)
+            connection_ids[
+                service_role
+            ] = int(
+                raw_connection_id
             )
 
-        except (TypeError, ValueError):
-            return error_response(
-                "INVALID_CONNECTION_ID",
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return (
+                None,
+
                 (
                     "Une connexion sélectionnée "
                     "est invalide."
                 ),
-                400,
             )
+
+
+    return (
+        {
+            "name":
+                name,
+
+            "code":
+                create_code(name),
+
+            "environment_type":
+                environment_type,
+
+            "description":
+                description,
+
+            "namespace":
+                namespace,
+
+            "domain":
+                domain,
+
+            "connection_ids":
+                connection_ids,
+        },
+
+        None,
+    )
+
+
+# ============================================================
+# OVERVIEW
+# ============================================================
+
+@infrastructure_blueprint.get(
+    "/overview"
+)
+@require_auth
+def get_overview():
+    raw_environment_type = (
+        request.args.get(
+            "environmentType"
+        )
+    )
+
+
+    environment_type = (
+        raw_environment_type
+
+        if raw_environment_type
+        in ALLOWED_ENVIRONMENT_TYPES
+
+        else None
+    )
+
+
+    connections = (
+        list_available_connections()
+    )
+
+
+    environments = list_environments(
+        environment_type=
+            environment_type,
+    )
+
+
+    return jsonify(
+        {
+            "success": True,
+
+            "data": {
+                "connections": [
+                    connection_to_json(
+                        connection
+                    )
+
+                    for connection
+                    in connections
+                ],
+
+                "environments": [
+                    environment_to_json(
+                        environment
+                    )
+
+                    for environment
+                    in environments
+                ],
+
+                "summary": {
+                    "total":
+                        len(environments),
+
+                    "ready":
+                        sum(
+                            1
+
+                            for environment
+                            in environments
+
+                            if environment[
+                                "effective_status"
+                            ] == "ready"
+                        ),
+
+                    "degraded":
+                        sum(
+                            1
+
+                            for environment
+                            in environments
+
+                            if environment[
+                                "effective_status"
+                            ] == "degraded"
+                        ),
+
+                    "offline":
+                        sum(
+                            1
+
+                            for environment
+                            in environments
+
+                            if environment[
+                                "effective_status"
+                            ] == "offline"
+                        ),
+
+                    "draft":
+                        sum(
+                            1
+
+                            for environment
+                            in environments
+
+                            if environment[
+                                "effective_status"
+                            ] == "draft"
+                        ),
+                },
+            },
+        }
+    )
+
+
+# ============================================================
+# CRÉATION
+# ============================================================
+
+@infrastructure_blueprint.post(
+    "/environments"
+)
+@require_auth
+def create_new_environment():
+    if not current_user_can_manage():
+        return error_response(
+            "INSUFFICIENT_PERMISSIONS",
+
+            (
+                "Vous ne pouvez pas créer "
+                "un environnement."
+            ),
+
+            403,
+        )
+
+
+    payload = request.get_json(
+        silent=True
+    )
+
+
+    if not isinstance(
+        payload,
+        dict,
+    ):
+        return error_response(
+            "INVALID_JSON",
+            "Le corps JSON est invalide.",
+            400,
+        )
+
+
+    (
+        configuration,
+        validation_error,
+    ) = read_environment_payload(
+        payload
+    )
+
+
+    if validation_error:
+        return error_response(
+            "INVALID_ENVIRONMENT",
+            validation_error,
+            400,
+        )
+
+
+    assert configuration is not None
+
 
     try:
         environment = create_environment(
-            client_id=client_id,
-            name=name,
-            code=create_code(name),
-            environment_type=
-                environment_type,
-            description=description,
-            namespace=namespace,
-            domain=domain,
-            connection_ids=connection_ids,
+            **configuration,
+
             user_id=int(
                 g.current_user["id"]
             ),
@@ -544,19 +679,23 @@ def create_new_environment():
     except Exception:
         return error_response(
             "ENVIRONMENT_CREATE_FAILED",
+
             (
                 "Impossible de créer "
                 "l'environnement. Vérifiez "
                 "qu'un environnement du même "
                 "nom n'existe pas déjà."
             ),
+
             409,
         )
+
 
     return (
         jsonify(
             {
                 "success": True,
+
                 "data": {
                     "environment":
                         environment_to_json(
@@ -565,5 +704,165 @@ def create_new_environment():
                 },
             }
         ),
+
         201,
+    )
+
+
+# ============================================================
+# MODIFICATION
+# ============================================================
+
+@infrastructure_blueprint.put(
+    "/environments/"
+    "<int:environment_id>"
+)
+@require_auth
+def modify_environment(
+    environment_id: int,
+):
+    if not current_user_can_manage():
+        return error_response(
+            "INSUFFICIENT_PERMISSIONS",
+
+            (
+                "Vous ne pouvez pas modifier "
+                "un environnement."
+            ),
+
+            403,
+        )
+
+
+    payload = request.get_json(
+        silent=True
+    )
+
+
+    if not isinstance(
+        payload,
+        dict,
+    ):
+        return error_response(
+            "INVALID_JSON",
+            "Le corps JSON est invalide.",
+            400,
+        )
+
+
+    (
+        configuration,
+        validation_error,
+    ) = read_environment_payload(
+        payload
+    )
+
+
+    if validation_error:
+        return error_response(
+            "INVALID_ENVIRONMENT",
+            validation_error,
+            400,
+        )
+
+
+    assert configuration is not None
+
+
+    try:
+        environment = update_environment(
+            environment_id=
+                environment_id,
+
+            **configuration,
+        )
+
+    except ValueError as error:
+        return error_response(
+            "INVALID_ENVIRONMENT",
+            str(error),
+            400,
+        )
+
+    except Exception:
+        return error_response(
+            "ENVIRONMENT_UPDATE_FAILED",
+
+            (
+                "Impossible de modifier "
+                "l'environnement. Vérifiez "
+                "les valeurs saisies."
+            ),
+
+            409,
+        )
+
+
+    return jsonify(
+        {
+            "success": True,
+
+            "data": {
+                "environment":
+                    environment_to_json(
+                        environment
+                    ),
+            },
+        }
+    )
+
+
+# ============================================================
+# ARCHIVAGE
+# ============================================================
+
+@infrastructure_blueprint.delete(
+    "/environments/"
+    "<int:environment_id>"
+)
+@require_auth
+def remove_environment(
+    environment_id: int,
+):
+    if not current_user_can_manage():
+        return error_response(
+            "INSUFFICIENT_PERMISSIONS",
+
+            (
+                "Vous ne pouvez pas archiver "
+                "un environnement."
+            ),
+
+            403,
+        )
+
+
+    archived = archive_environment(
+        environment_id=
+            environment_id,
+    )
+
+
+    if archived is None:
+        return error_response(
+            "ENVIRONMENT_NOT_FOUND",
+
+            (
+                "L'environnement "
+                "est introuvable."
+            ),
+
+            404,
+        )
+
+
+    return jsonify(
+        {
+            "success": True,
+
+            "data": {
+                "archivedEnvironment":
+                    archived,
+            },
+        }
     )

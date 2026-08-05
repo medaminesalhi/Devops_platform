@@ -39,26 +39,47 @@ export type ServiceRole =
   | 'argocd'
   | 'container_registry'
   | 'gitops_repository'
-  | 'ai_provider';
+  | 'storage'
+  | 'ai_provider'
+  | 'custom_http_service';
 
 
-export interface InfrastructureClient {
-  id: number;
-  name: string;
-  slug: string;
-  status: string;
-}
+export type InfrastructureProviderType =
+  | 'gitlab'
+  | 'nexus'
+  | 'argocd'
+  | 'kubernetes'
+  | 'nfs'
+  | 'ollama'
+  | 'litellm'
+  | 'vllm'
+  | 'openai_compatible'
+  | 'generic_http';
+
+
+export type IntegrationStatus =
+  | 'not_configured'
+  | 'unchecked'
+  | 'online'
+  | 'degraded'
+  | 'offline';
 
 
 export interface AvailableConnection {
   id: number;
   name: string;
-  providerType: string;
+
+  providerType:
+    InfrastructureProviderType;
+
   baseUrl: string;
-  status: string;
-  scope: 'global' | 'client';
-  clientId: number | null;
-  clientName: string | null;
+  description: string | null;
+
+  status:
+    IntegrationStatus;
+
+  lastCheckedAt: string | null;
+  lastLatencyMs: number | null;
 }
 
 
@@ -69,8 +90,13 @@ export interface EnvironmentService {
   connectionId: number;
   connectionName: string;
 
-  providerType: string;
-  status: string;
+  providerType:
+    InfrastructureProviderType;
+
+  baseUrl: string;
+
+  status:
+    IntegrationStatus;
 
   lastCheckedAt: string | null;
   lastLatencyMs: number | null;
@@ -80,21 +106,21 @@ export interface EnvironmentService {
 export interface DeploymentEnvironment {
   id: number;
 
-  clientId: number;
-  clientName: string;
-  clientSlug: string;
-
   name: string;
   code: string;
 
-  environmentType: EnvironmentType;
+  environmentType:
+    EnvironmentType;
 
   description: string | null;
+
   namespace: string;
   domain: string | null;
 
   configurationStatus: string;
-  effectiveStatus: EnvironmentStatus;
+
+  effectiveStatus:
+    EnvironmentStatus;
 
   isDefault: boolean;
 
@@ -103,11 +129,13 @@ export interface DeploymentEnvironment {
 
   projectCount: number;
 
-  kubernetesConnectionName: string | null;
+  kubernetesConnectionName:
+    string | null;
 
   lastCheckedAt: string | null;
 
-  services: EnvironmentService[];
+  services:
+    EnvironmentService[];
 
   createdAt: string;
   updatedAt: string;
@@ -124,29 +152,37 @@ export interface InfrastructureSummary {
 
 
 export interface InfrastructureOverview {
-  clients: InfrastructureClient[];
-  connections: AvailableConnection[];
-  environments: DeploymentEnvironment[];
-  summary: InfrastructureSummary;
+  connections:
+    AvailableConnection[];
+
+  environments:
+    DeploymentEnvironment[];
+
+  summary:
+    InfrastructureSummary;
 }
 
 
-export interface CreateEnvironmentRequest {
-  clientId: number;
-
+export interface SaveEnvironmentRequest {
   name: string;
 
-  environmentType: EnvironmentType;
+  environmentType:
+    EnvironmentType;
 
   description: string | null;
 
   namespace: string;
-
   domain: string | null;
 
   connectionIds: Partial<
     Record<ServiceRole, number>
   >;
+}
+
+
+export interface ArchivedEnvironment {
+  id: number;
+  name: string;
 }
 
 
@@ -160,7 +196,18 @@ interface EnvironmentResponse {
   success: boolean;
 
   data: {
-    environment: DeploymentEnvironment;
+    environment:
+      DeploymentEnvironment;
+  };
+}
+
+
+interface ArchiveEnvironmentResponse {
+  success: boolean;
+
+  data: {
+    archivedEnvironment:
+      ArchivedEnvironment;
   };
 }
 
@@ -177,18 +224,12 @@ export class InfrastructureService {
 
 
   getOverview(
-    clientId: number | null,
     environmentType:
       EnvironmentType | null,
   ): Observable<InfrastructureOverview> {
-    let params = new HttpParams();
+    let params =
+      new HttpParams();
 
-    if (clientId !== null) {
-      params = params.set(
-        'clientId',
-        clientId.toString(),
-      );
-    }
 
     if (environmentType !== null) {
       params = params.set(
@@ -197,52 +238,129 @@ export class InfrastructureService {
       );
     }
 
+
     return this.http
       .get<OverviewResponse>(
         '/api/infrastructure/overview',
+
         {
-          headers: this.createHeaders(),
+          headers:
+            this.createHeaders(),
+
           params,
         },
       )
       .pipe(
         map(
           (
-            response: OverviewResponse,
-          ) => response.data,
+            response:
+              OverviewResponse,
+          ) =>
+            response.data,
         ),
       );
   }
 
 
   createEnvironment(
-    request: CreateEnvironmentRequest,
+    request:
+      SaveEnvironmentRequest,
   ): Observable<DeploymentEnvironment> {
     return this.http
       .post<EnvironmentResponse>(
         '/api/infrastructure/environments',
+
         request,
+
         {
-          headers: this.createHeaders(),
+          headers:
+            this.createHeaders(),
         },
       )
       .pipe(
         map(
           (
-            response: EnvironmentResponse,
-          ) => response.data.environment,
+            response:
+              EnvironmentResponse,
+          ) =>
+            response.data.environment,
         ),
       );
   }
 
 
-  private createHeaders(): HttpHeaders {
+  updateEnvironment(
+    environmentId: number,
+
+    request:
+      SaveEnvironmentRequest,
+  ): Observable<DeploymentEnvironment> {
+    return this.http
+      .put<EnvironmentResponse>(
+        (
+          '/api/infrastructure/'
+          + 'environments/'
+          + environmentId
+        ),
+
+        request,
+
+        {
+          headers:
+            this.createHeaders(),
+        },
+      )
+      .pipe(
+        map(
+          (
+            response:
+              EnvironmentResponse,
+          ) =>
+            response.data.environment,
+        ),
+      );
+  }
+
+
+  archiveEnvironment(
+    environmentId: number,
+  ): Observable<ArchivedEnvironment> {
+    return this.http
+      .delete<ArchiveEnvironmentResponse>(
+        (
+          '/api/infrastructure/'
+          + 'environments/'
+          + environmentId
+        ),
+
+        {
+          headers:
+            this.createHeaders(),
+        },
+      )
+      .pipe(
+        map(
+          (
+            response:
+              ArchiveEnvironmentResponse,
+          ) =>
+            response.data
+              .archivedEnvironment,
+        ),
+      );
+  }
+
+
+  private createHeaders():
+    HttpHeaders {
     const token =
       this.auth.getAccessToken();
+
 
     if (!token) {
       return new HttpHeaders();
     }
+
 
     return new HttpHeaders({
       Authorization:
