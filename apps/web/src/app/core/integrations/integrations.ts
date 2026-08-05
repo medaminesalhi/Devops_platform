@@ -23,7 +23,11 @@ export type ProviderType =
   | 'nexus'
   | 'argocd'
   | 'kubernetes'
+  | 'nfs'
   | 'ollama'
+  | 'litellm'
+  | 'vllm'
+  | 'openai_compatible'
   | 'generic_http';
 
 
@@ -48,17 +52,11 @@ export interface IntegrationConnection {
   providerType: ProviderType;
 
   baseUrl: string;
-
-  /*
-   * Cette propriété reste présente dans la réponse
-   * du backend pour compatibilité, mais elle n'est
-   * plus affichée dans la page Intégrations.
-   */
   environment: string;
-
   description: string | null;
 
   enabled: boolean;
+  verifySsl: boolean;
 
   monitoringEnabled: boolean;
   checkIntervalSeconds: number;
@@ -93,6 +91,8 @@ export interface IntegrationConfiguration {
   authType: AuthenticationType;
   username: string | null;
   credential: string | null;
+
+  verifySsl: boolean;
 
   monitoringEnabled: boolean;
   checkIntervalSeconds: number;
@@ -131,7 +131,8 @@ interface ConnectionsResponse {
   success: boolean;
 
   data: {
-    connections: IntegrationConnection[];
+    connections:
+      IntegrationConnection[];
   };
 }
 
@@ -155,8 +156,11 @@ interface SavedTestResponse {
   success: boolean;
 
   data: {
-    connection: IntegrationConnection;
-    test: IntegrationTestResult;
+    connection:
+      IntegrationConnection;
+
+    test:
+      IntegrationTestResult;
   };
 }
 
@@ -165,7 +169,8 @@ interface DeleteConnectionResponse {
   success: boolean;
 
   data: {
-    deletedConnection: DeletedConnectionResult;
+    deletedConnection:
+      DeletedConnectionResult;
   };
 }
 
@@ -187,14 +192,17 @@ export class IntegrationsService {
       .get<ConnectionsResponse>(
         '/api/integrations',
         {
-          headers: this.createHeaders(),
+          headers:
+            this.createHeaders(),
         },
       )
       .pipe(
         map(
           (
-            response: ConnectionsResponse,
-          ) => response.data.connections,
+            response:
+              ConnectionsResponse,
+          ) =>
+            response.data.connections,
         ),
       );
   }
@@ -209,7 +217,8 @@ export class IntegrationsService {
         '/api/integrations',
         configuration,
         {
-          headers: this.createHeaders(),
+          headers:
+            this.createHeaders(),
         },
       )
       .pipe(
@@ -217,7 +226,8 @@ export class IntegrationsService {
           (
             response:
               ConnectionMutationResponse,
-          ) => response.data,
+          ) =>
+            response.data,
         ),
       );
   }
@@ -225,15 +235,20 @@ export class IntegrationsService {
 
   update(
     connectionId: number,
+
     configuration:
       IntegrationConfiguration,
   ): Observable<SavedConnectionResult> {
     return this.http
       .put<ConnectionMutationResponse>(
-        `/api/integrations/${connectionId}`,
+        (
+          `/api/integrations/`
+          + `${connectionId}`
+        ),
         configuration,
         {
-          headers: this.createHeaders(),
+          headers:
+            this.createHeaders(),
         },
       )
       .pipe(
@@ -241,7 +256,8 @@ export class IntegrationsService {
           (
             response:
               ConnectionMutationResponse,
-          ) => response.data,
+          ) =>
+            response.data,
         ),
       );
   }
@@ -252,9 +268,13 @@ export class IntegrationsService {
   ): Observable<DeletedConnectionResult> {
     return this.http
       .delete<DeleteConnectionResponse>(
-        `/api/integrations/${connectionId}`,
+        (
+          `/api/integrations/`
+          + `${connectionId}`
+        ),
         {
-          headers: this.createHeaders(),
+          headers:
+            this.createHeaders(),
         },
       )
       .pipe(
@@ -263,7 +283,8 @@ export class IntegrationsService {
             response:
               DeleteConnectionResponse,
           ) =>
-            response.data.deletedConnection,
+            response.data
+              .deletedConnection,
         ),
       );
   }
@@ -278,14 +299,17 @@ export class IntegrationsService {
         '/api/integrations/test',
         configuration,
         {
-          headers: this.createHeaders(),
+          headers:
+            this.createHeaders(),
         },
       )
       .pipe(
         map(
           (
-            response: DraftTestResponse,
-          ) => response.data.test,
+            response:
+              DraftTestResponse,
+          ) =>
+            response.data.test,
         ),
       );
   }
@@ -293,20 +317,28 @@ export class IntegrationsService {
 
   testSaved(
     connectionId: number,
-  ): Observable<SavedTestResponse['data']> {
+  ): Observable<
+    SavedTestResponse['data']
+  > {
     return this.http
       .post<SavedTestResponse>(
-        `/api/integrations/${connectionId}/test`,
+        (
+          `/api/integrations/`
+          + `${connectionId}/test`
+        ),
         {},
         {
-          headers: this.createHeaders(),
+          headers:
+            this.createHeaders(),
         },
       )
       .pipe(
         map(
           (
-            response: SavedTestResponse,
-          ) => response.data,
+            response:
+              SavedTestResponse,
+          ) =>
+            response.data,
         ),
       );
   }

@@ -10,7 +10,9 @@ from flask import (
     request,
 )
 
-from app.auth.decorators import require_auth
+from app.auth.decorators import (
+    require_auth,
+)
 
 from app.integrations.repository import (
     create_connection,
@@ -42,7 +44,11 @@ PROVIDER_TYPES = {
     "nexus",
     "argocd",
     "kubernetes",
+    "nfs",
     "ollama",
+    "litellm",
+    "vllm",
+    "openai_compatible",
     "generic_http",
 }
 
@@ -51,6 +57,62 @@ AUTH_TYPES = {
     "none",
     "token",
     "basic",
+}
+
+
+ALLOWED_AUTH_TYPES: dict[
+    str,
+    set[str],
+] = {
+    "gitlab": {
+        "none",
+        "token",
+        "basic",
+    },
+
+    "nexus": {
+        "none",
+        "basic",
+    },
+
+    "argocd": {
+        "none",
+        "token",
+    },
+
+    "kubernetes": {
+        "token",
+    },
+
+    "nfs": {
+        "none",
+    },
+
+    "ollama": {
+        "none",
+        "token",
+    },
+
+    "litellm": {
+        "none",
+        "token",
+    },
+
+    "vllm": {
+        "none",
+        "token",
+    },
+
+    "openai_compatible": {
+        "none",
+        "token",
+    },
+
+    "generic_http": {
+        "none",
+        "token",
+        "basic",
+    },
 }
 
 
@@ -73,14 +135,11 @@ def error_response(
     )
 
 
-def can_manage_integrations() -> bool:
-    """
-    Seuls les administrateurs et les DevOps
-    peuvent modifier ou supprimer une connexion.
-    """
-
+def can_manage_integrations(
+) -> bool:
     roles = set(
-        g.current_user.get("roles") or []
+        g.current_user.get("roles")
+        or []
     )
 
     return bool(
@@ -96,15 +155,12 @@ def can_manage_integrations() -> bool:
 def connection_to_json(
     connection: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Transforme une ligne PostgreSQL en JSON.
-
-    secret_ciphertext n'est jamais retourné.
-    """
-
     return {
-        "id": connection["id"],
-        "name": connection["name"],
+        "id":
+            connection["id"],
+
+        "name":
+            connection["name"],
 
         "providerType":
             connection["provider_type"],
@@ -121,8 +177,13 @@ def connection_to_json(
         "enabled":
             connection["enabled"],
 
+        "verifySsl":
+            connection["verify_ssl"],
+
         "monitoringEnabled":
-            connection["monitoring_enabled"],
+            connection[
+                "monitoring_enabled"
+            ],
 
         "checkIntervalSeconds":
             connection[
@@ -130,7 +191,9 @@ def connection_to_json(
             ],
 
         "failureThreshold":
-            connection["failure_threshold"],
+            connection[
+                "failure_threshold"
+            ],
 
         "status":
             connection["status"],
@@ -141,7 +204,9 @@ def connection_to_json(
             ],
 
         "lastHttpStatus":
-            connection["last_http_status"],
+            connection[
+                "last_http_status"
+            ],
 
         "lastError":
             connection["last_error"],
@@ -157,7 +222,9 @@ def connection_to_json(
         ),
 
         "lastLatencyMs":
-            connection["last_latency_ms"],
+            connection[
+                "last_latency_ms"
+            ],
 
         "authType":
             connection["auth_type"],
@@ -198,30 +265,70 @@ def normalize_url(
     ).rstrip("/")
 
 
-def validate_url(
+def parse_bool(
+    value: Any,
+    default: bool,
+) -> bool:
+    if value is None:
+        return default
+
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, str):
+        normalized = (
+            value.strip().lower()
+        )
+
+        if normalized in {
+            "true",
+            "1",
+            "yes",
+            "on",
+        }:
+            return True
+
+        if normalized in {
+            "false",
+            "0",
+            "no",
+            "off",
+        }:
+            return False
+
+    raise ValueError(
+        "Valeur booléenne invalide."
+    )
+
+
+def validate_provider_url(
+    provider_type: str,
     value: str,
 ) -> bool:
     parsed_url = urlparse(value)
 
+    if provider_type == "nfs":
+        return (
+            parsed_url.scheme == "nfs"
+            and bool(
+                parsed_url.hostname
+            )
+        )
+
     return (
-        parsed_url.scheme
-        in {"http", "https"}
+        parsed_url.scheme in {
+            "http",
+            "https",
+        }
         and bool(parsed_url.netloc)
     )
 
 
 def read_payload(
     payload: dict[str, Any],
-    existing: dict[str, Any] | None = None,
+    existing: dict[str, Any]
+    | None = None,
 ) -> dict[str, Any]:
-    """
-    Lit le formulaire Angular.
-
-    La valeur environment n'est plus demandée
-    dans l'interface. Elle reste en base pour
-    compatibilité et reçoit "internal" par défaut.
-    """
-
     provider_type = normalize_string(
         payload.get(
             "providerType",
@@ -255,12 +362,6 @@ def read_payload(
         )
     )
 
-    environment = (
-        existing["environment"]
-        if existing
-        else "internal"
-    )
-
     raw_description = payload.get(
         "description",
         (
@@ -268,11 +369,6 @@ def read_payload(
             if existing
             else None
         ),
-    )
-
-    description = (
-        normalize_string(raw_description)
-        or None
     )
 
     auth_type = normalize_string(
@@ -295,81 +391,112 @@ def read_payload(
         ),
     )
 
-    username = (
-        normalize_string(raw_username)
-        or None
-    )
-
-    raw_credential = payload.get(
-        "credential"
-    )
-
-    credential = (
-        normalize_string(raw_credential)
-        or None
-    )
-
-    monitoring_enabled = payload.get(
-        "monitoringEnabled",
-        (
-            existing[
-                "monitoring_enabled"
-            ]
-            if existing
-            else True
-        ),
-    )
-
-    check_interval_seconds = int(
-        payload.get(
-            "checkIntervalSeconds",
-            (
-                existing[
-                    "check_interval_seconds"
-                ]
-                if existing
-                else 300
-            ),
-        )
-    )
-
-    failure_threshold = int(
-        payload.get(
-            "failureThreshold",
-            (
-                existing[
-                    "failure_threshold"
-                ]
-                if existing
-                else 3
-            ),
-        )
+    default_verify_ssl = (
+        bool(existing["verify_ssl"])
+        if existing
+        else True
     )
 
     return {
-        "name": name,
-        "provider_type": provider_type,
-        "base_url": base_url,
-        "environment": environment,
-        "description": description,
-        "auth_type": auth_type,
-        "username": username,
-        "credential": credential,
+        "name":
+            name,
+
+        "provider_type":
+            provider_type,
+
+        "base_url":
+            base_url,
+
+        "environment": (
+            existing["environment"]
+            if existing
+            else "internal"
+        ),
+
+        "description": (
+            normalize_string(
+                raw_description
+            )
+            or None
+        ),
+
+        "verify_ssl":
+            parse_bool(
+                payload.get(
+                    "verifySsl"
+                ),
+                default_verify_ssl,
+            ),
+
+        "auth_type":
+            auth_type,
+
+        "username": (
+            normalize_string(
+                raw_username
+            )
+            or None
+        ),
+
+        "credential": (
+            normalize_string(
+                payload.get(
+                    "credential"
+                )
+            )
+            or None
+        ),
 
         "monitoring_enabled":
-            monitoring_enabled,
+            parse_bool(
+                payload.get(
+                    "monitoringEnabled"
+                ),
+                (
+                    bool(
+                        existing[
+                            "monitoring_enabled"
+                        ]
+                    )
+                    if existing
+                    else True
+                ),
+            ),
 
         "check_interval_seconds":
-            check_interval_seconds,
+            int(
+                payload.get(
+                    "checkIntervalSeconds",
+                    (
+                        existing[
+                            "check_interval_seconds"
+                        ]
+                        if existing
+                        else 300
+                    ),
+                )
+            ),
 
         "failure_threshold":
-            failure_threshold,
+            int(
+                payload.get(
+                    "failureThreshold",
+                    (
+                        existing[
+                            "failure_threshold"
+                        ]
+                        if existing
+                        else 3
+                    ),
+                )
+            ),
     }
 
 
 def validate_configuration(
     configuration: dict[str, Any],
-    existing: dict[str, Any] | None = None,
+    existing: dict[str, Any]
+    | None = None,
 ) -> str | None:
     if not configuration["name"]:
         return (
@@ -377,8 +504,14 @@ def validate_configuration(
             "est obligatoire."
         )
 
+    provider_type = (
+        configuration[
+            "provider_type"
+        ]
+    )
+
     if (
-        configuration["provider_type"]
+        provider_type
         not in PROVIDER_TYPES
     ):
         return (
@@ -386,31 +519,55 @@ def validate_configuration(
             "n'est pas supporté."
         )
 
-    if not validate_url(
-        configuration["base_url"]
+    if not validate_provider_url(
+        provider_type,
+        configuration["base_url"],
     ):
+        if provider_type == "nfs":
+            return (
+                "L'adresse NFS doit utiliser "
+                "le format "
+                "nfs://serveur:2049/"
+                "chemin-exporte."
+            )
+
         return (
-            "L'URL doit commencer par "
-            "http:// ou https://."
+            "L'adresse doit commencer "
+            "par http:// ou https://."
         )
 
-    if (
+    auth_type = (
         configuration["auth_type"]
-        not in AUTH_TYPES
-    ):
+    )
+
+    if auth_type not in AUTH_TYPES:
         return (
             "Le type d'authentification "
             "n'est pas supporté."
         )
 
     if (
-        configuration["auth_type"]
-        == "basic"
-        and not configuration["username"]
+        auth_type
+        not in ALLOWED_AUTH_TYPES[
+            provider_type
+        ]
     ):
         return (
-            "Le nom d'utilisateur est obligatoire "
-            "pour l'authentification Basic."
+            "Ce type d'authentification "
+            "n'est pas disponible pour "
+            "le fournisseur sélectionné."
+        )
+
+    if (
+        auth_type == "basic"
+        and not configuration[
+            "username"
+        ]
+    ):
+        return (
+            "Le nom d'utilisateur est "
+            "obligatoire pour "
+            "l'authentification Basic."
         )
 
     has_existing_credential = bool(
@@ -423,14 +580,15 @@ def validate_configuration(
     auth_type_changed = bool(
         existing
         and existing["auth_type"]
-        != configuration["auth_type"]
+        != auth_type
     )
 
     if (
-        configuration["auth_type"]
-        != "none"
+        auth_type != "none"
 
-        and not configuration["credential"]
+        and not configuration[
+            "credential"
+        ]
 
         and (
             not has_existing_credential
@@ -442,15 +600,6 @@ def validate_configuration(
             "est obligatoire."
         )
 
-    if not isinstance(
-        configuration["monitoring_enabled"],
-        bool,
-    ):
-        return (
-            "monitoringEnabled doit être "
-            "un booléen."
-        )
-
     if not (
         60
         <= configuration[
@@ -459,8 +608,9 @@ def validate_configuration(
         <= 86400
     ):
         return (
-            "L'intervalle doit être compris "
-            "entre 60 et 86400 secondes."
+            "L'intervalle doit être "
+            "compris entre 60 et "
+            "86400 secondes."
         )
 
     if not (
@@ -485,18 +635,6 @@ def test_after_save(
     dict[str, Any] | None,
     str | None,
 ]:
-    """
-    Lance automatiquement le contrôle après
-    une création ou une modification.
-
-    Une panne du service ne fait pas échouer
-    l'enregistrement : le statut devient dégradé
-    ou hors ligne.
-
-    testError concerne uniquement une erreur
-    interne empêchant le lancement du test.
-    """
-
     try:
         (
             tested_connection,
@@ -519,11 +657,81 @@ def test_after_save(
         )
 
 
+def parse_request_configuration(
+    existing: dict[str, Any]
+    | None = None,
+) -> tuple[
+    dict[str, Any] | None,
+    Any | None,
+]:
+    payload = request.get_json(
+        silent=True
+    )
+
+    if not isinstance(
+        payload,
+        dict,
+    ):
+        return (
+            None,
+            error_response(
+                "INVALID_JSON",
+                (
+                    "Le corps JSON "
+                    "est invalide."
+                ),
+                400,
+            ),
+        )
+
+    try:
+        configuration = read_payload(
+            payload,
+            existing,
+        )
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+        return (
+            None,
+            error_response(
+                "INVALID_CONFIGURATION",
+                (
+                    "La configuration contient "
+                    "une valeur invalide."
+                ),
+                400,
+            ),
+        )
+
+    validation_error = (
+        validate_configuration(
+            configuration,
+            existing,
+        )
+    )
+
+    if validation_error:
+        return (
+            None,
+            error_response(
+                "INVALID_CONFIGURATION",
+                validation_error,
+                400,
+            ),
+        )
+
+    return (
+        configuration,
+        None,
+    )
+
+
 @integrations_blueprint.get("")
 @require_auth
 def get_connections():
-    connections = list_connections()
-
     return jsonify(
         {
             "success": True,
@@ -533,7 +741,7 @@ def get_connections():
                         connection
                     )
                     for connection
-                    in connections
+                    in list_connections()
                 ],
             },
         }
@@ -578,48 +786,21 @@ def create_new_connection():
         return error_response(
             "INSUFFICIENT_PERMISSIONS",
             (
-                "Vous ne pouvez pas créer "
-                "une intégration."
+                "Vous ne pouvez pas "
+                "créer une intégration."
             ),
             403,
         )
 
-    payload = request.get_json(
-        silent=True
-    )
+    (
+        configuration,
+        error,
+    ) = parse_request_configuration()
 
-    if not isinstance(payload, dict):
-        return error_response(
-            "INVALID_JSON",
-            "Le corps JSON est invalide.",
-            400,
-        )
+    if error is not None:
+        return error
 
-    try:
-        configuration = read_payload(
-            payload
-        )
-
-    except (TypeError, ValueError):
-        return error_response(
-            "INVALID_CONFIGURATION",
-            "La configuration contient "
-            "une valeur invalide.",
-            400,
-        )
-
-    validation_error = (
-        validate_configuration(
-            configuration
-        )
-    )
-
-    if validation_error:
-        return error_response(
-            "INVALID_CONFIGURATION",
-            validation_error,
-            400,
-        )
+    assert configuration is not None
 
     secret_ciphertext = (
         encrypt_credential(
@@ -630,60 +811,74 @@ def create_new_connection():
     )
 
     try:
-        created_connection = create_connection(
-            name=configuration["name"],
-
-            provider_type=configuration[
-                "provider_type"
-            ],
-
-            base_url=configuration[
-                "base_url"
-            ],
-
-            environment=configuration[
-                "environment"
-            ],
-
-            description=configuration[
-                "description"
-            ],
-
-            auth_type=configuration[
-                "auth_type"
-            ],
-
-            username=configuration[
-                "username"
-            ],
-
-            secret_ciphertext=
-                secret_ciphertext,
-
-            monitoring_enabled=
-                configuration[
-                    "monitoring_enabled"
+        created_connection = (
+            create_connection(
+                name=configuration[
+                    "name"
                 ],
 
-            check_interval_seconds=
-                configuration[
-                    "check_interval_seconds"
+                provider_type=
+                    configuration[
+                        "provider_type"
+                    ],
+
+                base_url=configuration[
+                    "base_url"
                 ],
 
-            failure_threshold=
-                configuration[
-                    "failure_threshold"
-                ],
+                environment=
+                    configuration[
+                        "environment"
+                    ],
 
-            user_id=int(
-                g.current_user["id"]
-            ),
+                description=
+                    configuration[
+                        "description"
+                    ],
+
+                verify_ssl=
+                    configuration[
+                        "verify_ssl"
+                    ],
+
+                auth_type=
+                    configuration[
+                        "auth_type"
+                    ],
+
+                username=
+                    configuration[
+                        "username"
+                    ],
+
+                secret_ciphertext=
+                    secret_ciphertext,
+
+                monitoring_enabled=
+                    configuration[
+                        "monitoring_enabled"
+                    ],
+
+                check_interval_seconds=
+                    configuration[
+                        "check_interval_seconds"
+                    ],
+
+                failure_threshold=
+                    configuration[
+                        "failure_threshold"
+                    ],
+
+                user_id=int(
+                    g.current_user["id"]
+                ),
+            )
         )
 
-    except Exception as error:
+    except Exception as error_value:
         return error_response(
             "CONNECTION_CREATE_FAILED",
-            str(error),
+            str(error_value),
             409,
         )
 
@@ -728,8 +923,8 @@ def modify_connection(
         return error_response(
             "INSUFFICIENT_PERMISSIONS",
             (
-                "Vous ne pouvez pas modifier "
-                "une intégration."
+                "Vous ne pouvez pas "
+                "modifier une intégration."
             ),
             403,
         )
@@ -745,122 +940,109 @@ def modify_connection(
             404,
         )
 
-    payload = request.get_json(
-        silent=True
+    (
+        configuration,
+        error,
+    ) = parse_request_configuration(
+        existing
     )
 
-    if not isinstance(payload, dict):
-        return error_response(
-            "INVALID_JSON",
-            "Le corps JSON est invalide.",
-            400,
-        )
+    if error is not None:
+        return error
 
-    try:
-        configuration = read_payload(
-            payload,
-            existing,
-        )
-
-    except (TypeError, ValueError):
-        return error_response(
-            "INVALID_CONFIGURATION",
-            "La configuration contient "
-            "une valeur invalide.",
-            400,
-        )
-
-    validation_error = (
-        validate_configuration(
-            configuration,
-            existing,
-        )
-    )
-
-    if validation_error:
-        return error_response(
-            "INVALID_CONFIGURATION",
-            validation_error,
-            400,
-        )
+    assert configuration is not None
 
     replace_secret = bool(
         configuration["credential"]
-        or configuration["auth_type"]
-        == "none"
+        or configuration[
+            "auth_type"
+        ] == "none"
     )
 
-    secret_ciphertext = None
+    secret_ciphertext = (
+        encrypt_credential(
+            configuration["credential"]
+        )
+        if configuration["credential"]
+        else None
+    )
 
-    if configuration["auth_type"] == "none":
-        replace_secret = True
+    try:
+        updated_connection = (
+            update_connection(
+                connection_id=
+                    connection_id,
 
-    elif configuration["credential"]:
-        secret_ciphertext = (
-            encrypt_credential(
-                configuration["credential"]
+                name=configuration[
+                    "name"
+                ],
+
+                provider_type=
+                    configuration[
+                        "provider_type"
+                    ],
+
+                base_url=
+                    configuration[
+                        "base_url"
+                    ],
+
+                environment=
+                    configuration[
+                        "environment"
+                    ],
+
+                description=
+                    configuration[
+                        "description"
+                    ],
+
+                verify_ssl=
+                    configuration[
+                        "verify_ssl"
+                    ],
+
+                auth_type=
+                    configuration[
+                        "auth_type"
+                    ],
+
+                username=
+                    configuration[
+                        "username"
+                    ],
+
+                replace_secret=
+                    replace_secret,
+
+                secret_ciphertext=
+                    secret_ciphertext,
+
+                monitoring_enabled=
+                    configuration[
+                        "monitoring_enabled"
+                    ],
+
+                check_interval_seconds=
+                    configuration[
+                        "check_interval_seconds"
+                    ],
+
+                failure_threshold=
+                    configuration[
+                        "failure_threshold"
+                    ],
+
+                user_id=int(
+                    g.current_user["id"]
+                ),
             )
         )
 
-    try:
-        updated_connection = update_connection(
-            connection_id=connection_id,
-
-            name=configuration["name"],
-
-            provider_type=configuration[
-                "provider_type"
-            ],
-
-            base_url=configuration[
-                "base_url"
-            ],
-
-            environment=configuration[
-                "environment"
-            ],
-
-            description=configuration[
-                "description"
-            ],
-
-            auth_type=configuration[
-                "auth_type"
-            ],
-
-            username=configuration[
-                "username"
-            ],
-
-            replace_secret=replace_secret,
-
-            secret_ciphertext=
-                secret_ciphertext,
-
-            monitoring_enabled=
-                configuration[
-                    "monitoring_enabled"
-                ],
-
-            check_interval_seconds=
-                configuration[
-                    "check_interval_seconds"
-                ],
-
-            failure_threshold=
-                configuration[
-                    "failure_threshold"
-                ],
-
-            user_id=int(
-                g.current_user["id"]
-            ),
-        )
-
-    except Exception as error:
+    except Exception as error_value:
         return error_response(
             "CONNECTION_UPDATE_FAILED",
-            str(error),
+            str(error_value),
             409,
         )
 
@@ -909,8 +1091,8 @@ def remove_connection(
         return error_response(
             "INSUFFICIENT_PERMISSIONS",
             (
-                "Vous ne pouvez pas supprimer "
-                "une intégration."
+                "Vous ne pouvez pas "
+                "supprimer une intégration."
             ),
             403,
         )
@@ -930,11 +1112,11 @@ def remove_connection(
         return error_response(
             "CONNECTION_IN_USE",
             (
-                f"La connexion « {result['name']} » "
-                f"est utilisée par "
-                f"{result['usageCount']} environnement(s). "
-                "Modifiez les environnements concernés "
-                "avant de la supprimer."
+                "La connexion "
+                f"« {result['name']} » "
+                "est utilisée par "
+                f"{result['usageCount']} "
+                "environnement(s)."
             ),
             409,
         )
@@ -957,26 +1139,28 @@ def remove_connection(
 )
 @require_auth
 def test_draft_connection():
-    """
-    Teste le formulaire avant son enregistrement.
-    """
-
     payload = request.get_json(
         silent=True
     )
 
-    if not isinstance(payload, dict):
+    if not isinstance(
+        payload,
+        dict,
+    ):
         return error_response(
             "INVALID_JSON",
-            "Le corps JSON est invalide.",
+            (
+                "Le corps JSON "
+                "est invalide."
+            ),
             400,
         )
+
+    existing = None
 
     connection_id = payload.get(
         "connectionId"
     )
-
-    existing = None
 
     if connection_id is not None:
         existing = find_connection(
@@ -989,11 +1173,16 @@ def test_draft_connection():
             existing,
         )
 
-    except (TypeError, ValueError):
+    except (
+        TypeError,
+        ValueError,
+    ):
         return error_response(
             "INVALID_CONFIGURATION",
-            "La configuration contient "
-            "une valeur invalide.",
+            (
+                "La configuration contient "
+                "une valeur invalide."
+            ),
             400,
         )
 
@@ -1032,15 +1221,24 @@ def test_draft_connection():
             ],
 
         "base_url":
-            configuration["base_url"],
+            configuration[
+                "base_url"
+            ],
 
-        "verify_ssl": True,
+        "verify_ssl":
+            configuration[
+                "verify_ssl"
+            ],
 
         "auth_type":
-            configuration["auth_type"],
+            configuration[
+                "auth_type"
+            ],
 
         "username":
-            configuration["username"],
+            configuration[
+                "username"
+            ],
     }
 
     result = test_configuration(
@@ -1069,8 +1267,8 @@ def test_existing_connection(
         return error_response(
             "INSUFFICIENT_PERMISSIONS",
             (
-                "Vous ne pouvez pas tester "
-                "une intégration."
+                "Vous ne pouvez pas "
+                "tester une intégration."
             ),
             403,
         )
@@ -1106,7 +1304,8 @@ def test_existing_connection(
                         connection
                     ),
 
-                "test": test_result,
+                "test":
+                    test_result,
             },
         }
     )

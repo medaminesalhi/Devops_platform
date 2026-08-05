@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
+import socket
 import time
 
 from dataclasses import asdict, dataclass
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import requests
 
@@ -16,6 +18,12 @@ from requests.exceptions import (
     ReadTimeout,
     RequestException,
     SSLError,
+)
+
+
+KUBERNETES_SERVICE_ACCOUNT_CA = (
+    "/var/run/secrets/kubernetes.io/"
+    "serviceaccount/ca.crt"
 )
 
 
@@ -33,35 +41,117 @@ class IntegrationTestResult:
         return asdict(self)
 
 
+@dataclass
+class HttpRequestDefinition:
+    url: str
+    headers: dict[str, str]
+    basic_auth: HTTPBasicAuth | None
+    credential_used: bool
+
+
 class BaseIntegrationAdapter:
     """
-    Classe commune à tous les adaptateurs.
-
-    Chaque fournisseur doit construire :
-    - l'URL de test ;
-    - les headers ;
-    - l'authentification HTTP éventuelle.
+    Base commune des intégrations contrôlées en HTTP.
     """
+
+    endpoint_path = ""
+    exact_url = False
 
     def build_request(
         self,
         connection: dict[str, Any],
         credential: str | None,
-    ) -> tuple[
-        str,
-        dict[str, str],
-        HTTPBasicAuth | None,
-        bool,
-    ]:
-        raise NotImplementedError
+    ) -> HttpRequestDefinition:
+        headers = self.default_headers()
 
+        basic_auth: HTTPBasicAuth | None = None
+        credential_used = False
+
+        auth_type = connection.get(
+            "auth_type",
+            "none",
+        )
+
+        if (
+            auth_type == "token"
+            and credential
+        ):
+            headers["Authorization"] = (
+                f"Bearer {credential}"
+            )
+
+            credential_used = True
+
+        elif (
+            auth_type == "basic"
+            and credential
+        ):
+            basic_auth = HTTPBasicAuth(
+                connection.get("username")
+                or "",
+                credential,
+            )
+
+            credential_used = True
+
+        base_url = str(
+            connection.get("base_url")
+            or ""
+        ).strip()
+
+        checked_url = (
+            base_url
+            if self.exact_url
+            else self.build_url(
+                base_url,
+                self.endpoint_path,
+            )
+        )
+
+        return HttpRequestDefinition(
+            url=checked_url,
+            headers=headers,
+            basic_auth=basic_auth,
+            credential_used=credential_used,
+        )
+
+    def resolve_tls_verification(
+        self,
+        connection: dict[str, Any],
+    ) -> bool | str:
+        """
+        Kubernetes fournit sa CA dans chaque pod.
+
+        Pour les autres services, on respecte
+        le choix verify_ssl enregistré par
+        l'utilisateur.
+        """
+
+        verify_ssl = bool(
+            connection.get(
+                "verify_ssl",
+                True,
+            )
+        )
+
+        if (
+            connection.get("provider_type")
+            == "kubernetes"
+            and verify_ssl
+            and os.path.isfile(
+                KUBERNETES_SERVICE_ACCOUNT_CA
+            )
+        ):
+            return KUBERNETES_SERVICE_ACCOUNT_CA
+
+        return verify_ssl
 
     def test_connection(
         self,
         connection: dict[str, Any],
         credential: str | None,
     ) -> IntegrationTestResult:
-        base_url = (
+        base_url = str(
             connection.get("base_url")
             or ""
         ).strip()
@@ -72,7 +162,7 @@ class BaseIntegrationAdapter:
                 http_status=None,
                 latency_ms=0,
                 message=(
-                    "L'URL du service "
+                    "L'adresse du service "
                     "n'est pas configurée."
                 ),
                 checked_url=None,
@@ -80,31 +170,35 @@ class BaseIntegrationAdapter:
                 authenticated=None,
             )
 
-        (
-            checked_url,
-            headers,
-            basic_auth,
-            credential_used,
-        ) = self.build_request(
-            connection,
-            credential,
+        request_definition = (
+            self.build_request(
+                connection,
+                credential,
+            )
         )
 
-        timeout_seconds = current_app.config[
-            "INTEGRATION_TIMEOUT_SECONDS"
-        ]
+        timeout_seconds = int(
+            current_app.config[
+                "INTEGRATION_TIMEOUT_SECONDS"
+            ]
+        )
 
         started_at = time.perf_counter()
 
         try:
             response = requests.get(
-                checked_url,
-                headers=headers,
-                auth=basic_auth,
+                request_definition.url,
+                headers=(
+                    request_definition.headers
+                ),
+                auth=(
+                    request_definition.basic_auth
+                ),
                 timeout=timeout_seconds,
-                verify=connection.get(
-                    "verify_ssl",
-                    True,
+                verify=(
+                    self.resolve_tls_verification(
+                        connection
+                    )
                 ),
                 allow_redirects=True,
             )
@@ -117,7 +211,9 @@ class BaseIntegrationAdapter:
                 * 1000
             )
 
-            status_code = response.status_code
+            status_code = (
+                response.status_code
+            )
 
             if 200 <= status_code < 400:
                 auth_type = connection.get(
@@ -127,7 +223,10 @@ class BaseIntegrationAdapter:
 
                 if (
                     auth_type != "none"
-                    and not credential_used
+                    and not (
+                        request_definition
+                        .credential_used
+                    )
                 ):
                     return IntegrationTestResult(
                         status="degraded",
@@ -135,10 +234,12 @@ class BaseIntegrationAdapter:
                         latency_ms=latency_ms,
                         message=(
                             "Le serveur répond, "
-                            "mais aucun credential "
+                            "mais aucun identifiant "
                             "n'est configuré."
                         ),
-                        checked_url=checked_url,
+                        checked_url=(
+                            request_definition.url
+                        ),
                         server_reachable=True,
                         authenticated=False,
                     )
@@ -151,31 +252,44 @@ class BaseIntegrationAdapter:
                         "Le service est accessible "
                         "et l'authentification "
                         "est valide."
-                        if credential_used
+                        if (
+                            request_definition
+                            .credential_used
+                        )
                         else
                         "Le service est accessible."
                     ),
-                    checked_url=checked_url,
+                    checked_url=(
+                        request_definition.url
+                    ),
                     server_reachable=True,
                     authenticated=(
                         True
-                        if credential_used
+                        if (
+                            request_definition
+                            .credential_used
+                        )
                         else None
                     ),
                 )
 
-            if status_code in {401, 403}:
+            if status_code in {
+                401,
+                403,
+            }:
                 return IntegrationTestResult(
                     status="degraded",
                     http_status=status_code,
                     latency_ms=latency_ms,
                     message=(
-                        "Le serveur répond, mais "
-                        "l'authentification est "
-                        "absente, invalide ou "
-                        "insuffisante."
+                        "Le serveur répond, "
+                        "mais l'authentification "
+                        "est absente, invalide "
+                        "ou insuffisante."
                     ),
-                    checked_url=checked_url,
+                    checked_url=(
+                        request_definition.url
+                    ),
                     server_reachable=True,
                     authenticated=False,
                 )
@@ -188,9 +302,12 @@ class BaseIntegrationAdapter:
                     message=(
                         "Le serveur répond, mais "
                         "l'endpoint de contrôle "
-                        "n'existe pas."
+                        "n'existe pas. Vérifiez "
+                        "l'adresse de base."
                     ),
-                    checked_url=checked_url,
+                    checked_url=(
+                        request_definition.url
+                    ),
                     server_reachable=True,
                     authenticated=None,
                 )
@@ -203,7 +320,9 @@ class BaseIntegrationAdapter:
                     "Le service a retourné "
                     f"HTTP {status_code}."
                 ),
-                checked_url=checked_url,
+                checked_url=(
+                    request_definition.url
+                ),
                 server_reachable=True,
                 authenticated=None,
             )
@@ -214,15 +333,24 @@ class BaseIntegrationAdapter:
                 http_status=None,
                 latency_ms=0,
                 message=(
-                    "Le certificat SSL "
-                    f"n'est pas reconnu : {error}"
+                    "Le certificat TLS n'est pas "
+                    "reconnu. Ajoutez la CA du "
+                    "service ou désactivez la "
+                    "vérification uniquement pour "
+                    "un environnement de test : "
+                    f"{error}"
                 ),
-                checked_url=checked_url,
+                checked_url=(
+                    request_definition.url
+                ),
                 server_reachable=False,
                 authenticated=None,
             )
 
-        except (ConnectTimeout, ReadTimeout):
+        except (
+            ConnectTimeout,
+            ReadTimeout,
+        ):
             return IntegrationTestResult(
                 status="offline",
                 http_status=None,
@@ -233,7 +361,9 @@ class BaseIntegrationAdapter:
                     "Le service n'a pas répondu "
                     f"en {timeout_seconds} secondes."
                 ),
-                checked_url=checked_url,
+                checked_url=(
+                    request_definition.url
+                ),
                 server_reachable=False,
                 authenticated=None,
             )
@@ -245,10 +375,13 @@ class BaseIntegrationAdapter:
                 latency_ms=0,
                 message=(
                     "Connexion impossible. "
-                    "Vérifiez le DNS, le port "
-                    f"et le pare-feu : {error}"
+                    "Vérifiez le DNS, le port, "
+                    "le routage et le pare-feu : "
+                    f"{error}"
                 ),
-                checked_url=checked_url,
+                checked_url=(
+                    request_definition.url
+                ),
                 server_reachable=False,
                 authenticated=None,
             )
@@ -259,14 +392,15 @@ class BaseIntegrationAdapter:
                 http_status=None,
                 latency_ms=0,
                 message=(
-                    "Le test HTTP a échoué : "
+                    "Le contrôle HTTP a échoué : "
                     f"{error}"
                 ),
-                checked_url=checked_url,
+                checked_url=(
+                    request_definition.url
+                ),
                 server_reachable=False,
                 authenticated=None,
             )
-
 
     def default_headers(
         self,
@@ -274,10 +408,9 @@ class BaseIntegrationAdapter:
         return {
             "Accept": "application/json",
             "User-Agent": (
-                "Piximind-Deployment-Platform/1.0"
+                "SApixi-Platform/1.0"
             ),
         }
-
 
     def build_url(
         self,
@@ -290,17 +423,14 @@ class BaseIntegrationAdapter:
         )
 
 
-class GitLabAdapter(BaseIntegrationAdapter):
+class GitLabAdapter(
+    BaseIntegrationAdapter
+):
     def build_request(
         self,
         connection: dict[str, Any],
         credential: str | None,
-    ) -> tuple[
-        str,
-        dict[str, str],
-        HTTPBasicAuth | None,
-        bool,
-    ]:
+    ) -> HttpRequestDefinition:
         headers = self.default_headers()
 
         auth_type = connection.get(
@@ -310,59 +440,62 @@ class GitLabAdapter(BaseIntegrationAdapter):
 
         base_url = connection["base_url"]
 
-        if auth_type == "token" and credential:
-            headers["PRIVATE-TOKEN"] = credential
+        if (
+            auth_type == "token"
+            and credential
+        ):
+            headers["PRIVATE-TOKEN"] = (
+                credential
+            )
 
-            return (
-                self.build_url(
+            return HttpRequestDefinition(
+                url=self.build_url(
                     base_url,
                     "/api/v4/user",
                 ),
-                headers,
-                None,
-                True,
+                headers=headers,
+                basic_auth=None,
+                credential_used=True,
             )
 
-        if auth_type == "basic" and credential:
-            username = connection.get(
-                "username"
-            )
-
-            return (
-                self.build_url(
+        if (
+            auth_type == "basic"
+            and credential
+        ):
+            return HttpRequestDefinition(
+                url=self.build_url(
                     base_url,
-                    "/api/v4/projects"
-                    "?membership=true&per_page=1",
+                    (
+                        "/api/v4/projects"
+                        "?membership=true"
+                        "&per_page=1"
+                    ),
                 ),
-                headers,
-                HTTPBasicAuth(
-                    username or "",
+                headers=headers,
+                basic_auth=HTTPBasicAuth(
+                    connection.get("username")
+                    or "",
                     credential,
                 ),
-                True,
+                credential_used=True,
             )
 
-        # Sans token, nous testons seulement
-        # la page racine du serveur GitLab.
-        return (
-            base_url.rstrip("/") + "/",
-            headers,
-            None,
-            False,
+        return HttpRequestDefinition(
+            url=base_url.rstrip("/") + "/",
+            headers=headers,
+            basic_auth=None,
+            credential_used=False,
         )
 
 
-class NexusAdapter(BaseIntegrationAdapter):
+class NexusAdapter(
+    BaseIntegrationAdapter
+):
     def build_request(
         self,
         connection: dict[str, Any],
         credential: str | None,
-    ) -> tuple[
-        str,
-        dict[str, str],
-        HTTPBasicAuth | None,
-        bool,
-    ]:
+    ) -> HttpRequestDefinition:
         headers = self.default_headers()
 
         base_url = connection["base_url"]
@@ -372,162 +505,196 @@ class NexusAdapter(BaseIntegrationAdapter):
             == "basic"
             and credential
         ):
-            return (
-                self.build_url(
+            return HttpRequestDefinition(
+                url=self.build_url(
                     base_url,
-                    "/service/rest/v1/repositories",
+                    (
+                        "/service/rest/v1/"
+                        "repositories"
+                    ),
                 ),
-                headers,
-                HTTPBasicAuth(
+                headers=headers,
+                basic_auth=HTTPBasicAuth(
                     connection.get("username")
                     or "",
                     credential,
                 ),
-                True,
+                credential_used=True,
             )
 
-        return (
-            self.build_url(
+        return HttpRequestDefinition(
+            url=self.build_url(
                 base_url,
                 "/service/rest/v1/status",
             ),
-            headers,
-            None,
-            False,
+            headers=headers,
+            basic_auth=None,
+            credential_used=False,
         )
 
 
-class ArgoCdAdapter(BaseIntegrationAdapter):
-    def build_request(
+class ArgoCdAdapter(
+    BaseIntegrationAdapter
+):
+    endpoint_path = "/api/version"
+
+
+class KubernetesAdapter(
+    BaseIntegrationAdapter
+):
+    endpoint_path = "/version"
+
+
+class OllamaAdapter(
+    BaseIntegrationAdapter
+):
+    endpoint_path = "/api/tags"
+
+
+class LiteLlmAdapter(
+    BaseIntegrationAdapter
+):
+    endpoint_path = "/health/readiness"
+
+
+class VllmAdapter(
+    BaseIntegrationAdapter
+):
+    endpoint_path = "/health"
+
+
+class OpenAiCompatibleAdapter(
+    BaseIntegrationAdapter
+):
+    endpoint_path = "/v1/models"
+
+
+class GenericHttpAdapter(
+    BaseIntegrationAdapter
+):
+    exact_url = True
+
+
+class NfsAdapter(
+    BaseIntegrationAdapter
+):
+    """
+    Teste l'accessibilité TCP d'un serveur NFS.
+    """
+
+    def test_connection(
         self,
         connection: dict[str, Any],
         credential: str | None,
-    ) -> tuple[
-        str,
-        dict[str, str],
-        HTTPBasicAuth | None,
-        bool,
-    ]:
-        headers = self.default_headers()
+    ) -> IntegrationTestResult:
+        del credential
 
-        credential_used = False
+        base_url = str(
+            connection.get("base_url")
+            or ""
+        ).strip()
 
-        if credential:
-            headers["Authorization"] = (
-                f"Bearer {credential}"
+        parsed = urlparse(base_url)
+
+        if (
+            parsed.scheme != "nfs"
+            or not parsed.hostname
+        ):
+            return IntegrationTestResult(
+                status="not_configured",
+                http_status=None,
+                latency_ms=0,
+                message=(
+                    "Utilisez le format "
+                    "nfs://serveur:2049/"
+                    "chemin-exporte."
+                ),
+                checked_url=(
+                    base_url or None
+                ),
+                server_reachable=False,
+                authenticated=None,
             )
 
-            credential_used = True
+        host = parsed.hostname
+        port = parsed.port or 2049
 
-        return (
-            self.build_url(
-                connection["base_url"],
-                "/api/version",
-            ),
-            headers,
-            None,
-            credential_used,
+        timeout_seconds = int(
+            current_app.config[
+                "INTEGRATION_TIMEOUT_SECONDS"
+            ]
         )
 
+        started_at = time.perf_counter()
 
-class KubernetesAdapter(BaseIntegrationAdapter):
-    def build_request(
-        self,
-        connection: dict[str, Any],
-        credential: str | None,
-    ) -> tuple[
-        str,
-        dict[str, str],
-        HTTPBasicAuth | None,
-        bool,
-    ]:
-        headers = self.default_headers()
+        try:
+            with socket.create_connection(
+                (
+                    host,
+                    port,
+                ),
+                timeout=timeout_seconds,
+            ):
+                pass
 
-        credential_used = False
-
-        if credential:
-            headers["Authorization"] = (
-                f"Bearer {credential}"
+            latency_ms = round(
+                (
+                    time.perf_counter()
+                    - started_at
+                )
+                * 1000
             )
 
-            credential_used = True
-
-        return (
-            self.build_url(
-                connection["base_url"],
-                "/version",
-            ),
-            headers,
-            None,
-            credential_used,
-        )
-
-
-class OllamaAdapter(BaseIntegrationAdapter):
-    def build_request(
-        self,
-        connection: dict[str, Any],
-        credential: str | None,
-    ) -> tuple[
-        str,
-        dict[str, str],
-        HTTPBasicAuth | None,
-        bool,
-    ]:
-        return (
-            self.build_url(
-                connection["base_url"],
-                "/api/tags",
-            ),
-            self.default_headers(),
-            None,
-            False,
-        )
-
-
-class GenericHttpAdapter(BaseIntegrationAdapter):
-    def build_request(
-        self,
-        connection: dict[str, Any],
-        credential: str | None,
-    ) -> tuple[
-        str,
-        dict[str, str],
-        HTTPBasicAuth | None,
-        bool,
-    ]:
-        headers = self.default_headers()
-
-        credential_used = False
-        basic_auth = None
-
-        auth_type = connection.get(
-            "auth_type",
-            "none",
-        )
-
-        if auth_type == "token" and credential:
-            headers["Authorization"] = (
-                f"Bearer {credential}"
+            return IntegrationTestResult(
+                status="online",
+                http_status=None,
+                latency_ms=latency_ms,
+                message=(
+                    "Le serveur NFS répond sur "
+                    f"{host}:{port}. "
+                    "Ce contrôle vérifie le réseau, "
+                    "pas les droits du chemin."
+                ),
+                checked_url=base_url,
+                server_reachable=True,
+                authenticated=None,
             )
 
-            credential_used = True
-
-        elif auth_type == "basic" and credential:
-            basic_auth = HTTPBasicAuth(
-                connection.get("username")
-                or "",
-                credential,
+        except (
+            TimeoutError,
+            socket.timeout,
+        ):
+            return IntegrationTestResult(
+                status="offline",
+                http_status=None,
+                latency_ms=(
+                    timeout_seconds * 1000
+                ),
+                message=(
+                    "Le serveur NFS "
+                    f"{host}:{port} "
+                    "n'a pas répondu en "
+                    f"{timeout_seconds} secondes."
+                ),
+                checked_url=base_url,
+                server_reachable=False,
+                authenticated=None,
             )
 
-            credential_used = True
-
-        return (
-            connection["base_url"],
-            headers,
-            basic_auth,
-            credential_used,
-        )
+        except OSError as error:
+            return IntegrationTestResult(
+                status="offline",
+                http_status=None,
+                latency_ms=0,
+                message=(
+                    "Connexion NFS impossible "
+                    f"vers {host}:{port} : "
+                    f"{error}"
+                ),
+                checked_url=base_url,
+                server_reachable=False,
+                authenticated=None,
+            )
 
 
 ADAPTERS: dict[
@@ -538,19 +705,27 @@ ADAPTERS: dict[
     "nexus": NexusAdapter(),
     "argocd": ArgoCdAdapter(),
     "kubernetes": KubernetesAdapter(),
+    "nfs": NfsAdapter(),
     "ollama": OllamaAdapter(),
-    "generic_http": GenericHttpAdapter(),
+    "litellm": LiteLlmAdapter(),
+    "vllm": VllmAdapter(),
+    "openai_compatible":
+        OpenAiCompatibleAdapter(),
+    "generic_http":
+        GenericHttpAdapter(),
 }
 
 
 def get_adapter(
     provider_type: str,
 ) -> BaseIntegrationAdapter:
-    adapter = ADAPTERS.get(provider_type)
+    adapter = ADAPTERS.get(
+        provider_type
+    )
 
     if adapter is None:
         raise ValueError(
-            f"Fournisseur non supporté : "
+            "Fournisseur non supporté : "
             f"{provider_type}"
         )
 

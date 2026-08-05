@@ -25,6 +25,16 @@ import {
 } from 'rxjs';
 
 import {
+  CATEGORY_DEFINITIONS,
+  IntegrationCategory,
+  PROVIDER_DEFINITIONS,
+  ProviderDefinition,
+  buildCheckedUrl,
+  providersForCategory,
+  resolveUrlDetails,
+} from '../../../../core/integrations/integration-provider-catalog';
+
+import {
   AuthenticationType,
   ConnectionStatus,
   DeletedConnectionResult,
@@ -55,10 +65,14 @@ interface ApiErrorResponse {
     DatePipe,
   ],
 
-  templateUrl: './integrations.html',
-  styleUrl: './integrations.scss',
+  templateUrl:
+    './integrations.html',
+
+  styleUrl:
+    './integrations.scss',
 })
-export class Integrations implements OnInit {
+export class Integrations
+  implements OnInit {
   private readonly integrationsService =
     inject(IntegrationsService);
 
@@ -66,186 +80,311 @@ export class Integrations implements OnInit {
     inject(FormBuilder);
 
 
+  readonly categoryDefinitions =
+    CATEGORY_DEFINITIONS;
+
+
   readonly connections =
-    signal<IntegrationConnection[]>([]);
+    signal<
+      IntegrationConnection[]
+    >([]);
+
 
   readonly selectedConnectionId =
     signal<number | null>(null);
 
+
   readonly editorOpen =
     signal(false);
+
 
   readonly editingConnectionId =
     signal<number | null>(null);
 
+
   readonly isLoading =
     signal(true);
+
 
   readonly isSaving =
     signal(false);
 
+
   readonly isTestingDraft =
     signal(false);
+
 
   readonly testingConnectionId =
     signal<number | null>(null);
 
+
   readonly deletingConnectionId =
     signal<number | null>(null);
+
 
   readonly errorMessage =
     signal<string | null>(null);
 
+
   readonly successMessage =
     signal<string | null>(null);
 
+
   readonly draftTestResult =
-    signal<IntegrationTestResult | null>(
-      null,
-    );
+    signal<
+      IntegrationTestResult | null
+    >(null);
+
 
   readonly savedTestResult =
-    signal<IntegrationTestResult | null>(
-      null,
-    );
+    signal<
+      IntegrationTestResult | null
+    >(null);
+
+
+  readonly selectedCategory =
+    signal<
+      IntegrationCategory | null
+    >(null);
+
+
+  readonly selectedProviderType =
+    signal<
+      ProviderType | null
+    >(null);
+
+
+  readonly currentBaseUrl =
+    signal('');
 
 
   readonly connectionForm =
-    this.formBuilder.nonNullable.group({
-      name: [
-        '',
-        [
-          Validators.required,
-          Validators.maxLength(120),
-        ],
-      ],
+    this.formBuilder
+      .nonNullable
+      .group({
+        category: [
+          '' as
+            IntegrationCategory | '',
 
-      providerType: [
-        'gitlab' as ProviderType,
-        [
-          Validators.required,
+          [
+            Validators.required,
+          ],
         ],
-      ],
 
-      baseUrl: [
-        '',
-        [
-          Validators.required,
-          Validators.pattern(
-            /^https?:\/\/.+/i,
+        providerType: [
+          '' as ProviderType | '',
+
+          [
+            Validators.required,
+          ],
+        ],
+
+        name: [
+          '',
+
+          [
+            Validators.required,
+            Validators.maxLength(120),
+          ],
+        ],
+
+        baseUrl: [
+          '',
+
+          [
+            Validators.required,
+
+            Validators.pattern(
+              /^(https?|nfs):\/\/.+/i,
+            ),
+          ],
+        ],
+
+        description: [
+          '',
+
+          [
+            Validators.maxLength(500),
+          ],
+        ],
+
+        authType: [
+          'none' as AuthenticationType,
+
+          [
+            Validators.required,
+          ],
+        ],
+
+        username: [
+          '',
+
+          [
+            Validators.maxLength(200),
+          ],
+        ],
+
+        credential: [
+          '',
+
+          [
+            Validators.maxLength(5000),
+          ],
+        ],
+
+        verifySsl: [
+          true,
+        ],
+
+        monitoringEnabled: [
+          true,
+        ],
+
+        checkIntervalSeconds: [
+          300,
+
+          [
+            Validators.required,
+            Validators.min(60),
+            Validators.max(86400),
+          ],
+        ],
+
+        failureThreshold: [
+          3,
+
+          [
+            Validators.required,
+            Validators.min(1),
+            Validators.max(10),
+          ],
+        ],
+      });
+
+
+  readonly selectedConnection =
+    computed(
+      ():
+        IntegrationConnection
+        | null => {
+        const selectedId =
+          this.selectedConnectionId();
+
+        return (
+          this.connections()
+            .find(
+              (
+                connection:
+                  IntegrationConnection,
+              ) =>
+                connection.id
+                === selectedId,
+            )
+          ?? null
+        );
+      },
+    );
+
+
+  readonly providerOptions =
+    computed(
+      ():
+        ProviderDefinition[] =>
+          providersForCategory(
+            this.selectedCategory(),
           ),
-        ],
-      ],
-
-      description: [
-        '',
-        [
-          Validators.maxLength(500),
-        ],
-      ],
-
-      authType: [
-        'token' as AuthenticationType,
-        [
-          Validators.required,
-        ],
-      ],
-
-      username: [
-        '',
-        [
-          Validators.maxLength(200),
-        ],
-      ],
-
-      credential: [
-        '',
-        [
-          Validators.maxLength(5000),
-        ],
-      ],
-
-      monitoringEnabled: [
-        true,
-      ],
-
-      checkIntervalSeconds: [
-        300,
-        [
-          Validators.required,
-          Validators.min(60),
-          Validators.max(86400),
-        ],
-      ],
-
-      failureThreshold: [
-        3,
-        [
-          Validators.required,
-          Validators.min(1),
-          Validators.max(10),
-        ],
-      ],
-    });
+    );
 
 
-  readonly selectedConnection = computed(
-    (): IntegrationConnection | null => {
-      const selectedId =
-        this.selectedConnectionId();
+  readonly currentProvider =
+    computed(
+      ():
+        ProviderDefinition | null => {
+        const providerType =
+          this.selectedProviderType();
 
-      if (selectedId === null) {
-        return null;
-      }
-
-      return (
-        this.connections().find(
-          (
-            connection:
-              IntegrationConnection,
-          ) =>
-            connection.id === selectedId,
-        ) ?? null
-      );
-    },
-  );
+        return providerType
+          ? PROVIDER_DEFINITIONS[
+              providerType
+            ]
+          : null;
+      },
+    );
 
 
-  readonly onlineCount = computed(
-    () =>
-      this.connections().filter(
-        (
-          connection:
-            IntegrationConnection,
-        ) =>
-          connection.status === 'online',
-      ).length,
-  );
+  readonly checkedUrl =
+    computed(
+      (): string => {
+        const providerType =
+          this.selectedProviderType();
+
+        if (!providerType) {
+          return '';
+        }
+
+        return buildCheckedUrl(
+          providerType,
+          this.currentBaseUrl(),
+        );
+      },
+    );
 
 
-  readonly degradedCount = computed(
-    () =>
-      this.connections().filter(
-        (
-          connection:
-            IntegrationConnection,
-        ) =>
-          connection.status ===
-          'degraded',
-      ).length,
-  );
+  readonly urlDetails =
+    computed(
+      () =>
+        resolveUrlDetails(
+          this.currentBaseUrl(),
+        ),
+    );
 
 
-  readonly offlineCount = computed(
-    () =>
-      this.connections().filter(
-        (
-          connection:
-            IntegrationConnection,
-        ) =>
-          connection.status === 'offline',
-      ).length,
-  );
+  readonly onlineCount =
+    computed(
+      () =>
+        this.connections()
+          .filter(
+            (
+              connection:
+                IntegrationConnection,
+            ) =>
+              connection.status
+              === 'online',
+          )
+          .length,
+    );
+
+
+  readonly degradedCount =
+    computed(
+      () =>
+        this.connections()
+          .filter(
+            (
+              connection:
+                IntegrationConnection,
+            ) =>
+              connection.status
+              === 'degraded',
+          )
+          .length,
+    );
+
+
+  readonly offlineCount =
+    computed(
+      () =>
+        this.connections()
+          .filter(
+            (
+              connection:
+                IntegrationConnection,
+            ) =>
+              connection.status
+              === 'offline',
+          )
+          .length,
+    );
 
 
   ngOnInit(): void {
@@ -260,16 +399,21 @@ export class Integrations implements OnInit {
     this.integrationsService
       .getAll()
       .pipe(
-        finalize(() => {
-          this.isLoading.set(false);
-        }),
+        finalize(
+          () =>
+            this.isLoading.set(
+              false,
+            ),
+        ),
       )
       .subscribe({
         next: (
           connections:
             IntegrationConnection[],
         ) => {
-          this.connections.set(connections);
+          this.connections.set(
+            connections
+          );
 
           const currentSelection =
             this.selectedConnectionId();
@@ -280,23 +424,16 @@ export class Integrations implements OnInit {
                 connection:
                   IntegrationConnection,
               ) =>
-                connection.id ===
-                currentSelection,
+                connection.id
+                === currentSelection,
             );
 
-          if (
-            !selectionStillExists
-            && connections.length > 0
-          ) {
-            this.selectedConnectionId.set(
-              connections[0].id,
-            );
-          }
-
-          if (connections.length === 0) {
-            this.selectedConnectionId.set(
-              null,
-            );
+          if (!selectionStillExists) {
+            this.selectedConnectionId
+              .set(
+                connections[0]?.id
+                ?? null,
+              );
           }
         },
 
@@ -312,80 +449,123 @@ export class Integrations implements OnInit {
 
 
   selectConnection(
-    connection: IntegrationConnection,
+    connection:
+      IntegrationConnection,
   ): void {
     this.selectedConnectionId.set(
       connection.id,
     );
 
-    this.savedTestResult.set(null);
+    this.savedTestResult.set(
+      null,
+    );
   }
 
 
   openCreateEditor(): void {
-    this.editingConnectionId.set(null);
+    this.editingConnectionId.set(
+      null,
+    );
+
+    this.selectedCategory.set(
+      null,
+    );
+
+    this.selectedProviderType.set(
+      null,
+    );
+
+    this.currentBaseUrl.set('');
 
     this.connectionForm.reset({
+      category: '',
+      providerType: '',
       name: '',
-      providerType: 'gitlab',
       baseUrl: '',
       description: '',
-      authType: 'token',
+      authType: 'none',
       username: '',
       credential: '',
+      verifySsl: true,
       monitoringEnabled: true,
       checkIntervalSeconds: 300,
       failureThreshold: 3,
     });
 
-    this.draftTestResult.set(null);
-    this.errorMessage.set(null);
-    this.successMessage.set(null);
+    this.clearEditorMessages();
 
     this.editorOpen.set(true);
   }
 
 
   openEditEditor(
-    connection: IntegrationConnection,
+    connection:
+      IntegrationConnection,
   ): void {
+    const definition =
+      PROVIDER_DEFINITIONS[
+        connection.providerType
+      ];
+
     this.editingConnectionId.set(
       connection.id,
     );
 
+    this.selectedCategory.set(
+      definition.category,
+    );
+
+    this.selectedProviderType.set(
+      connection.providerType,
+    );
+
+    this.currentBaseUrl.set(
+      connection.baseUrl,
+    );
+
     this.connectionForm.reset({
-      name: connection.name,
+      category:
+        definition.category,
 
       providerType:
         connection.providerType,
+
+      name:
+        connection.name,
 
       baseUrl:
         connection.baseUrl,
 
       description:
-        connection.description ?? '',
+        connection.description
+        ?? '',
 
       authType:
         connection.authType,
 
       username:
-        connection.username ?? '',
+        connection.username
+        ?? '',
 
       credential: '',
 
+      verifySsl:
+        connection.verifySsl,
+
       monitoringEnabled:
-        connection.monitoringEnabled,
+        connection
+          .monitoringEnabled,
 
       checkIntervalSeconds:
-        connection.checkIntervalSeconds,
+        connection
+          .checkIntervalSeconds,
 
       failureThreshold:
-        connection.failureThreshold,
+        connection
+          .failureThreshold,
     });
 
-    this.draftTestResult.set(null);
-    this.errorMessage.set(null);
-    this.successMessage.set(null);
+    this.clearEditorMessages();
 
     this.editorOpen.set(true);
   }
@@ -404,39 +584,106 @@ export class Integrations implements OnInit {
   }
 
 
+  onCategoryChanged(): void {
+    const rawCategory =
+      this.connectionForm.controls
+        .category.value;
+
+    const category =
+      rawCategory
+        ? rawCategory as IntegrationCategory
+        : null;
+
+    this.selectedCategory.set(
+      category,
+    );
+
+    this.selectedProviderType.set(
+      null,
+    );
+
+    this.currentBaseUrl.set('');
+
+    this.connectionForm.patchValue({
+      providerType: '',
+      name: '',
+      baseUrl: '',
+      authType: 'none',
+      username: '',
+      credential: '',
+      verifySsl: true,
+    });
+
+    this.draftTestResult.set(null);
+  }
+
+
   onProviderChanged(): void {
-    const provider =
+    const rawProvider =
       this.connectionForm.controls
         .providerType.value;
 
-    const defaultAuthType:
-      Record<
-        ProviderType,
-        AuthenticationType
-      > = {
-        gitlab: 'token',
-        nexus: 'basic',
-        argocd: 'token',
-        kubernetes: 'token',
-        ollama: 'none',
-        generic_http: 'none',
-      };
-
-    this.connectionForm.controls
-      .authType.setValue(
-        defaultAuthType[provider],
+    if (!rawProvider) {
+      this.selectedProviderType.set(
+        null,
       );
 
-    this.connectionForm.controls
-      .username.setValue('');
+      return;
+    }
 
-    this.connectionForm.controls
-      .credential.setValue('');
+    const providerType =
+      rawProvider as ProviderType;
+
+    const definition =
+      PROVIDER_DEFINITIONS[
+        providerType
+      ];
+
+    this.selectedProviderType.set(
+      providerType,
+    );
+
+    this.currentBaseUrl.set('');
+
+    this.connectionForm.patchValue({
+      name: '',
+      baseUrl: '',
+
+      authType:
+        definition.defaultAuthType,
+
+      username: '',
+      credential: '',
+      verifySsl: true,
+    });
+
+    this.draftTestResult.set(null);
+  }
+
+
+  onAuthTypeChanged(): void {
+    this.connectionForm.patchValue({
+      username: '',
+      credential: '',
+    });
+
+    this.draftTestResult.set(null);
+  }
+
+
+  onBaseUrlChanged(): void {
+    this.currentBaseUrl.set(
+      this.connectionForm.controls
+        .baseUrl.value,
+    );
+
+    this.draftTestResult.set(null);
   }
 
 
   saveConnection(): void {
-    this.connectionForm.markAllAsTouched();
+    this.connectionForm
+      .markAllAsTouched();
 
     if (
       this.connectionForm.invalid
@@ -458,23 +705,28 @@ export class Integrations implements OnInit {
 
     const request$ =
       editingId === null
-        ? this.integrationsService.create(
-            configuration,
-          )
-        : this.integrationsService.update(
-            editingId,
-            configuration,
-          );
+        ? this.integrationsService
+            .create(configuration)
+
+        : this.integrationsService
+            .update(
+              editingId,
+              configuration,
+            );
 
     request$
       .pipe(
-        finalize(() => {
-          this.isSaving.set(false);
-        }),
+        finalize(
+          () =>
+            this.isSaving.set(
+              false,
+            ),
+        ),
       )
       .subscribe({
         next: (
-          result: SavedConnectionResult,
+          result:
+            SavedConnectionResult,
         ) => {
           this.upsertConnection(
             result.connection,
@@ -505,114 +757,14 @@ export class Integrations implements OnInit {
           if (result.testError) {
             this.errorMessage.set(
               (
-                'La configuration est enregistrée, '
-                + 'mais le test automatique '
-                + `a échoué : ${result.testError}`
+                'La configuration est '
+                + 'enregistrée, mais le '
+                + 'test automatique a '
+                + 'échoué : '
+                + result.testError
               ),
             );
           }
-        },
-
-        error: (
-          error: HttpErrorResponse,
-        ) => {
-          this.errorMessage.set(
-            this.resolveError(error),
-          );
-        },
-      });
-  }
-
-
-  deleteConnection(
-    connection: IntegrationConnection,
-  ): void {
-    if (
-      this.deletingConnectionId()
-      !== null
-    ) {
-      return;
-    }
-
-    const confirmed = window.confirm(
-      (
-        `Supprimer la connexion `
-        + `« ${connection.name} » ?\n\n`
-        + `Son credential et son historique `
-        + `de santé seront également supprimés.`
-      ),
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
-    this.deletingConnectionId.set(
-      connection.id,
-    );
-
-    this.errorMessage.set(null);
-    this.successMessage.set(null);
-
-    this.integrationsService
-      .delete(connection.id)
-      .pipe(
-        finalize(() => {
-          this.deletingConnectionId.set(
-            null,
-          );
-        }),
-      )
-      .subscribe({
-        next: (
-          result: DeletedConnectionResult,
-        ) => {
-          this.connections.update(
-            (
-              connections:
-                IntegrationConnection[],
-            ) =>
-              connections.filter(
-                (
-                  currentConnection:
-                    IntegrationConnection,
-                ) =>
-                  currentConnection.id
-                  !== result.id,
-              ),
-          );
-
-          const remainingConnections =
-            this.connections();
-
-          if (
-            this.selectedConnectionId()
-            === result.id
-          ) {
-            this.selectedConnectionId.set(
-              remainingConnections[0]?.id
-              ?? null,
-            );
-          }
-
-          if (
-            this.editingConnectionId()
-            === result.id
-          ) {
-            this.editorOpen.set(false);
-            this.editingConnectionId.set(
-              null,
-            );
-          }
-
-          this.savedTestResult.set(null);
-
-          this.successMessage.set(
-            (
-              `La connexion « ${result.name} » `
-              + `a été supprimée.`
-            ),
-          );
         },
 
         error: (
@@ -627,7 +779,8 @@ export class Integrations implements OnInit {
 
 
   testDraftConfiguration(): void {
-    this.connectionForm.markAllAsTouched();
+    this.connectionForm
+      .markAllAsTouched();
 
     if (
       this.connectionForm.invalid
@@ -654,9 +807,12 @@ export class Integrations implements OnInit {
     this.integrationsService
       .testDraft(configuration)
       .pipe(
-        finalize(() => {
-          this.isTestingDraft.set(false);
-        }),
+        finalize(
+          () =>
+            this.isTestingDraft.set(
+              false,
+            ),
+        ),
       )
       .subscribe({
         next: (
@@ -680,7 +836,8 @@ export class Integrations implements OnInit {
 
 
   testSavedConnection(
-    connection: IntegrationConnection,
+    connection:
+      IntegrationConnection,
   ): void {
     if (
       this.testingConnectionId()
@@ -699,11 +856,11 @@ export class Integrations implements OnInit {
     this.integrationsService
       .testSaved(connection.id)
       .pipe(
-        finalize(() => {
-          this.testingConnectionId.set(
-            null,
-          );
-        }),
+        finalize(
+          () =>
+            this.testingConnectionId
+              .set(null),
+        ),
       )
       .subscribe({
         next: (result) => {
@@ -731,10 +888,108 @@ export class Integrations implements OnInit {
   }
 
 
+  deleteConnection(
+    connection:
+      IntegrationConnection,
+  ): void {
+    if (
+      this.deletingConnectionId()
+      !== null
+    ) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        (
+          'Supprimer la connexion '
+          + `« ${connection.name} » ?`
+          + '\n\n'
+          + 'Son credential et son '
+          + 'historique de santé '
+          + 'seront également supprimés.'
+        ),
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    this.deletingConnectionId.set(
+      connection.id,
+    );
+
+    this.errorMessage.set(null);
+    this.successMessage.set(null);
+
+    this.integrationsService
+      .delete(connection.id)
+      .pipe(
+        finalize(
+          () =>
+            this.deletingConnectionId
+              .set(null),
+        ),
+      )
+      .subscribe({
+        next: (
+          result:
+            DeletedConnectionResult,
+        ) => {
+          this.connections.update(
+            (
+              connections:
+                IntegrationConnection[],
+            ) =>
+              connections.filter(
+                (
+                  current:
+                    IntegrationConnection,
+                ) =>
+                  current.id
+                  !== result.id,
+              ),
+          );
+
+          if (
+            this.selectedConnectionId()
+            === result.id
+          ) {
+            this.selectedConnectionId.set(
+              this.connections()[0]?.id
+              ?? null,
+            );
+          }
+
+          this.savedTestResult.set(
+            null,
+          );
+
+          this.successMessage.set(
+            (
+              'La connexion '
+              + `« ${result.name} » `
+              + 'a été supprimée.'
+            ),
+          );
+        },
+
+        error: (
+          error: HttpErrorResponse,
+        ) => {
+          this.errorMessage.set(
+            this.resolveError(error),
+          );
+        },
+      });
+  }
+
+
   requiresUsername(): boolean {
     return (
       this.connectionForm.controls
-        .authType.value === 'basic'
+        .authType.value
+      === 'basic'
     );
   }
 
@@ -742,7 +997,8 @@ export class Integrations implements OnInit {
   requiresCredential(): boolean {
     return (
       this.connectionForm.controls
-        .authType.value !== 'none'
+        .authType.value
+      !== 'none'
     );
   }
 
@@ -758,17 +1014,25 @@ export class Integrations implements OnInit {
   providerLabel(
     provider: ProviderType,
   ): string {
-    const labels:
-      Record<ProviderType, string> = {
-        gitlab: 'GitLab',
-        nexus: 'Nexus Repository',
-        argocd: 'Argo CD',
-        kubernetes: 'Kubernetes',
-        ollama: 'Ollama',
-        generic_http: 'Service HTTP',
-      };
+    return (
+      PROVIDER_DEFINITIONS[
+        provider
+      ].label
+    );
+  }
 
-    return labels[provider];
+
+  providerEndpoint(
+    provider: ProviderType,
+  ): string {
+    const definition =
+      PROVIDER_DEFINITIONS[
+        provider
+      ];
+
+    return definition.exactUrl
+      ? 'URL exacte'
+      : definition.endpointPath;
   }
 
 
@@ -776,12 +1040,24 @@ export class Integrations implements OnInit {
     status: ConnectionStatus,
   ): string {
     const labels:
-      Record<ConnectionStatus, string> = {
-        not_configured: 'Non configuré',
-        unchecked: 'Non testé',
-        online: 'Opérationnel',
-        degraded: 'Dégradé',
-        offline: 'Hors ligne',
+      Record<
+        ConnectionStatus,
+        string
+      > = {
+        not_configured:
+          'Non configuré',
+
+        unchecked:
+          'Non testé',
+
+        online:
+          'Opérationnel',
+
+        degraded:
+          'Dégradé',
+
+        offline:
+          'Hors ligne',
       };
 
     return labels[status];
@@ -789,17 +1065,25 @@ export class Integrations implements OnInit {
 
 
   authTypeLabel(
-    authType: AuthenticationType,
+    authType:
+      AuthenticationType,
   ): string {
     const labels:
       Record<
         AuthenticationType,
         string
       > = {
-        none: 'Aucune',
-        token: 'Token',
+        none:
+          'Aucune',
+
+        token:
+          'Token / clé API',
+
         basic:
-          'Username et mot de passe',
+          (
+            'Nom d’utilisateur '
+            + 'et mot de passe'
+          ),
       };
 
     return labels[authType];
@@ -809,14 +1093,18 @@ export class Integrations implements OnInit {
   intervalLabel(
     seconds: number,
   ): string {
-    if (seconds % 3600 === 0) {
+    if (
+      seconds % 3600 === 0
+    ) {
       return (
-        `${seconds / 3600} heure(s)`
+        `${seconds / 3600} `
+        + 'heure(s)'
       );
     }
 
     return (
-      `${seconds / 60} minute(s)`
+      `${seconds / 60} `
+      + 'minute(s)'
     );
   }
 
@@ -824,14 +1112,15 @@ export class Integrations implements OnInit {
   private buildConfiguration():
     IntegrationConfiguration {
     const values =
-      this.connectionForm.getRawValue();
+      this.connectionForm
+        .getRawValue();
 
     return {
       name:
         values.name.trim(),
 
       providerType:
-        values.providerType,
+        values.providerType as ProviderType,
 
       baseUrl:
         values.baseUrl.trim(),
@@ -851,6 +1140,9 @@ export class Integrations implements OnInit {
         values.credential.trim()
         || null,
 
+      verifySsl:
+        values.verifySsl,
+
       monitoringEnabled:
         values.monitoringEnabled,
 
@@ -863,6 +1155,14 @@ export class Integrations implements OnInit {
   }
 
 
+  private clearEditorMessages():
+    void {
+    this.draftTestResult.set(null);
+    this.errorMessage.set(null);
+    this.successMessage.set(null);
+  }
+
+
   private upsertConnection(
     updatedConnection:
       IntegrationConnection,
@@ -872,42 +1172,45 @@ export class Integrations implements OnInit {
         connections:
           IntegrationConnection[],
       ) => {
-        const existingIndex =
-          connections.findIndex(
+        const exists =
+          connections.some(
             (
               connection:
                 IntegrationConnection,
             ) =>
-              connection.id ===
-              updatedConnection.id,
+              connection.id
+              === updatedConnection.id,
           );
 
-        if (existingIndex === -1) {
-          return [
-            ...connections,
-            updatedConnection,
-          ].sort(
-            (
-              first:
-                IntegrationConnection,
-              second:
-                IntegrationConnection,
-            ) =>
-              first.name.localeCompare(
-                second.name,
-              ),
-          );
-        }
+        const nextConnections =
+          exists
+            ? connections.map(
+                (
+                  connection:
+                    IntegrationConnection,
+                ) =>
+                  connection.id
+                  === updatedConnection.id
+                    ? updatedConnection
+                    : connection,
+              )
 
-        return connections.map(
+            : [
+                ...connections,
+                updatedConnection,
+              ];
+
+        return nextConnections.sort(
           (
-            connection:
+            first:
+              IntegrationConnection,
+
+            second:
               IntegrationConnection,
           ) =>
-            connection.id ===
-            updatedConnection.id
-              ? updatedConnection
-              : connection,
+            first.name.localeCompare(
+              second.name,
+            ),
         );
       },
     );
@@ -919,9 +1222,10 @@ export class Integrations implements OnInit {
   ): string {
     if (error.status === 0) {
       return (
-        'Le backend Flask est inaccessible. '
-        + 'Vérifiez le port 5000 et '
-        + 'le proxy Angular.'
+        'Le backend Flask est '
+        + 'inaccessible. Vérifiez '
+        + 'le service API et '
+        + 'le proxy web.'
       );
     }
 
@@ -936,7 +1240,7 @@ export class Integrations implements OnInit {
     }
 
     return (
-      `Erreur HTTP `
+      'Erreur HTTP '
       + `${error.status || 'inconnue'}.`
     );
   }

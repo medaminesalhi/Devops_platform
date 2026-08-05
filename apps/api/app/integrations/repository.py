@@ -4,7 +4,9 @@ import json
 
 from typing import Any
 
-from app.database import get_database_connection
+from app.database import (
+    get_database_connection,
+)
 
 
 CONNECTION_SELECT = """
@@ -15,22 +17,17 @@ CONNECTION_SELECT = """
         connection.base_url,
         connection.environment,
         connection.description,
-
         connection.enabled,
         connection.verify_ssl,
-
         connection.monitoring_enabled,
         connection.check_interval_seconds,
         connection.failure_threshold,
-
         connection.status,
         connection.consecutive_failures,
-
         connection.last_http_status,
         connection.last_error,
         connection.last_checked_at,
         connection.last_latency_ms,
-
         connection.created_by,
         connection.created_at,
         connection.updated_at,
@@ -62,51 +59,35 @@ def _fetch_connection(
     database_connection,
     connection_id: int,
 ) -> dict[str, Any] | None:
-    """
-    Relit une connexion complète avec son credential.
-
-    La valeur secret_ciphertext reste uniquement
-    dans le backend et ne sera jamais envoyée à Angular.
-    """
-
-    query = f"""
-        {CONNECTION_SELECT}
-
-        WHERE connection.id = %s
-
-        LIMIT 1;
-    """
-
     return database_connection.execute(
-        query,
-        (connection_id,),
+        f"""
+            {CONNECTION_SELECT}
+
+            WHERE connection.id = %s
+
+            LIMIT 1;
+        """,
+        (
+            connection_id,
+        ),
     ).fetchone()
 
 
-def list_connections() -> list[dict[str, Any]]:
-    """
-    Retourne toutes les connexions configurées.
-    """
-
-    query = f"""
-        {CONNECTION_SELECT}
-
-        ORDER BY connection.name ASC;
-    """
-
+def list_connections(
+) -> list[dict[str, Any]]:
     with get_database_connection() as connection:
         return connection.execute(
-            query
+            f"""
+                {CONNECTION_SELECT}
+
+                ORDER BY connection.name ASC;
+            """
         ).fetchall()
 
 
 def find_connection(
     connection_id: int,
 ) -> dict[str, Any] | None:
-    """
-    Recherche une connexion par son identifiant.
-    """
-
     with get_database_connection() as connection:
         return _fetch_connection(
             connection,
@@ -121,6 +102,7 @@ def create_connection(
     base_url: str,
     environment: str,
     description: str | None,
+    verify_ssl: bool,
     auth_type: str,
     username: str | None,
     secret_ciphertext: str | None,
@@ -129,28 +111,24 @@ def create_connection(
     failure_threshold: int,
     user_id: int,
 ) -> dict[str, Any]:
-    """
-    Crée :
-    1. la connexion ;
-    2. son credential ;
-    3. une activité de création.
-    """
-
     with get_database_connection() as connection:
-        created_connection = connection.execute(
+        created_row = connection.execute(
             """
-                INSERT INTO integration_connections (
-                    name,
-                    provider_type,
-                    base_url,
-                    environment,
-                    description,
-                    monitoring_enabled,
-                    check_interval_seconds,
-                    failure_threshold,
-                    created_by
-                )
+                INSERT INTO
+                    integration_connections (
+                        name,
+                        provider_type,
+                        base_url,
+                        environment,
+                        description,
+                        verify_ssl,
+                        monitoring_enabled,
+                        check_interval_seconds,
+                        failure_threshold,
+                        created_by
+                    )
                 VALUES (
+                    %s,
                     %s,
                     %s,
                     %s,
@@ -169,6 +147,7 @@ def create_connection(
                 base_url,
                 environment,
                 description,
+                verify_ssl,
                 monitoring_enabled,
                 check_interval_seconds,
                 failure_threshold,
@@ -176,23 +155,25 @@ def create_connection(
             ),
         ).fetchone()
 
-        if created_connection is None:
+        if created_row is None:
             raise RuntimeError(
-                "La connexion n'a pas pu être créée."
+                "La connexion n'a pas "
+                "pu être créée."
             )
 
         connection_id = int(
-            created_connection["id"]
+            created_row["id"]
         )
 
         connection.execute(
             """
-                INSERT INTO integration_credentials (
-                    connection_id,
-                    auth_type,
-                    username,
-                    secret_ciphertext
-                )
+                INSERT INTO
+                    integration_credentials (
+                        connection_id,
+                        auth_type,
+                        username,
+                        secret_ciphertext
+                    )
                 VALUES (
                     %s,
                     %s,
@@ -210,12 +191,13 @@ def create_connection(
 
         connection.execute(
             """
-                INSERT INTO integration_activity_logs (
-                    connection_id,
-                    user_id,
-                    action,
-                    details
-                )
+                INSERT INTO
+                    integration_activity_logs (
+                        connection_id,
+                        user_id,
+                        action,
+                        details
+                    )
                 VALUES (
                     %s,
                     %s,
@@ -229,7 +211,10 @@ def create_connection(
                 json.dumps(
                     {
                         "name": name,
-                        "providerType": provider_type,
+                        "providerType":
+                            provider_type,
+                        "verifySsl":
+                            verify_ssl,
                     }
                 ),
             ),
@@ -242,7 +227,8 @@ def create_connection(
 
         if result is None:
             raise RuntimeError(
-                "La connexion créée est introuvable."
+                "La connexion créée "
+                "est introuvable."
             )
 
         return result
@@ -256,6 +242,7 @@ def update_connection(
     base_url: str,
     environment: str,
     description: str | None,
+    verify_ssl: bool,
     auth_type: str,
     username: str | None,
     replace_secret: bool,
@@ -265,16 +252,6 @@ def update_connection(
     failure_threshold: int,
     user_id: int,
 ) -> dict[str, Any] | None:
-    """
-    Modifie une connexion.
-
-    Lorsque le champ secret reste vide,
-    l'ancien secret est conservé.
-
-    Lorsque auth_type devient "none",
-    le secret existant est supprimé.
-    """
-
     with get_database_connection() as connection:
         updated_row = connection.execute(
             """
@@ -286,7 +263,7 @@ def update_connection(
                     base_url = %s,
                     environment = %s,
                     description = %s,
-
+                    verify_ssl = %s,
                     monitoring_enabled = %s,
                     check_interval_seconds = %s,
                     failure_threshold = %s,
@@ -308,6 +285,7 @@ def update_connection(
                 base_url,
                 environment,
                 description,
+                verify_ssl,
                 monitoring_enabled,
                 check_interval_seconds,
                 failure_threshold,
@@ -318,55 +296,89 @@ def update_connection(
         if updated_row is None:
             return None
 
-        connection.execute(
-            """
-                INSERT INTO integration_credentials (
+        if replace_secret:
+            connection.execute(
+                """
+                    INSERT INTO
+                        integration_credentials (
+                            connection_id,
+                            auth_type,
+                            username,
+                            secret_ciphertext
+                        )
+                    VALUES (
+                        %s,
+                        %s,
+                        %s,
+                        %s
+                    )
+
+                    ON CONFLICT (
+                        connection_id
+                    )
+
+                    DO UPDATE SET
+                        auth_type =
+                            EXCLUDED.auth_type,
+
+                        username =
+                            EXCLUDED.username,
+
+                        secret_ciphertext =
+                            EXCLUDED.secret_ciphertext;
+                """,
+                (
                     connection_id,
                     auth_type,
                     username,
-                    secret_ciphertext
-                )
-                VALUES (
-                    %s,
-                    %s,
-                    %s,
-                    %s
-                )
+                    secret_ciphertext,
+                ),
+            )
 
-                ON CONFLICT (connection_id)
-                DO UPDATE SET
-                    auth_type =
-                        EXCLUDED.auth_type,
+        else:
+            connection.execute(
+                """
+                    INSERT INTO
+                        integration_credentials (
+                            connection_id,
+                            auth_type,
+                            username,
+                            secret_ciphertext
+                        )
+                    VALUES (
+                        %s,
+                        %s,
+                        %s,
+                        NULL
+                    )
 
-                    username =
-                        EXCLUDED.username,
+                    ON CONFLICT (
+                        connection_id
+                    )
 
-                    secret_ciphertext =
-                        CASE
-                            WHEN %s
-                            THEN EXCLUDED.secret_ciphertext
-                            ELSE
-                                integration_credentials
-                                    .secret_ciphertext
-                        END;
-            """,
-            (
-                connection_id,
-                auth_type,
-                username,
-                secret_ciphertext,
-                replace_secret,
-            ),
-        )
+                    DO UPDATE SET
+                        auth_type =
+                            EXCLUDED.auth_type,
+
+                        username =
+                            EXCLUDED.username;
+                """,
+                (
+                    connection_id,
+                    auth_type,
+                    username,
+                ),
+            )
 
         connection.execute(
             """
-                INSERT INTO integration_activity_logs (
-                    connection_id,
-                    user_id,
-                    action,
-                    details
-                )
+                INSERT INTO
+                    integration_activity_logs (
+                        connection_id,
+                        user_id,
+                        action,
+                        details
+                    )
                 VALUES (
                     %s,
                     %s,
@@ -380,8 +392,12 @@ def update_connection(
                 json.dumps(
                     {
                         "name": name,
-                        "providerType": provider_type,
-                        "credentialReplaced": replace_secret,
+                        "providerType":
+                            provider_type,
+                        "verifySsl":
+                            verify_ssl,
+                        "credentialReplaced":
+                            replace_secret,
                     }
                 ),
             ),
@@ -397,22 +413,13 @@ def delete_connection(
     *,
     connection_id: int,
 ) -> dict[str, Any]:
-    """
-    Supprime une connexion uniquement lorsqu'elle
-    n'est utilisée par aucun environnement.
-
-    environment_connections possède une contrainte
-    ON DELETE RESTRICT. Nous vérifions donc l'utilisation
-    avant d'exécuter la suppression.
-    """
-
     with get_database_connection() as connection:
-        existing_connection = _fetch_connection(
+        existing = _fetch_connection(
             connection,
             connection_id,
         )
 
-        if existing_connection is None:
+        if existing is None:
             return {
                 "deleted": False,
                 "reason": "not_found",
@@ -422,13 +429,16 @@ def delete_connection(
 
         usage_row = connection.execute(
             """
-                SELECT COUNT(*)::INTEGER AS total
+                SELECT
+                    COUNT(*)::INTEGER AS total
 
                 FROM environment_connections
 
                 WHERE connection_id = %s;
             """,
-            (connection_id,),
+            (
+                connection_id,
+            ),
         ).fetchone()
 
         usage_count = int(
@@ -442,58 +452,58 @@ def delete_connection(
                 "deleted": False,
                 "reason": "in_use",
                 "usageCount": usage_count,
-                "name": existing_connection["name"],
+                "name": existing["name"],
             }
 
         connection.execute(
             """
-                DELETE FROM integration_connections
+                DELETE FROM
+                    integration_connections
 
                 WHERE id = %s;
             """,
-            (connection_id,),
+            (
+                connection_id,
+            ),
         )
 
         return {
             "deleted": True,
             "reason": None,
             "usageCount": 0,
-            "name": existing_connection["name"],
+            "name": existing["name"],
         }
 
 
-def list_due_connection_ids() -> list[int]:
-    """
-    Retourne les connexions dont le prochain
-    contrôle automatique est arrivé à échéance.
-    """
-
-    query = """
-        SELECT id
-
-        FROM integration_connections
-
-        WHERE
-            enabled = TRUE
-            AND monitoring_enabled = TRUE
-
-            AND (
-                last_checked_at IS NULL
-
-                OR last_checked_at
-                   + (
-                       check_interval_seconds
-                       * INTERVAL '1 second'
-                   )
-                   <= CURRENT_TIMESTAMP
-            )
-
-        ORDER BY last_checked_at NULLS FIRST;
-    """
-
+def list_due_connection_ids(
+) -> list[int]:
     with get_database_connection() as connection:
         rows = connection.execute(
-            query
+            """
+                SELECT id
+
+                FROM integration_connections
+
+                WHERE
+                    enabled = TRUE
+
+                    AND monitoring_enabled
+                        = TRUE
+
+                    AND (
+                        last_checked_at IS NULL
+
+                        OR last_checked_at
+                           + (
+                               check_interval_seconds
+                               * INTERVAL '1 second'
+                           )
+                           <= CURRENT_TIMESTAMP
+                    )
+
+                ORDER BY
+                    last_checked_at NULLS FIRST;
+            """
         ).fetchall()
 
     return [
@@ -509,18 +519,12 @@ def save_health_result(
     consecutive_failures: int,
     result: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Enregistre :
-    - le contrôle dans l'historique ;
-    - le dernier état sur la connexion ;
-    - une notification lors d'une panne ;
-    - une notification lors du rétablissement.
-    """
-
     with get_database_connection() as connection:
-        previous_connection = _fetch_connection(
-            connection,
-            connection_id,
+        previous_connection = (
+            _fetch_connection(
+                connection,
+                connection_id,
+            )
         )
 
         if previous_connection is None:
@@ -528,22 +532,23 @@ def save_health_result(
                 "Connexion introuvable."
             )
 
-        previous_status = previous_connection[
-            "status"
-        ]
+        previous_status = (
+            previous_connection["status"]
+        )
 
         connection.execute(
             """
-                INSERT INTO integration_health_checks (
-                    connection_id,
-                    status,
-                    http_status,
-                    latency_ms,
-                    server_reachable,
-                    authenticated,
-                    checked_url,
-                    message
-                )
+                INSERT INTO
+                    integration_health_checks (
+                        connection_id,
+                        status,
+                        http_status,
+                        latency_ms,
+                        server_reachable,
+                        authenticated,
+                        checked_url,
+                        message
+                    )
                 VALUES (
                     %s,
                     %s,
@@ -576,7 +581,8 @@ def save_health_result(
                     consecutive_failures = %s,
                     last_http_status = %s,
                     last_error = %s,
-                    last_checked_at = CURRENT_TIMESTAMP,
+                    last_checked_at =
+                        CURRENT_TIMESTAMP,
                     last_latency_ms = %s
 
                 WHERE id = %s;
@@ -595,9 +601,9 @@ def save_health_result(
             ),
         )
 
-        connection_name = previous_connection[
-            "name"
-        ]
+        connection_name = (
+            previous_connection["name"]
+        )
 
         if (
             final_status == "offline"
@@ -658,20 +664,23 @@ def save_health_result(
                         "est rétabli"
                     ),
                     (
-                        "Le service répond de nouveau "
-                        "correctement."
+                        "Le service répond "
+                        "de nouveau correctement."
                     ),
                 ),
             )
 
-        updated_connection = _fetch_connection(
-            connection,
-            connection_id,
+        updated_connection = (
+            _fetch_connection(
+                connection,
+                connection_id,
+            )
         )
 
         if updated_connection is None:
             raise RuntimeError(
-                "Impossible de relire la connexion."
+                "Impossible de relire "
+                "la connexion."
             )
 
         return updated_connection
