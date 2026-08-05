@@ -21,7 +21,7 @@ from typing import Any
 
 import yaml
 
-from apps.api.app.generation.generators import read_existing_chart
+
 
 
 MAX_TEXT_BYTES = 1_000_000

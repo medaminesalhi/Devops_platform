@@ -1,45 +1,52 @@
 /* =========================================================
-   VARIABLES GLOBALES
+   SApixi — Design system professionnel
    ========================================================= */
 
 :root {
-  /*
-   * La taille normale du navigateur est 16 px.
-   * 90 % de 16 px = 14,4 px.
-   *
-   * Les composants utilisant rem seront donc
-   * environ 10 % plus petits.
-   */
-  font-size: 90%;
+  font-size: 100%;
 
-  --page-background: #f4f7f8;
+  --page-background: #f4f7f9;
   --surface: #ffffff;
-  --surface-soft: #f8fafb;
+  --surface-soft: #f8fafc;
+  --surface-muted: #eef3f6;
 
-  --text-primary: #1e343a;
-  --text-secondary: #667b81;
-  --text-muted: #8b9a9f;
+  --text-primary: #122b35;
+  --text-secondary: #5f7680;
+  --text-muted: #8ca0a8;
 
-  --border-color: #dfe7e9;
+  --border-color: #dbe4e8;
+  --border-strong: #c7d4da;
 
-  --brand-primary: #70b600;
-  --brand-primary-dark: #5e9d00;
-  --brand-primary-soft: #eef8df;
+  --brand-primary: #0f766e;
+  --brand-primary-dark: #0b5f59;
+  --brand-primary-soft: #e7f5f2;
 
-  --danger: #d9434c;
-  --warning: #db7908;
-  --information: #0785bc;
+  --accent: #74b816;
+  --accent-dark: #5e9411;
+  --accent-soft: #f1f8e7;
+
+  --danger: #c63d47;
+  --danger-soft: #fff1f2;
+  --warning: #b86a08;
+  --warning-soft: #fff8e8;
+  --information: #2563a8;
+  --information-soft: #eff6ff;
 
   --sidebar-width: 17.5rem;
   --topbar-height: 5.4rem;
 
-  --shadow-small:
-    0 0.5rem 1.4rem rgba(28, 48, 54, 0.06);
+  --radius-xs: 0.5rem;
+  --radius-sm: 0.75rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.25rem;
 
-  --shadow-medium:
-    0 1.1rem 2.8rem rgba(28, 48, 54, 0.08);
+  --shadow-small: 0 0.35rem 1rem rgba(15, 42, 52, 0.055);
+  --shadow-medium: 0 1rem 2.6rem rgba(15, 42, 52, 0.085);
+  --shadow-focus: 0 0 0 0.22rem rgba(15, 118, 110, 0.14);
 
   font-family:
+    "Segoe UI Variable Text",
+    "Aptos",
     Inter,
     "Segoe UI",
     Roboto,
@@ -51,10 +58,6 @@
   background: var(--page-background);
 }
 
-/* =========================================================
-   RESET
-   ========================================================= */
-
 *,
 *::before,
 *::after {
@@ -65,19 +68,23 @@ html,
 body {
   min-width: 20rem;
   min-height: 100%;
-
   margin: 0;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
   min-height: 100vh;
-
-  background: var(--page-background);
+  background:
+    radial-gradient(circle at 85% -10%, rgba(15, 118, 110, 0.055), transparent 25rem),
+    var(--page-background);
   color: var(--text-primary);
-
   font-size: 1rem;
-  line-height: 1.5;
-
+  font-weight: 400;
+  line-height: 1.55;
+  text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -98,9 +105,12 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+}
+
 img {
   display: block;
-
   max-width: 100%;
 }
 
@@ -118,11 +128,39 @@ p {
   margin-top: 0;
 }
 
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family:
+    "Segoe UI Variable Display",
+    "Aptos Display",
+    "Segoe UI Variable Text",
+    "Segoe UI",
+    sans-serif;
+  color: var(--text-primary);
+  font-weight: 720;
+  letter-spacing: -0.025em;
+}
+
 code,
 pre {
   font-family:
     "Cascadia Code",
+    "JetBrains Mono",
     Consolas,
     "Courier New",
     monospace;
+}
+
+::selection {
+  background: rgba(15, 118, 110, 0.2);
+  color: #092c2a;
+}
+
+:focus-visible {
+  outline: 0.16rem solid rgba(15, 118, 110, 0.38);
+  outline-offset: 0.15rem;
 }

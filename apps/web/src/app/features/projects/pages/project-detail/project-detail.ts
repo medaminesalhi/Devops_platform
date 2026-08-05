@@ -1,4 +1,3 @@
-import { DatePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
@@ -16,6 +15,13 @@ import {
   switchMap,
   timer,
 } from 'rxjs';
+
+import { ProjectWorkflow } from '../../components/project-workflow/project-workflow';
+
+import {
+  WorkflowGenerationStatus,
+  WorkflowService,
+} from '../../../../core/workflow/workflow';
 
 import {
   Project,
@@ -47,13 +53,29 @@ export type AnalysisStepState =
   | 'failed';
 
 
+export type ProjectPagePhase =
+  | 'configuration'
+  | 'analysis'
+  | 'contract'
+  | 'generation'
+  | 'review';
+
+
+interface ProjectPhaseDefinition {
+  key: ProjectPagePhase;
+  number: number;
+  label: string;
+  description: string;
+}
+
+
 @Component({
   selector: 'app-project-detail',
 
   imports: [
-    DatePipe,
     FormsModule,
     RouterLink,
+    ProjectWorkflow,
   ],
 
   templateUrl:
@@ -73,11 +95,64 @@ export class ProjectDetail
   private readonly analysisService =
     inject(AnalysisService);
 
+  private readonly workflowService =
+    inject(WorkflowService);
+
 
   private pollingSubscription:
     Subscription | null = null;
 
   private lastEventId = 0;
+
+
+  readonly phases: ProjectPhaseDefinition[] = [
+    {
+      key: 'configuration',
+      number: 1,
+      label: 'Configuration',
+      description: 'Source et environnement',
+    },
+    {
+      key: 'analysis',
+      number: 2,
+      label: 'Analyse',
+      description: 'Code et composants',
+    },
+    {
+      key: 'contract',
+      number: 3,
+      label: 'Contrat',
+      description: 'Cible de déploiement',
+    },
+    {
+      key: 'generation',
+      number: 4,
+      label: 'Génération',
+      description: 'Docker, Helm et Argo CD',
+    },
+    {
+      key: 'review',
+      number: 5,
+      label: 'Revue',
+      description: 'Validation humaine',
+    },
+  ];
+
+
+  readonly activePhase =
+    signal<ProjectPagePhase>('configuration');
+
+  readonly workflowRefreshToken =
+    signal(0);
+
+  readonly workflowContractConfirmed =
+    signal(false);
+
+  readonly workflowGenerationStatus =
+    signal<WorkflowGenerationStatus | null>(null);
+
+  readonly workflowProgressLoading =
+    signal(false);
 
 
   readonly analysisSteps:
@@ -208,6 +283,24 @@ export class ProjectDetail
   readonly phase3Unlocked =
     computed(
       () => this.analysisConfirmed(),
+    );
+
+
+  readonly activePhaseNumber =
+    computed(
+      () =>
+        this.phases.find(
+          phase => phase.key === this.activePhase(),
+        )?.number ?? 1,
+    );
+
+
+  readonly activePhaseDefinition =
+    computed(
+      () =>
+        this.phases.find(
+          phase => phase.key === this.activePhase(),
+        ) ?? this.phases[0],
     );
 
 
@@ -379,6 +472,10 @@ export class ProjectDetail
     this.loadProject(projectId);
 
     this.loadLatestAnalysis(
+      projectId,
+    );
+
+    this.loadWorkflowProgress(
       projectId,
     );
   }
@@ -842,6 +939,16 @@ export class ProjectDetail
             projectId,
             currentAnalysis.id,
           );
+
+          this.activePhase.set(
+            'contract',
+          );
+
+          this.loadWorkflowProgress(
+            projectId,
+          );
+
+          this.scrollPageTop();
         },
 
         error: (
@@ -852,6 +959,198 @@ export class ProjectDetail
           );
         },
       });
+  }
+
+
+  loadWorkflowProgress(
+    projectId = this.projectId(),
+  ): void {
+    if (projectId === null) {
+      return;
+    }
+
+    this.workflowProgressLoading.set(true);
+
+    this.workflowService
+      .getOverview(projectId)
+      .pipe(
+        finalize(() => {
+          this.workflowProgressLoading.set(false);
+        }),
+      )
+      .subscribe({
+        next: overview => {
+          this.workflowContractConfirmed.set(
+            overview.latestContract?.status
+            === 'confirmed',
+          );
+
+          this.workflowGenerationStatus.set(
+            overview.latestGeneration?.status
+            ?? null,
+          );
+        },
+
+        error: () => {
+          /*
+           * La progression du workflow est une aide
+           * d’interface. Les erreurs détaillées restent
+           * affichées dans le composant de la phase.
+           */
+        },
+      });
+  }
+
+
+  phaseUnlocked(
+    phase: ProjectPagePhase,
+  ): boolean {
+    if (
+      phase === 'configuration'
+      || phase === 'analysis'
+    ) {
+      return true;
+    }
+
+    if (phase === 'contract') {
+      return this.analysisConfirmed();
+    }
+
+    if (phase === 'generation') {
+      return this.workflowContractConfirmed();
+    }
+
+    return [
+      'awaiting_review',
+      'completed',
+      'confirmed',
+    ].includes(
+      this.workflowGenerationStatus()
+      ?? '',
+    );
+  }
+
+
+  phaseCompleted(
+    phase: ProjectPagePhase,
+  ): boolean {
+    if (phase === 'configuration') {
+      return this.project() !== null;
+    }
+
+    if (phase === 'analysis') {
+      return this.analysisConfirmed();
+    }
+
+    if (phase === 'contract') {
+      return this.workflowContractConfirmed();
+    }
+
+    if (phase === 'generation') {
+      return [
+        'awaiting_review',
+        'completed',
+        'confirmed',
+      ].includes(
+        this.workflowGenerationStatus()
+        ?? '',
+      );
+    }
+
+    return this.workflowGenerationStatus()
+      === 'confirmed';
+  }
+
+
+  openPhase(
+    phase: ProjectPagePhase,
+  ): void {
+    if (!this.phaseUnlocked(phase)) {
+      return;
+    }
+
+    this.activePhase.set(phase);
+    this.scrollPageTop();
+  }
+
+
+  goToPreviousPhase(): void {
+    const index = this.phases.findIndex(
+      phase => phase.key === this.activePhase(),
+    );
+
+    if (index > 0) {
+      this.openPhase(
+        this.phases[index - 1].key,
+      );
+    }
+  }
+
+
+  goToNextPhase(): void {
+    const index = this.phases.findIndex(
+      phase => phase.key === this.activePhase(),
+    );
+
+    const nextPhase = this.phases[index + 1];
+
+    if (
+      nextPhase
+      && this.phaseUnlocked(nextPhase.key)
+    ) {
+      this.openPhase(nextPhase.key);
+    }
+  }
+
+
+  refreshCurrentPhase(): void {
+    const projectId = this.projectId();
+
+    if (projectId === null) {
+      return;
+    }
+
+    if (this.activePhase() === 'configuration') {
+      this.loadProject(projectId);
+      return;
+    }
+
+    if (this.activePhase() === 'analysis') {
+      this.refreshAnalysis();
+      return;
+    }
+
+    this.workflowRefreshToken.update(
+      value => value + 1,
+    );
+
+    this.loadWorkflowProgress(projectId);
+  }
+
+
+  onContractConfirmed(
+    confirmed: boolean,
+  ): void {
+    this.workflowContractConfirmed.set(
+      confirmed,
+    );
+  }
+
+
+  onGenerationStatus(
+    status: WorkflowGenerationStatus | null,
+  ): void {
+    this.workflowGenerationStatus.set(
+      status,
+    );
+  }
+
+
+  private scrollPageTop(): void {
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth',
+    });
   }
 
 

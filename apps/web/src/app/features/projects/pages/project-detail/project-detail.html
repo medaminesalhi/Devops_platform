@@ -1,1389 +1,344 @@
-<section class="analysis-page">
-  <header class="page-header">
-    <div class="page-header__content">
-      <a
-        class="back-link"
-        routerLink="/projects"
-      >
-        <span>←</span>
-        Retour aux projets
-      </a>
-
-      <p class="eyebrow">
-        PIXIMIND · ANALYSE DU CODE
-      </p>
+<section class="project-page">
+  <header class="project-header">
+    <div>
+      <a class="back-link" routerLink="/projects">← Retour aux projets</a>
+      <p class="eyebrow">SApixi · cycle de préparation</p>
 
       @if (project(); as currentProject) {
-        <div class="page-title-row">
+        <div class="project-title-row">
           <div>
-            <h1>
-              {{ currentProject.name }}
-            </h1>
-
-            <p class="page-description">
-              {{
-                currentProject.description
-                ?? 'Analyse technique et préparation du déploiement.'
-              }}
-            </p>
+            <h1>{{ currentProject.name }}</h1>
+            <p>{{ currentProject.description ?? 'Préparation du projet pour le déploiement.' }}</p>
           </div>
-
           <span class="project-mode">
-            {{
-              currentProject.operationMode === 'adopt_existing'
-                ? 'Application existante'
-                : 'Nouvelle application'
-            }}
+            {{ currentProject.operationMode === 'adopt_existing' ? 'Application existante' : 'Nouvelle application' }}
           </span>
         </div>
       } @else {
-        <h1>
-          Analyse du projet
-        </h1>
+        <h1>Projet</h1>
       }
     </div>
 
-    @if (analysis()) {
-      <button
-        class="button button--secondary"
-        type="button"
-        [disabled]="isRefreshing()"
-        (click)="refreshAnalysis()"
-      >
-        <span class="button__icon">
-          ↻
-        </span>
-
-        {{
-          isRefreshing()
-            ? 'Actualisation…'
-            : 'Actualiser'
-        }}
-      </button>
-    }
+    <button
+      class="button button--secondary"
+      type="button"
+      [disabled]="isRefreshing() || workflowProgressLoading()"
+      (click)="refreshCurrentPhase()"
+    >
+      ↻ Actualiser
+    </button>
   </header>
 
-  <nav
-    class="workflow"
-    aria-label="Progression du projet"
-  >
-    <article class="workflow-item workflow-item--completed">
-      <span class="workflow-item__number">
-        ✓
-      </span>
-
-      <div>
-        <strong>Création</strong>
-        <small>Projet configuré</small>
-      </div>
-    </article>
-
-    <article
-      class="workflow-item"
-      [class.workflow-item--active]="
-        !analysisConfirmed()
-      "
-      [class.workflow-item--completed]="
-        analysisConfirmed()
-      "
-    >
-      <span class="workflow-item__number">
-        {{
-          analysisConfirmed()
-            ? '✓'
-            : '2'
-        }}
-      </span>
-
-      <div>
-        <strong>Analyse</strong>
-
-        <small>
-          {{
-            analysisConfirmed()
-              ? 'Analyse confirmée'
-              : 'Étape actuelle'
-          }}
-        </small>
-      </div>
-    </article>
-
-    <article
-      class="workflow-item"
-      [class.workflow-item--active]="
-        phase3Unlocked()
-      "
-    >
-      <span class="workflow-item__number">
-        3
-      </span>
-
-      <div>
-        <strong>Génération</strong>
-        <small>Docker et Helm</small>
-      </div>
-    </article>
-
-    <article class="workflow-item">
-      <span class="workflow-item__number">
-        4
-      </span>
-
-      <div>
-        <strong>Confirmation</strong>
-        <small>Validation humaine</small>
-      </div>
-    </article>
-
-    <article class="workflow-item">
-      <span class="workflow-item__number">
-        5
-      </span>
-
-      <div>
-        <strong>Déploiement</strong>
-        <small>Argo CD et Kubernetes</small>
-      </div>
-    </article>
+  <nav class="phase-navigation" aria-label="Étapes du projet">
+    @for (phase of phases; track phase.key) {
+      <button
+        class="phase-tab"
+        type="button"
+        [class.phase-tab--active]="activePhase() === phase.key"
+        [class.phase-tab--completed]="phaseCompleted(phase.key)"
+        [class.phase-tab--locked]="!phaseUnlocked(phase.key)"
+        [disabled]="!phaseUnlocked(phase.key)"
+        (click)="openPhase(phase.key)"
+      >
+        <span class="phase-tab__number">
+          {{ phaseCompleted(phase.key) ? '✓' : phase.number }}
+        </span>
+        <span class="phase-tab__content">
+          <strong>{{ phase.label }}</strong>
+          <small>{{ phase.description }}</small>
+        </span>
+        @if (!phaseUnlocked(phase.key)) {
+          <span class="phase-tab__lock">🔒</span>
+        }
+      </button>
+    }
   </nav>
 
   @if (projectError()) {
-    <div
-      class="alert alert--error"
-      role="alert"
-    >
-      <span class="alert__icon">
-        !
-      </span>
-
-      <div>
-        <strong>Projet inaccessible</strong>
-        <p>{{ projectError() }}</p>
-      </div>
+    <div class="alert alert--error" role="alert">
+      <span>!</span>
+      <div><strong>Projet inaccessible</strong><p>{{ projectError() }}</p></div>
     </div>
   }
 
   @if (analysisError()) {
-    <div
-      class="alert alert--error"
-      role="alert"
-    >
-      <span class="alert__icon">
-        !
-      </span>
-
-      <div>
-        <strong>Erreur d’analyse</strong>
-        <p>{{ analysisError() }}</p>
-      </div>
+    <div class="alert alert--error" role="alert">
+      <span>!</span>
+      <div><strong>Erreur d’analyse</strong><p>{{ analysisError() }}</p></div>
     </div>
   }
 
-  @if (isLoadingProject()) {
-    <section class="panel loading-panel">
-      <span class="loading-spinner"></span>
-      Chargement du projet…
-    </section>
-  } @else if (project(); as currentProject) {
-    <section class="project-overview panel">
-      <div class="project-overview__main">
-        <span class="source-icon">
-          &lt;/&gt;
-        </span>
-
-        <div>
-          <p class="section-label">
-            Source du projet
-          </p>
-
-          <h2>
-            {{ sourceDisplayName() }}
-          </h2>
-
-          <p>
-            {{
-              sourceTypeLabel()
-            }}
-            ·
-            {{
-              sourceBranchLabel()
-            }}
-          </p>
-        </div>
-      </div>
-
-      <div class="project-overview__details">
-        <article class="overview-detail">
-          <span>Type de source</span>
-
-          <strong>
-            {{ sourceTypeLabel() }}
-          </strong>
-        </article>
-
-        <article class="overview-detail">
-          <span>Branche ou archive</span>
-
-          <strong>
-            {{ sourceBranchLabel() }}
-          </strong>
-        </article>
-
-        <article class="overview-detail">
-          <span>Version actuelle</span>
-
-          <strong class="code-value">
-            {{ sourceVersion() }}
-          </strong>
-        </article>
-
-        <article class="overview-detail">
-          <span>Environnement</span>
-
-          <strong>
-            {{
-              currentProject.defaultEnvironment?.name
-              ?? 'Non défini'
-            }}
-          </strong>
-        </article>
-      </div>
-    </section>
-  }
-
-  <section class="analysis-launch panel">
-    <div class="analysis-launch__content">
-      <span class="analysis-launch__icon">
-        ✦
-      </span>
-
-      <div>
-        <p class="section-label">
-          Phase 2
-        </p>
-
-        <h2>
-          Analyse technique de l’application
-        </h2>
-
-        <p>
-          Piximind récupère automatiquement le code, identifie les
-          composants, les technologies, les dépendances et les éléments
-          déjà disponibles pour le futur déploiement.
-        </p>
-      </div>
-    </div>
-
-    <button
-      class="button button--primary button--large"
-      type="button"
-      [disabled]="
-        analysisRunning()
-        || isStartingAnalysis()
-        || isLoadingProject()
-      "
-      (click)="startAnalysis()"
-    >
-      <span class="button__icon">
-        ▶
-      </span>
-
-      {{ analysisActionLabel() }}
-    </button>
-  </section>
-
-  @if (isLoadingAnalysis()) {
-    <section class="panel loading-panel">
-      <span class="loading-spinner"></span>
-      Chargement de la dernière analyse…
-    </section>
-  }
-
-  @if (analysis(); as currentAnalysis) {
-    <section class="progress-panel panel">
-      <header class="panel-heading">
-        <div>
-          <p class="section-label">
-            Exécution #{{ currentAnalysis.id }}
-          </p>
-
-          <div class="heading-with-status">
-            <h2>
-              {{
-                analysisStatusLabel(
-                  currentAnalysis.status
-                )
-              }}
-            </h2>
-
-            <span
-              class="status-badge"
-              [class.status-badge--running]="
-                analysisRunning()
-              "
-              [class.status-badge--success]="
-                currentAnalysis.status === 'completed'
-                || currentAnalysis.status === 'confirmed'
-              "
-              [class.status-badge--error]="
-                currentAnalysis.status === 'failed'
-              "
-            >
-              {{
-                currentAnalysis.progress
-              }}
-              %
-            </span>
-          </div>
-
-          <p class="panel-description">
-            {{
-              currentStepLabel(
-                currentAnalysis.currentStep
-              )
-            }}
-          </p>
-        </div>
-
-        <div class="version-card">
-          <span>
-            {{ versionCaption() }}
-          </span>
-
-          <strong>
-            {{
-              shortVersion(
-                currentAnalysis.summary.source?.version
-                ?? currentAnalysis.analyzedCommitSha
-              )
-            }}
-          </strong>
-        </div>
-      </header>
-
-      <div class="main-progress">
-        <div class="main-progress__track">
-          <span
-            class="main-progress__value"
-            [style.width.%]="
-              currentAnalysis.progress
-            "
-          ></span>
-        </div>
-
-        <strong>
-          {{ currentAnalysis.progress }} %
-        </strong>
-      </div>
-
-      <div class="analysis-step-list">
-        @for (
-          step of analysisSteps;
-          track step.key
-        ) {
-          <article
-            class="analysis-step"
-            [class.analysis-step--active]="
-              stepState(step.key) === 'active'
-            "
-            [class.analysis-step--completed]="
-              stepState(step.key) === 'completed'
-            "
-            [class.analysis-step--failed]="
-              stepState(step.key) === 'failed'
-            "
-          >
-            <span class="analysis-step__state">
-              @switch (stepState(step.key)) {
-                @case ('completed') {
-                  ✓
-                }
-
-                @case ('failed') {
-                  ×
-                }
-
-                @case ('active') {
-                  •
-                }
-
-                @default {
-                  ○
-                }
-              }
-            </span>
-
+  <main class="phase-surface">
+    @switch (activePhase()) {
+      @case ('configuration') {
+        <section class="phase-view">
+          <header class="phase-header">
+            <div class="phase-header__number">1</div>
             <div>
-              <strong>
-                {{ step.label }}
-              </strong>
-
-              <small>
-                {{ step.description }}
-              </small>
+              <p class="eyebrow">PHASE 1 · CONFIGURATION</p>
+              <h2>Vérifier la source et l’environnement</h2>
+              <p>Cette étape présente les informations choisies lors de la création du projet.</p>
             </div>
-          </article>
-        }
-      </div>
+          </header>
 
-      @if (
-        currentAnalysis.summary.source?.sourceChanged
-      ) {
-        <div class="alert alert--info">
-          <span class="alert__icon">
-            ↻
-          </span>
-
-          <div>
-            <strong>
-              Nouvelle version détectée
-            </strong>
-
-            <p>
-              Piximind analyse automatiquement la version
-              {{
-                shortVersion(
-                  currentAnalysis.summary.source?.version
-                )
-              }}.
-            </p>
-          </div>
-        </div>
-      }
-
-      @if (currentAnalysis.error) {
-        <div
-          class="alert alert--error"
-          role="alert"
-        >
-          <span class="alert__icon">
-            !
-          </span>
-
-          <div>
-            <strong>
-              {{ currentAnalysis.error.code }}
-            </strong>
-
-            <p>
-              {{ currentAnalysis.error.message }}
-            </p>
-          </div>
-        </div>
-      }
-
-      <div class="technical-details">
-        <button
-          class="technical-details__button"
-          type="button"
-          (click)="toggleTechnicalDetails()"
-        >
-          <span>
-            {{
-              technicalDetailsOpen()
-                ? '−'
-                : '+'
-            }}
-          </span>
-
-          {{
-            technicalDetailsOpen()
-              ? 'Masquer les détails techniques'
-              : 'Afficher les détails techniques'
-          }}
-        </button>
-
-        @if (technicalDetailsOpen()) {
-          <div class="technical-log">
-            @if (events().length === 0) {
-              <p class="empty-message">
-                Aucun événement technique enregistré.
-              </p>
-            } @else {
-              @for (
-                event of events();
-                track event.id
-              ) {
-                <article
-                  class="log-entry"
-                  [class.log-entry--success]="
-                    event.level === 'success'
-                  "
-                  [class.log-entry--warning]="
-                    event.level === 'warning'
-                  "
-                  [class.log-entry--error]="
-                    event.level === 'error'
-                  "
-                >
-                  <span class="log-entry__dot"></span>
-
-                  <div>
-                    <strong>
-                      {{ event.message }}
-                    </strong>
-
-                    <small>
-                      {{
-                        currentStepLabel(
-                          event.step
-                        )
-                      }}
-
-                      @if (event.createdAt) {
-                        ·
-                        {{
-                          event.createdAt
-                          | date:'HH:mm:ss'
-                        }}
-                      }
-                    </small>
-                  </div>
-                </article>
-              }
-            }
-          </div>
-        }
-      </div>
-    </section>
-
-    @if (
-      currentAnalysis.status === 'completed'
-      || currentAnalysis.status === 'confirmed'
-    ) {
-      <section class="results-panel panel">
-        <header class="panel-heading">
-          <div>
-            <p class="section-label">
-              Rapport d’analyse
-            </p>
-
-            <h2>
-              Vue d’ensemble
-            </h2>
-
-            <p class="panel-description">
-              Résumé technique de la version analysée.
-            </p>
-          </div>
-
-          <div class="confidence-card">
-            <strong>
-              {{ globalConfidence() }} %
-            </strong>
-
-            <span>
-              Confiance globale
-            </span>
-          </div>
-        </header>
-
-        <div class="metrics">
-          <article class="metric-card">
-            <span class="metric-card__icon">
-              ◫
-            </span>
-
-            <div>
-              <strong>
-                {{
-                  currentAnalysis.summary.componentCount
-                  ?? currentAnalysis.components.length
-                }}
-              </strong>
-
-              <span>Composants</span>
-            </div>
-          </article>
-
-          <article class="metric-card">
-            <span class="metric-card__icon">
-              ✓
-            </span>
-
-            <div>
-              <strong>
-                {{ deployableComponents().length }}
-              </strong>
-
-              <span>Déployables</span>
-            </div>
-          </article>
-
-          <article class="metric-card">
-            <span class="metric-card__icon">
-              &lt;/&gt;
-            </span>
-
-            <div>
-              <strong>
-                {{ technologyCount() }}
-              </strong>
-
-              <span>Technologies</span>
-            </div>
-          </article>
-
-          <article class="metric-card">
-            <span class="metric-card__icon">
-              D
-            </span>
-
-            <div>
-              <strong>
-                {{
-                  currentAnalysis.summary.dockerfiles?.length
-                  ?? 0
-                }}
-              </strong>
-
-              <span>Dockerfiles</span>
-            </div>
-          </article>
-
-          <article class="metric-card">
-            <span class="metric-card__icon">
-              H
-            </span>
-
-            <div>
-              <strong>
-                {{
-                  currentAnalysis.summary.helmCharts?.length
-                  ?? 0
-                }}
-              </strong>
-
-              <span>Charts Helm</span>
-            </div>
-          </article>
-
-          <article class="metric-card">
-            <span class="metric-card__icon">
-              K
-            </span>
-
-            <div>
-              <strong>
-                {{
-                  currentAnalysis.summary.kubernetesManifests?.length
-                  ?? 0
-                }}
-              </strong>
-
-              <span>Manifests Kubernetes</span>
-            </div>
-          </article>
-        </div>
-
-        <div class="inventory-summary">
-          <article>
-            <span>Fichiers analysés</span>
-
-            <strong>
-              {{
-                currentAnalysis.summary.inventory?.fileCount
-                ?? 0
-              }}
-            </strong>
-          </article>
-
-          <article>
-            <span>Taille analysée</span>
-
-            <strong>
-              {{
-                formatBytes(
-                  currentAnalysis.summary.inventory?.totalSizeBytes
-                )
-              }}
-            </strong>
-          </article>
-
-          <article>
-            <span>Fichiers ignorés</span>
-
-            <strong>
-              {{
-                currentAnalysis.summary.inventory?.ignoredFileCount
-                ?? 0
-              }}
-            </strong>
-          </article>
-        </div>
-
-        @if (
-          (
-            currentAnalysis.summary.warnings
-            ?? []
-          ).length > 0
-        ) {
-          <div class="warning-panel">
-            <h3>
-              Points à vérifier
-            </h3>
-
-            <div class="warning-panel__list">
-              @for (
-                warning of currentAnalysis.summary.warnings ?? [];
-                track warning
-              ) {
-                <p>
-                  <span>!</span>
-                  {{ warning }}
-                </p>
-              }
-            </div>
-          </div>
-        }
-      </section>
-
-      <section class="components-panel panel">
-        <header class="panel-heading">
-          <div>
-            <p class="section-label">
-              Applications détectées
-            </p>
-
-            <h2>
-              Composants du projet
-            </h2>
-
-            <p class="panel-description">
-              Vérifiez les technologies et corrigez uniquement les
-              informations qui ne correspondent pas à l’application.
-            </p>
-          </div>
-
-          <span class="count-badge">
-            {{ currentAnalysis.components.length }}
-          </span>
-        </header>
-
-        @if (componentError()) {
-          <div
-            class="alert alert--error"
-            role="alert"
-          >
-            <span class="alert__icon">
-              !
-            </span>
-
-            <p>{{ componentError() }}</p>
-          </div>
-        }
-
-        <div class="component-list">
-          @if (
-            currentAnalysis.components.length === 0
-          ) {
-            <div class="empty-state">
-              <span>?</span>
-
-              <div>
-                <strong>
-                  Aucun composant détecté
-                </strong>
-
-                <p>
-                  Vérifiez le contenu du repository ou le sous-dossier
-                  configuré dans le projet.
-                </p>
-              </div>
-            </div>
-          } @else {
-            @for (
-              component of currentAnalysis.components;
-              track component.id
-            ) {
-              <article class="component-card">
-                <header class="component-card__header">
-                  <div class="component-title">
-                    <span class="component-type">
-                      {{
-                        componentTypeLabel(
-                          component.componentType
-                        )
-                      }}
-                    </span>
-
-                    <div>
-                      <h3>
-                        {{ component.name }}
-                      </h3>
-
-                      <code>
-                        {{ component.rootPath }}
-                      </code>
-                    </div>
-                  </div>
-
-                  <div class="component-confidence">
-                    <strong>
-                      {{ component.confidence }} %
-                    </strong>
-
-                    <span>Confiance</span>
-                  </div>
+          @if (isLoadingProject()) {
+            <div class="state-card"><span class="spinner"></span><div><strong>Chargement du projet</strong><p>Lecture de la source et de l’environnement.</p></div></div>
+          } @else if (project(); as currentProject) {
+            <div class="configuration-grid">
+              <section class="panel source-card">
+                <header>
+                  <span class="source-icon">&lt;/&gt;</span>
+                  <div><p class="eyebrow">SOURCE DU PROJET</p><h3>{{ sourceDisplayName() }}</h3><p>{{ sourceTypeLabel() }} · {{ sourceBranchLabel() }}</p></div>
                 </header>
-
-                @if (
-                  editingComponentId() !== component.id
-                ) {
-                  <div class="component-card__body">
-                    <div class="technology-summary">
-                      <span class="technology-summary__icon">
-                        &lt;/&gt;
-                      </span>
-
-                      <div>
-                        <small>
-                          Technologies détectées
-                        </small>
-
-                        <strong>
-                          {{
-                            componentTechnology(
-                              component
-                            )
-                          }}
-                        </strong>
-                      </div>
-                    </div>
-
-                    <div class="component-information">
-                      <article>
-                        <span>Commande de build</span>
-
-                        <strong>
-                          {{
-                            displayValue(
-                              component.buildCommand
-                            )
-                          }}
-                        </strong>
-                      </article>
-
-                      <article>
-                        <span>Commande de démarrage</span>
-
-                        <strong>
-                          {{
-                            displayValue(
-                              component.startCommand
-                            )
-                          }}
-                        </strong>
-                      </article>
-
-                      <article>
-                        <span>Port détecté</span>
-
-                        <strong>
-                          {{
-                            displayValue(
-                              component.detectedPort
-                            )
-                          }}
-                        </strong>
-                      </article>
-                    </div>
-
-                    <div class="artifact-list">
-                      <article
-                        class="artifact-item"
-                        [class.artifact-item--missing]="
-                          !component.dockerfilePath
-                        "
-                      >
-                        <span class="artifact-item__status">
-                          {{
-                            component.dockerfilePath
-                              ? '✓'
-                              : '!'
-                          }}
-                        </span>
-
-                        <div>
-                          <small>Dockerfile</small>
-
-                          <strong>
-                            {{
-                              component.dockerfilePath
-                              ?? 'À générer'
-                            }}
-                          </strong>
-                        </div>
-                      </article>
-
-                      <article
-                        class="artifact-item"
-                        [class.artifact-item--missing]="
-                          !component.helmChartPath
-                        "
-                      >
-                        <span class="artifact-item__status">
-                          {{
-                            component.helmChartPath
-                              ? '✓'
-                              : '!'
-                          }}
-                        </span>
-
-                        <div>
-                          <small>Chart Helm</small>
-
-                          <strong>
-                            {{
-                              component.helmChartPath
-                              ?? 'À générer'
-                            }}
-                          </strong>
-                        </div>
-                      </article>
-
-                      <article
-                        class="artifact-item"
-                        [class.artifact-item--missing]="
-                          !component.deployable
-                        "
-                      >
-                        <span class="artifact-item__status">
-                          {{
-                            component.deployable
-                              ? '✓'
-                              : '!'
-                          }}
-                        </span>
-
-                        <div>
-                          <small>Déployable</small>
-
-                          <strong>
-                            {{
-                              component.deployable
-                                ? 'Oui'
-                                : 'Non'
-                            }}
-                          </strong>
-                        </div>
-                      </article>
-                    </div>
-
-                    <section class="evidence-section">
-                      <header>
-                        <h4>
-                          Preuves de détection
-                        </h4>
-
-                        <span>
-                          {{
-                            componentEvidence(component).length
-                          }}
-                        </span>
-                      </header>
-
-                      @if (
-                        componentEvidence(component).length === 0
-                      ) {
-                        <p class="empty-message">
-                          Aucune preuve détaillée n’a été enregistrée.
-                        </p>
-                      } @else {
-                        <div class="evidence-list">
-                          @for (
-                            evidence of componentEvidence(component);
-                            track evidence.file + evidence.message
-                          ) {
-                            <article class="evidence-item">
-                              <span
-                                class="evidence-item__indicator"
-                                [class.evidence-item__indicator--strong]="
-                                  evidence.strength === 'strong'
-                                "
-                              ></span>
-
-                              <div>
-                                <strong>
-                                  {{ evidence.message }}
-                                </strong>
-
-                                <code>
-                                  {{ evidence.file }}
-                                </code>
-                              </div>
-                            </article>
-                          }
-                        </div>
-                      }
-                    </section>
-                  </div>
-
-                  <footer class="component-card__footer">
-                    @if (analysisEditable()) {
-                      <button
-                        class="button button--secondary"
-                        type="button"
-                        (click)="
-                          startComponentEdit(
-                            component
-                          )
-                        "
-                      >
-                        Modifier le composant
-                      </button>
-                    }
-                  </footer>
-                } @else if (componentDraft(); as draft) {
-                  <div class="component-edit">
-                    <header>
-                      <div>
-                        <h4>
-                          Modifier le composant
-                        </h4>
-
-                        <p>
-                          Corrigez uniquement les informations mal détectées.
-                        </p>
-                      </div>
-                    </header>
-
-                    <div class="edit-form">
-                      <label class="form-control">
-                        <span>Nom</span>
-
-                        <input
-                          type="text"
-                          [(ngModel)]="draft.name"
-                          [ngModelOptions]="{
-                            standalone: true
-                          }"
-                        />
-                      </label>
-
-                      <label class="form-control">
-                        <span>Type</span>
-
-                        <select
-                          [(ngModel)]="draft.componentType"
-                          [ngModelOptions]="{
-                            standalone: true
-                          }"
-                        >
-                          <option value="frontend">
-                            Frontend
-                          </option>
-
-                          <option value="backend">
-                            Backend
-                          </option>
-
-                          <option value="fullstack">
-                            Fullstack
-                          </option>
-
-                          <option value="worker">
-                            Worker
-                          </option>
-
-                          <option value="container">
-                            Conteneur
-                          </option>
-
-                          <option value="unknown">
-                            À confirmer
-                          </option>
-                        </select>
-                      </label>
-
-                      <label class="form-control">
-                        <span>Framework</span>
-
-                        <input
-                          type="text"
-                          [(ngModel)]="draft.framework"
-                          [ngModelOptions]="{
-                            standalone: true
-                          }"
-                          placeholder="Non détecté"
-                        />
-                      </label>
-
-                      <label class="form-control">
-                        <span>Runtime</span>
-
-                        <input
-                          type="text"
-                          [(ngModel)]="draft.runtime"
-                          [ngModelOptions]="{
-                            standalone: true
-                          }"
-                          placeholder="Non détecté"
-                        />
-                      </label>
-
-                      <label class="form-control">
-                        <span>Gestionnaire de paquets</span>
-
-                        <input
-                          type="text"
-                          [(ngModel)]="draft.packageManager"
-                          [ngModelOptions]="{
-                            standalone: true
-                          }"
-                          placeholder="Non détecté"
-                        />
-                      </label>
-
-                      <label class="form-control">
-                        <span>Port</span>
-
-                        <input
-                          type="number"
-                          min="1"
-                          max="65535"
-                          [(ngModel)]="draft.detectedPort"
-                          [ngModelOptions]="{
-                            standalone: true
-                          }"
-                        />
-                      </label>
-
-                      <label class="form-control form-control--wide">
-                        <span>Commande de build</span>
-
-                        <input
-                          type="text"
-                          [(ngModel)]="draft.buildCommand"
-                          [ngModelOptions]="{
-                            standalone: true
-                          }"
-                          placeholder="Non détectée"
-                        />
-                      </label>
-
-                      <label class="form-control form-control--wide">
-                        <span>Commande de démarrage</span>
-
-                        <input
-                          type="text"
-                          [(ngModel)]="draft.startCommand"
-                          [ngModelOptions]="{
-                            standalone: true
-                          }"
-                          placeholder="Non détectée"
-                        />
-                      </label>
-                    </div>
-
-                    <label class="deployable-option">
-                      <input
-                        type="checkbox"
-                        [(ngModel)]="draft.deployable"
-                        [ngModelOptions]="{
-                          standalone: true
-                        }"
-                      />
-
-                      <span>
-                        Ce composant doit être déployé
-                      </span>
-                    </label>
-
-                    <footer class="edit-footer">
-                      <button
-                        class="button button--secondary"
-                        type="button"
-                        [disabled]="
-                          savingComponentId() === draft.id
-                        "
-                        (click)="cancelComponentEdit()"
-                      >
-                        Annuler
-                      </button>
-
-                      <button
-                        class="button button--primary"
-                        type="button"
-                        [disabled]="
-                          savingComponentId() === draft.id
-                        "
-                        (click)="saveComponent()"
-                      >
-                        {{
-                          savingComponentId() === draft.id
-                            ? 'Enregistrement…'
-                            : 'Enregistrer'
-                        }}
-                      </button>
-                    </footer>
-                  </div>
+                <dl>
+                  <div><dt>Type</dt><dd>{{ sourceTypeLabel() }}</dd></div>
+                  <div><dt>Transport</dt><dd>{{ currentProject.source.transport }}</dd></div>
+                  <div><dt>Branche</dt><dd>{{ currentProject.source.branch }}</dd></div>
+                  <div><dt>Sous-dossier</dt><dd>{{ currentProject.source.subdirectory ?? 'Racine' }}</dd></div>
+                  <div><dt>Visibilité</dt><dd>{{ currentProject.source.visibility }}</dd></div>
+                  <div><dt>Credential</dt><dd>{{ currentProject.source.credentialConfigured ? 'Configuré' : 'Non configuré' }}</dd></div>
+                </dl>
+                @if (currentProject.source.repositoryUrl) {
+                  <div class="code-box">{{ currentProject.source.repositoryUrl }}</div>
                 }
-              </article>
-            }
+              </section>
+
+              <section class="panel environment-card">
+                <header><span class="environment-icon">ENV</span><div><p class="eyebrow">ENVIRONNEMENT PAR DÉFAUT</p><h3>{{ currentProject.defaultEnvironment?.name ?? 'Non sélectionné' }}</h3><p>Cible utilisée pour préparer le contrat.</p></div></header>
+                @if (currentProject.defaultEnvironment; as environment) {
+                  <dl>
+                    <div><dt>Type</dt><dd>{{ environment.environmentType }}</dd></div>
+                    <div><dt>Namespace</dt><dd>{{ environment.namespace }}</dd></div>
+                    <div><dt>Identifiant</dt><dd>#{{ environment.id }}</dd></div>
+                    <div><dt>Projet</dt><dd>{{ currentProject.status }}</dd></div>
+                  </dl>
+                } @else {
+                  <div class="inline-warning">Aucun environnement par défaut n’est associé au projet.</div>
+                }
+              </section>
+            </div>
+
+            <section class="panel readiness-card">
+              <div>
+                <p class="eyebrow">PRÉREQUIS DE L’ANALYSE</p>
+                <h3>Le projet est prêt à être analysé</h3>
+                <p>SApixi clonera le repository ou extraira l’archive dans un espace temporaire.</p>
+              </div>
+              <ul>
+                <li [class.ok]="currentProject.source.status === 'ready'">Source enregistrée</li>
+                <li [class.ok]="currentProject.defaultEnvironment !== null">Environnement sélectionné</li>
+                <li [class.ok]="currentProject.source.type === 'zip' || currentProject.source.credentialConfigured || currentProject.source.visibility === 'public'">Accès à la source disponible</li>
+              </ul>
+            </section>
           }
-        </div>
-      </section>
+        </section>
+      }
 
-      <section class="preparation-layout">
-        <article class="preparation-card panel">
-          <header class="preparation-card__header">
-            <span class="preparation-card__icon">
-              IA
-            </span>
-
+      @case ('analysis') {
+        <section class="phase-view">
+          <header class="phase-header phase-header--actions">
+            <div class="phase-header__number">2</div>
             <div>
-              <h2>
-                Analyse complémentaire par IA
-              </h2>
-
-              <p>
-                Contexte technique préparé sans exposer les secrets du projet.
-              </p>
+              <p class="eyebrow">PHASE 2 · ANALYSE</p>
+              <h2>Analyser le code et confirmer les composants</h2>
+              <p>Inventaire, détection des technologies, commandes, ports et éléments de déploiement existants.</p>
             </div>
-          </header>
-
-          <div class="preparation-card__value">
-            <strong>
-              {{
-                currentAnalysis.summary.aiContext?.selectedFileCount
-                ?? 0
-              }}
-            </strong>
-
-            <span>
-              fichiers techniques sélectionnés
-            </span>
-          </div>
-
-          <p class="preparation-card__note">
-            {{
-              currentAnalysis.summary.aiContext?.message
-              ?? 'Le contexte IA sera utilisé dans une prochaine étape.'
-            }}
-          </p>
-        </article>
-
-        <article class="preparation-card panel">
-          <header class="preparation-card__header">
-            <span class="preparation-card__icon">
-              CD
-            </span>
-
-            <div>
-              <h2>
-                Préparation du déploiement
-              </h2>
-
-              <p>
-                État de Docker, Helm, GitOps et de la future Application Argo CD.
-              </p>
-            </div>
-          </header>
-
-          <div class="preparation-card__value">
-            <strong>
-              {{ missingArtifactCount() }}
-            </strong>
-
-            <span>
-              artefacts restant à préparer
-            </span>
-          </div>
-
-          <p class="preparation-card__note">
-            {{
-              currentAnalysis.summary.deploymentReadiness?.message
-              ?? 'Le détail de préparation n’est pas disponible.'
-            }}
-          </p>
-        </article>
-      </section>
-
-      <footer class="confirmation-panel panel">
-        <div class="confirmation-panel__content">
-          <span
-            class="confirmation-icon"
-            [class.confirmation-icon--success]="
-              analysisConfirmed()
-            "
-          >
-            {{
-              analysisConfirmed()
-                ? '✓'
-                : '!'
-            }}
-          </span>
-
-          <div>
-            @if (analysisConfirmed()) {
-              <p class="section-label">
-                Phase 2 confirmée
-              </p>
-
-              <h2>
-                Le projet est prêt pour la génération
-              </h2>
-
-              <p>
-                La prochaine phase préparera Docker, Helm, GitOps
-                et l’Application Argo CD.
-              </p>
-            } @else {
-              <p class="section-label">
-                Confirmation requise
-              </p>
-
-              <h2>
-                Vérifiez et confirmez le rapport
-              </h2>
-
-              <p>
-                Confirmez les composants détectés avant de passer
-                à la génération des artefacts.
-              </p>
-            }
-          </div>
-        </div>
-
-        <div class="confirmation-panel__actions">
-          @if (confirmationError()) {
-            <div
-              class="alert alert--error"
-              role="alert"
-            >
-              <p>{{ confirmationError() }}</p>
-            </div>
-          }
-
-          @if (
-            currentAnalysis.status === 'completed'
-          ) {
             <button
               class="button button--primary button--large"
               type="button"
-              [disabled]="!canConfirm()"
-              (click)="confirmAnalysis()"
+              [disabled]="analysisRunning() || isStartingAnalysis()"
+              (click)="startAnalysis()"
             >
-              {{
-                isConfirming()
-                  ? 'Confirmation…'
-                  : 'Confirmer l’analyse'
-              }}
+              ▶ {{ analysisActionLabel() }}
             </button>
-          } @else if (
-            currentAnalysis.status === 'confirmed'
-          ) {
-            <button
-              class="button button--success button--large"
-              type="button"
-              disabled
-            >
-              ✓ Analyse confirmée
-            </button>
+          </header>
+
+          @if (isLoadingAnalysis()) {
+            <div class="state-card"><span class="spinner"></span><div><strong>Chargement de l’analyse</strong><p>Lecture de la dernière exécution.</p></div></div>
+          } @else if (analysis(); as currentAnalysis) {
+            <section class="panel analysis-execution">
+              <header>
+                <div>
+                  <p class="eyebrow">EXÉCUTION #{{ currentAnalysis.id }}</p>
+                  <h3>{{ analysisStatusLabel(currentAnalysis.status) }}</h3>
+                  <p>{{ currentStepLabel(currentAnalysis.currentStep) }}</p>
+                </div>
+                <div class="analysis-meta">
+                  <span>Version <strong>{{ shortVersion(currentAnalysis.analyzedCommitSha ?? currentAnalysis.branchHeadSha) }}</strong></span>
+                  <span>Progression <strong>{{ currentAnalysis.progress }} %</strong></span>
+                  <span>Composants <strong>{{ currentAnalysis.components.length }}</strong></span>
+                </div>
+              </header>
+
+              <div class="progress-track"><span [style.width.%]="currentAnalysis.progress"></span></div>
+
+              <div class="analysis-step-grid">
+                @for (step of analysisSteps; track step.key) {
+                  <article class="analysis-step" [class.analysis-step--active]="stepState(step.key) === 'active'" [class.analysis-step--completed]="stepState(step.key) === 'completed'" [class.analysis-step--failed]="stepState(step.key) === 'failed'">
+                    <span>{{ stepState(step.key) === 'completed' ? '✓' : stepState(step.key) === 'failed' ? '!' : '•' }}</span>
+                    <div><strong>{{ step.label }}</strong><small>{{ step.description }}</small></div>
+                  </article>
+                }
+              </div>
+
+              @if (currentAnalysis.error) {
+                <div class="alert alert--error"><span>!</span><div><strong>{{ currentAnalysis.error.code }}</strong><p>{{ currentAnalysis.error.message }}</p></div></div>
+              }
+            </section>
+
+            @if (currentAnalysis.status === 'completed' || currentAnalysis.status === 'confirmed') {
+              <div class="analysis-kpis">
+                <article><span>Confiance</span><strong>{{ globalConfidence() }} %</strong></article>
+                <article><span>Déployables</span><strong>{{ deployableComponents().length }}</strong></article>
+                <article><span>Technologies</span><strong>{{ technologyCount() }}</strong></article>
+                <article><span>À générer</span><strong>{{ missingArtifactCount() }}</strong></article>
+              </div>
+
+              <section class="component-analysis-list">
+                <header class="section-heading"><div><p class="eyebrow">COMPOSANTS DÉTECTÉS</p><h3>Vérifier les résultats de l’analyse</h3></div><span>{{ currentAnalysis.components.length }} composant(s)</span></header>
+
+                @for (component of currentAnalysis.components; track component.id) {
+                  <article class="panel analysis-component">
+                    <header>
+                      <span class="component-type-icon">{{ component.componentType === 'frontend' ? 'UI' : component.componentType === 'backend' ? 'API' : '&lt;/&gt;' }}</span>
+                      <div class="component-main"><h3>{{ component.name }}</h3><p>{{ component.rootPath }}</p></div>
+                      <span class="technology-chip">{{ componentTechnology(component) }}</span>
+                      <span class="status-chip" [class.status-chip--success]="component.deployable">{{ component.deployable ? 'Déployable' : 'Ignoré' }}</span>
+                      @if (analysisEditable()) {
+                        <button class="button button--secondary button--small" type="button" (click)="startComponentEdit(component)">Modifier</button>
+                      }
+                    </header>
+
+                    <div class="component-facts">
+                      <article><span>Type</span><strong>{{ componentTypeLabel(component.componentType) }}</strong></article>
+                      <article><span>Port</span><strong>{{ component.detectedPort ?? 'Non détecté' }}</strong></article>
+                      <article><span>Build</span><strong>{{ displayValue(component.buildCommand) }}</strong></article>
+                      <article><span>Démarrage</span><strong>{{ displayValue(component.startCommand) }}</strong></article>
+                    </div>
+
+                    @if (editingComponentId() === component.id && componentDraft(); as draft) {
+                      <div class="component-edit-form">
+                        <div class="form-grid form-grid--three">
+                          <div class="field"><label>Nom</label><input type="text" [(ngModel)]="draft.name" /></div>
+                          <div class="field"><label>Type</label><input type="text" [(ngModel)]="draft.componentType" /></div>
+                          <div class="field"><label>Runtime</label><input type="text" [(ngModel)]="draft.runtime" /></div>
+                          <div class="field"><label>Framework</label><input type="text" [(ngModel)]="draft.framework" /></div>
+                          <div class="field"><label>Package manager</label><input type="text" [(ngModel)]="draft.packageManager" /></div>
+                          <div class="field"><label>Port</label><input type="number" [(ngModel)]="draft.detectedPort" /></div>
+                          <div class="field field--full"><label>Commande de build</label><input type="text" [(ngModel)]="draft.buildCommand" /></div>
+                          <div class="field field--full"><label>Commande de démarrage</label><input type="text" [(ngModel)]="draft.startCommand" /></div>
+                          <label class="switch-line field--full"><input type="checkbox" [(ngModel)]="draft.deployable" />Inclure ce composant</label>
+                        </div>
+                        @if (componentError()) { <p class="form-error">{{ componentError() }}</p> }
+                        <div class="edit-actions"><button class="button button--secondary" type="button" (click)="cancelComponentEdit()">Annuler</button><button class="button button--primary" type="button" [disabled]="savingComponentId() === component.id" (click)="saveComponent()">{{ savingComponentId() === component.id ? 'Enregistrement…' : 'Enregistrer' }}</button></div>
+                      </div>
+                    }
+
+                    @if (componentEvidence(component).length > 0) {
+                      <details class="evidence-details">
+                        <summary>Voir les preuves de détection ({{ componentEvidence(component).length }})</summary>
+                        @for (evidence of componentEvidence(component); track evidence.file + evidence.message) {
+                          <div class="evidence-row"><span></span><div><strong>{{ evidence.message }}</strong><code>{{ evidence.file }}</code></div></div>
+                        }
+                      </details>
+                    }
+                  </article>
+                }
+              </section>
+
+              <footer class="panel confirmation-card" [class.confirmation-card--success]="analysisConfirmed()">
+                <div class="confirmation-content">
+                  <span>{{ analysisConfirmed() ? '✓' : '!' }}</span>
+                  <div>
+                    <p class="eyebrow">{{ analysisConfirmed() ? 'ANALYSE CONFIRMÉE' : 'CONFIRMATION REQUISE' }}</p>
+                    <h3>{{ analysisConfirmed() ? 'Le contrat peut maintenant être préparé' : 'Valider les composants détectés' }}</h3>
+                    <p>{{ analysisConfirmed() ? 'La phase Contrat est déverrouillée.' : 'Confirmez cette analyse pour figer la version du code et les composants.' }}</p>
+                  </div>
+                </div>
+
+                @if (confirmationError()) {
+                  <p class="form-error">{{ confirmationError() }}</p>
+                }
+
+                @if (currentAnalysis.status === 'completed') {
+                  <button class="button button--primary button--large" type="button" [disabled]="!canConfirm()" (click)="confirmAnalysis()">{{ isConfirming() ? 'Confirmation…' : 'Confirmer l’analyse' }}</button>
+                } @else if (currentAnalysis.status === 'confirmed') {
+                  <button class="button button--success button--large" type="button" disabled>✓ Analyse confirmée</button>
+                }
+              </footer>
+            }
+          } @else {
+            <div class="state-card"><span>✦</span><div><strong>Aucune analyse disponible</strong><p>Lancez l’analyse de la version actuelle du projet.</p></div></div>
           }
-        </div>
-      </footer>
+        </section>
+      }
+
+      @case ('contract') {
+        @if (projectId(); as currentProjectId) {
+          <app-project-workflow
+            [projectId]="currentProjectId"
+            [screen]="'contract'"
+            [refreshToken]="workflowRefreshToken()"
+            (contractConfirmedChange)="onContractConfirmed($event)"
+            (generationStatusChange)="onGenerationStatus($event)"
+          ></app-project-workflow>
+        }
+      }
+
+      @case ('generation') {
+        @if (projectId(); as currentProjectId) {
+          <app-project-workflow
+            [projectId]="currentProjectId"
+            [screen]="'generation'"
+            [refreshToken]="workflowRefreshToken()"
+            (contractConfirmedChange)="onContractConfirmed($event)"
+            (generationStatusChange)="onGenerationStatus($event)"
+          ></app-project-workflow>
+        }
+      }
+
+      @case ('review') {
+        @if (projectId(); as currentProjectId) {
+          <app-project-workflow
+            [projectId]="currentProjectId"
+            [screen]="'review'"
+            [refreshToken]="workflowRefreshToken()"
+            (contractConfirmedChange)="onContractConfirmed($event)"
+            (generationStatusChange)="onGenerationStatus($event)"
+          ></app-project-workflow>
+        }
+      }
     }
-  }
+  </main>
+
+  <footer class="phase-footer">
+    <button
+      class="button button--secondary"
+      type="button"
+      [disabled]="activePhase() === 'configuration'"
+      (click)="goToPreviousPhase()"
+    >
+      ← Phase précédente
+    </button>
+
+    <div>
+      <span>Phase {{ activePhaseDefinition().number }} sur {{ phases.length }}</span>
+      <strong>{{ activePhaseDefinition().label }}</strong>
+    </div>
+
+    @if (activePhase() !== 'review') {
+      <button
+        class="button button--primary"
+        type="button"
+        [disabled]="!phaseUnlocked(phases[activePhaseNumber()].key)"
+        (click)="goToNextPhase()"
+      >
+        Phase suivante →
+      </button>
+    } @else {
+      <button class="button button--primary" type="button" [disabled]="workflowGenerationStatus() !== 'confirmed'">
+        Passer aux déploiements →
+      </button>
+    }
+  </footer>
 </section>
