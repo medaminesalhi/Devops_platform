@@ -55,37 +55,62 @@ from app.projects.routes import (
     projects_blueprint,
 )
 
+from app.workflow import (
+    register_workflow_commands,
+    workflow_blueprint,
+)
+
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(
+        __name__
+    )
+
 
     app.config.from_object(
         Config
     )
 
-    if not app.config["SECRET_KEY"]:
+
+    if not app.config[
+        "SECRET_KEY"
+    ]:
         raise RuntimeError(
-            "SECRET_KEY n'est pas configurée."
+            (
+                "SECRET_KEY "
+                "n'est pas configurée."
+            )
         )
 
-    if not app.config["DATABASE_URL"]:
+
+    if not app.config[
+        "DATABASE_URL"
+    ]:
         raise RuntimeError(
-            "DATABASE_URL n'est pas configurée."
+            (
+                "DATABASE_URL "
+                "n'est pas configurée."
+            )
         )
+
 
     if not app.config[
         "CREDENTIAL_ENCRYPTION_KEY"
     ]:
         raise RuntimeError(
-            "CREDENTIAL_ENCRYPTION_KEY "
-            "n'est pas configurée."
+            (
+                "CREDENTIAL_ENCRYPTION_KEY "
+                "n'est pas configurée."
+            )
         )
+
 
     archive_root_value = (
         app.config.get(
             "PROJECT_ARCHIVE_ROOT"
         )
     )
+
 
     if archive_root_value:
         Path(
@@ -95,46 +120,73 @@ def create_app() -> Flask:
             exist_ok=True,
         )
 
+
     app.register_blueprint(
         auth_blueprint,
         url_prefix="/api/auth",
     )
+
 
     app.register_blueprint(
         dashboard_blueprint,
         url_prefix="/api/dashboard",
     )
 
+
     app.register_blueprint(
         integrations_blueprint,
         url_prefix="/api/integrations",
     )
+
 
     app.register_blueprint(
         infrastructure_blueprint,
         url_prefix="/api/infrastructure",
     )
 
+
     app.register_blueprint(
         projects_blueprint,
         url_prefix="/api/projects",
     )
+
 
     app.register_blueprint(
         analysis_blueprint,
         url_prefix="/api/projects",
     )
 
+
+    # Anciennes routes conservées
+    # pendant la transition.
     app.register_blueprint(
         generation_blueprint,
         url_prefix="/api/projects",
     )
 
-    register_commands(app)
+
+    # Nouveau workflow sécurisé
+    # des phases 2, 3 et 4.
+    app.register_blueprint(
+        workflow_blueprint,
+        url_prefix="/api/projects",
+    )
+
+
+    register_commands(
+        app
+    )
+
+
+    register_workflow_commands(
+        app
+    )
+
 
     register_integration_commands(
         app
     )
+
 
     @app.errorhandler(
         RequestEntityTooLarge
@@ -149,11 +201,13 @@ def create_app() -> Flask:
             )
         )
 
+
         maximum_megabytes = round(
             maximum_bytes
             / 1024
             / 1024
         )
+
 
         return (
             jsonify(
@@ -171,10 +225,14 @@ def create_app() -> Flask:
                     },
                 }
             ),
+
             413,
         )
 
-    @app.get("/api/health")
+
+    @app.get(
+        "/api/health"
+    )
     def health():
         if not database_is_available():
             return (
@@ -186,14 +244,17 @@ def create_app() -> Flask:
                             "code":
                                 "DATABASE_UNAVAILABLE",
 
-                            "message":
-                                "PostgreSQL est "
-                                "inaccessible.",
+                            "message": (
+                                "PostgreSQL "
+                                "est inaccessible."
+                            ),
                         },
                     }
                 ),
+
                 503,
             )
+
 
         return jsonify(
             {
@@ -216,5 +277,6 @@ def create_app() -> Flask:
                 },
             }
         )
+
 
     return app
