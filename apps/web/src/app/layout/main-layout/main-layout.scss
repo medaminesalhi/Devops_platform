@@ -1,16 +1,31 @@
 :host {
   display: block;
 
+  width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
 }
+
+/* =========================================================
+   STRUCTURE PRINCIPALE
+   ========================================================= */
 
 .app-shell {
   display: grid;
+
+  /*
+   * La première colonne utilise exactement la même largeur
+   * que la variable globale --sidebar-width.
+   */
   grid-template-columns:
-    var(--sidebar-width)
+    var(--sidebar-width, 19rem)
     minmax(0, 1fr);
 
+  width: 100%;
   min-height: 100vh;
+  min-height: 100dvh;
+
+  overflow-x: clip;
 
   background: var(--page-background);
 
@@ -25,7 +40,7 @@
 }
 
 /* =========================================================
-   SIDEBAR
+   CONTENEUR DE LA SIDEBAR
    ========================================================= */
 
 .app-shell__sidebar {
@@ -33,8 +48,11 @@
   top: 0;
   z-index: 50;
 
-  width: var(--sidebar-width);
+  width: var(--sidebar-width, 19rem);
+  min-width: 0;
+
   height: 100vh;
+  height: 100dvh;
 
   overflow: hidden;
 
@@ -62,12 +80,22 @@
 
 .app-shell__workspace {
   min-width: 0;
+
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .app-shell__content {
+  min-width: 0;
+
   min-height:
     calc(
       100vh - var(--topbar-height)
+    );
+
+  min-height:
+    calc(
+      100dvh - var(--topbar-height)
     );
 
   padding: 1.8rem 2rem 2.4rem;
@@ -82,7 +110,39 @@
 }
 
 /* =========================================================
-   RESPONSIVE
+   TABLETTE
+   Sidebar compacte entre 901 px et 1200 px.
+   ========================================================= */
+
+@media (max-width: 1200px) and (min-width: 901px) {
+  .app-shell {
+    grid-template-columns:
+      6.25rem
+      minmax(0, 1fr);
+  }
+
+  .app-shell--sidebar-hidden {
+    grid-template-columns:
+      0
+      minmax(0, 1fr);
+  }
+
+  .app-shell__sidebar {
+    width: 6.25rem;
+  }
+
+  .app-shell__sidebar--hidden {
+    width: 0;
+  }
+
+  .app-shell__content {
+    padding-inline: 1.35rem;
+  }
+}
+
+/* =========================================================
+   MOBILE
+   La sidebar devient un panneau superposé.
    ========================================================= */
 
 @media (max-width: 900px) {
@@ -91,30 +151,25 @@
     display: block;
   }
 
-  .app-shell__sidebar {
+  .app-shell__sidebar,
+  .app-shell__sidebar--hidden {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 1000;
 
-    width:
-      min(
-        84vw,
-        var(--sidebar-width)
-      );
+    width: min(88vw, 20rem);
 
     height: 100vh;
+    height: 100dvh;
 
     box-shadow:
       1.2rem 0 3rem
-      rgba(17, 36, 42, 0.2);
+      rgba(17, 36, 42, 0.22);
   }
 
   .app-shell__sidebar--hidden {
-    width:
-      min(
-        84vw,
-        var(--sidebar-width)
-      );
+    opacity: 1;
+    pointer-events: none;
 
     transform: translateX(-105%);
   }
@@ -126,17 +181,18 @@
 
     display: block;
 
+    padding: 0;
     border: 0;
 
     background:
-      rgba(11, 29, 35, 0.48);
+      rgba(11, 29, 35, 0.5);
 
     backdrop-filter: blur(0.15rem);
   }
 
   .app-shell__content {
     padding:
-      1.3rem
+      1.25rem
       1rem
       2rem;
   }

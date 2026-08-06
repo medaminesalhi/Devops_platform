@@ -1,13 +1,10 @@
 :host {
   display: block;
 
-  flex: 0 0 286px;
-
-  width: 286px;
-  min-width: 286px;
-  max-width: 286px;
-
-  height: 100vh;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 100%;
 }
 
 /* =========================================================
@@ -15,20 +12,20 @@
    ========================================================= */
 
 .sidebar {
-  position: sticky;
-  top: 0;
-
   box-sizing: border-box;
 
   display: flex;
   flex-direction: column;
 
   width: 100%;
+  min-width: 0;
   height: 100vh;
+  height: 100dvh;
 
-  padding: 27px 20px 21px;
+  padding: 1.7rem 1.25rem 1.35rem;
 
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
 
   border-right: 1px solid rgba(148, 163, 184, 0.13);
 
@@ -46,6 +43,22 @@
     );
 
   color: #f8fafc;
+
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.24) transparent;
+}
+
+.sidebar::-webkit-scrollbar {
+  width: 0.35rem;
+}
+
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.24);
 }
 
 /* =========================================================
@@ -56,23 +69,23 @@
   display: flex;
   align-items: center;
 
-  gap: 14px;
+  gap: 0.9rem;
 
-  padding: 3px 8px 32px;
+  min-width: 0;
+  padding: 0.2rem 0.5rem 2rem;
 }
 
 .brand__logo {
-  width: 51px;
-  height: 51px;
+  width: 3.2rem;
+  height: 3.2rem;
 
-  flex: 0 0 51px;
+  flex: 0 0 3.2rem;
 
-  border-radius: 15px;
+  border-radius: 0.95rem;
 
   object-fit: cover;
 
-  box-shadow:
-    0 12px 28px rgba(113, 185, 0, 0.28);
+  box-shadow: 0 0.75rem 1.75rem rgba(113, 185, 0, 0.28);
 }
 
 .brand__identity {
@@ -89,22 +102,22 @@
 
   color: #ffffff;
 
-  font-size: 15px;
+  font-size: 0.95rem;
   font-weight: 800;
-  letter-spacing: 0.17em;
+  letter-spacing: 0.15em;
 
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .brand__identity span {
-  margin-top: 6px;
+  margin-top: 0.35rem;
 
   overflow: hidden;
 
   color: #8aa1a8;
 
-  font-size: 11px;
+  font-size: 0.72rem;
   font-weight: 600;
 
   text-overflow: ellipsis;
@@ -119,17 +132,17 @@
   display: flex;
   flex-direction: column;
 
-  gap: 7px;
+  gap: 0.45rem;
 
   min-width: 0;
 }
 
 .navigation__title {
-  margin: 0 12px 12px;
+  margin: 0 0.75rem 0.75rem;
 
   color: #638088;
 
-  font-size: 11px;
+  font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -141,16 +154,16 @@
   display: flex;
   align-items: center;
 
-  gap: 13px;
+  gap: 0.8rem;
 
   width: 100%;
   min-width: 0;
-  min-height: 53px;
+  min-height: 3.35rem;
 
-  padding: 8px 12px;
+  padding: 0.5rem 0.75rem;
 
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: 0.8rem;
 
   background: transparent;
   color: #9fb4ba;
@@ -158,7 +171,7 @@
   cursor: pointer;
 
   font-family: inherit;
-  font-size: 14px;
+  font-size: 0.9rem;
   font-weight: 600;
 
   text-align: left;
@@ -172,7 +185,7 @@
 }
 
 .navigation-item:hover:not(:disabled) {
-  transform: translateX(3px);
+  transform: translateX(0.2rem);
 
   border-color: rgba(148, 163, 184, 0.12);
 
@@ -181,12 +194,12 @@
 }
 
 .navigation-item--active {
-  border-color: rgba(124, 205, 0, 0.25);
+  border-color: rgba(124, 205, 0, 0.28);
 
   background:
     linear-gradient(
       90deg,
-      rgba(124, 205, 0, 0.16),
+      rgba(124, 205, 0, 0.17),
       rgba(124, 205, 0, 0.06)
     );
 
@@ -195,34 +208,34 @@
 
 .navigation-item--disabled {
   cursor: default;
-  opacity: 0.63;
+  opacity: 0.55;
 }
 
 .navigation-item__icon {
   display: grid;
 
-  width: 34px;
-  height: 34px;
+  width: 2.15rem;
+  height: 2.15rem;
 
-  flex: 0 0 34px;
+  flex: 0 0 2.15rem;
 
   place-items: center;
 
   border: 1px solid rgba(148, 163, 184, 0.15);
-  border-radius: 10px;
+  border-radius: 0.7rem;
 
   background: rgba(255, 255, 255, 0.035);
 
   color: #a3b6bc;
 
-  font-size: 15px;
+  font-size: 0.95rem;
   font-weight: 800;
 }
 
 .navigation-item--active .navigation-item__icon {
-  border-color: rgba(124, 205, 0, 0.29);
+  border-color: rgba(124, 205, 0, 0.32);
 
-  background: rgba(124, 205, 0, 0.1);
+  background: rgba(124, 205, 0, 0.11);
   color: #bcec6f;
 }
 
@@ -239,14 +252,14 @@
 .navigation-item__badge {
   flex: 0 0 auto;
 
-  padding: 4px 8px;
+  padding: 0.25rem 0.5rem;
 
   border-radius: 999px;
 
   background: rgba(148, 163, 184, 0.1);
   color: #82989e;
 
-  font-size: 9px;
+  font-size: 0.6rem;
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -260,18 +273,19 @@
   box-sizing: border-box;
 
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 36px;
+  grid-template-columns: 2.75rem minmax(0, 1fr) 2.25rem;
   align-items: center;
 
-  gap: 11px;
+  gap: 0.7rem;
 
   width: 100%;
+  min-width: 0;
 
   margin-top: auto;
-  padding: 15px 13px;
+  padding: 0.9rem 0.8rem;
 
   border: 1px solid rgba(148, 163, 184, 0.14);
-  border-radius: 14px;
+  border-radius: 0.9rem;
 
   background: rgba(255, 255, 255, 0.04);
 }
@@ -279,20 +293,18 @@
 .user-avatar {
   display: grid;
 
-  width: 44px;
-  height: 44px;
-
-  flex: 0 0 44px;
+  width: 2.75rem;
+  height: 2.75rem;
 
   place-items: center;
 
   border: 1px solid rgba(124, 205, 0, 0.3);
-  border-radius: 12px;
+  border-radius: 0.75rem;
 
   background: rgba(124, 205, 0, 0.11);
   color: #bced72;
 
-  font-size: 12px;
+  font-size: 0.75rem;
   font-weight: 800;
 }
 
@@ -312,30 +324,28 @@
 
 .user-information strong {
   color: #edf5f6;
-
-  font-size: 13px;
+  font-size: 0.82rem;
 }
 
 .user-information span {
-  margin-top: 5px;
+  margin-top: 0.3rem;
 
   color: #769098;
-
-  font-size: 11px;
+  font-size: 0.7rem;
 }
 
 .logout-button {
   display: grid;
 
-  width: 36px;
-  height: 36px;
+  width: 2.25rem;
+  height: 2.25rem;
 
   padding: 0;
 
   place-items: center;
 
   border: 0;
-  border-radius: 10px;
+  border-radius: 0.65rem;
 
   background: transparent;
   color: #829da4;
@@ -343,7 +353,7 @@
   cursor: pointer;
 
   font-family: inherit;
-  font-size: 18px;
+  font-size: 1.1rem;
 
   transition:
     background-color 150ms ease,
@@ -356,35 +366,17 @@
 }
 
 /* =========================================================
-   TABLETTE
+   TABLETTE : affichage compact
    ========================================================= */
 
-@media (max-width: 1200px) {
-  :host {
-    flex: 0 0 96px;
-
-    width: 96px;
-    min-width: 96px;
-    max-width: 96px;
-  }
-
+@media (max-width: 1200px) and (min-width: 901px) {
   .sidebar {
-    width: 100%;
-
-    padding-inline: 16px;
+    padding-inline: 1rem;
   }
 
   .brand {
     justify-content: center;
-
     padding-inline: 0;
-  }
-
-  .brand__logo {
-    width: 51px;
-    height: 51px;
-
-    flex-basis: 51px;
   }
 
   .brand__identity,
@@ -398,7 +390,6 @@
 
   .navigation-item {
     justify-content: center;
-
     padding-inline: 0;
   }
 
@@ -411,46 +402,41 @@
 }
 
 /* =========================================================
-   MOBILE
+   MOBILE : panneau complet, tous les libellés restent visibles
    ========================================================= */
 
-@media (max-width: 760px) {
-  :host {
-    flex: 0 0 auto;
-
-    width: 100%;
-    min-width: 0;
-    max-width: none;
-
-    height: auto;
-  }
-
+@media (max-width: 900px) {
   .sidebar {
-    position: static;
-
-    width: 100%;
-    height: auto;
-
-    padding: 15px 18px;
-
-    overflow: visible;
-
-    border-right: 0;
-    border-bottom: 1px solid rgba(148, 163, 184, 0.13);
+    padding: 1.25rem 1rem;
+    border-right: 1px solid rgba(148, 163, 184, 0.13);
   }
 
   .brand {
     justify-content: flex-start;
-
-    padding: 0;
   }
 
-  .brand__identity {
+  .brand__identity,
+  .navigation__title,
+  .navigation-item__label,
+  .navigation-item__badge,
+  .user-information {
     display: block;
   }
 
-  .navigation,
+  .logout-button {
+    display: grid;
+  }
+
+  .navigation-item {
+    justify-content: flex-start;
+    padding-inline: 0.75rem;
+  }
+
   .sidebar-footer {
-    display: none;
+    display: grid;
+    grid-template-columns: 2.75rem minmax(0, 1fr) 2.25rem;
+    justify-content: initial;
+
+    padding-inline: 0.8rem;
   }
 }

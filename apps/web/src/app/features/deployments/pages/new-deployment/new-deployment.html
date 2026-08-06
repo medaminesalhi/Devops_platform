@@ -1,0 +1,197 @@
+<section class="new-deployment-page">
+  <nav class="breadcrumb" aria-label="Fil d’Ariane">
+    <a routerLink="/deployments">Déploiements</a>
+    <span>›</span>
+    <strong>Nouveau déploiement</strong>
+  </nav>
+
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">Nouvelle exécution</p>
+      <h1>Préparer un déploiement</h1>
+      <p>Sélectionnez une version approuvée. L’infrastructure vient automatiquement du projet et de son environnement.</p>
+    </div>
+    <a class="button button--secondary" routerLink="/deployments">Annuler</a>
+  </header>
+
+  @if (demoMode) {
+    <section class="demo-banner">
+      <span>◈</span>
+      <div><strong>Mode aperçu</strong><p>Le formulaire utilise des versions de démonstration jusqu’au branchement du backend.</p></div>
+    </section>
+  }
+
+  @if (errorMessage()) {
+    <section class="message message--error"><span>!</span><p>{{ errorMessage() }}</p></section>
+  }
+
+  @if (isLoading()) {
+    <section class="loading-card"><span class="loader"></span><p>Chargement des projets déployables…</p></section>
+  } @else {
+    <div class="workspace">
+      <main class="form-column">
+        <section class="panel section-card">
+          <header class="section-heading">
+            <span>01</span>
+            <div><h2>Version approuvée</h2><p>Choisissez le projet et la génération qui serviront de base.</p></div>
+          </header>
+
+          <div class="form-grid">
+            <label class="field">
+              <span>Projet</span>
+              <select [ngModel]="selectedProjectId()" (ngModelChange)="selectProject($event)">
+                @for (project of projects(); track project.id) {
+                  <option [value]="project.id">{{ project.name }}</option>
+                }
+              </select>
+              <small>Seuls les projets avec des artefacts approuvés sont disponibles.</small>
+            </label>
+
+            <label class="field">
+              <span>Génération</span>
+              <select [ngModel]="selectedGenerationId()" (ngModelChange)="selectGeneration($event)">
+                @for (generation of selectedProject()?.generations ?? []; track generation.id) {
+                  <option [value]="generation.id">{{ generation.label }} · {{ generation.sourceCommit.slice(0, 8) }}</option>
+                }
+              </select>
+              <small>{{ selectedGeneration()?.approvedArtifactCount ?? 0 }} artefact(s) approuvé(s).</small>
+            </label>
+          </div>
+
+          @if (selectedProject(); as project) {
+            <div class="source-summary">
+              <article><span>Environnement</span><strong>{{ project.environmentName }}</strong></article>
+              <article><span>Namespace</span><strong>{{ project.namespace }}</strong></article>
+              <article><span>Commit source</span><strong>{{ selectedGeneration()?.sourceCommit ?? '—' }}</strong></article>
+              <article><span>Composants</span><strong>{{ selectedGeneration()?.componentCount ?? 0 }}</strong></article>
+            </div>
+          }
+        </section>
+
+        <section class="panel section-card">
+          <header class="section-heading">
+            <span>02</span>
+            <div><h2>Informations de release</h2><p>Ces informations identifient cette exécution dans Nexus, GitOps et l’historique.</p></div>
+          </header>
+
+          <div class="form-grid">
+            <label class="field field--full">
+              <span>Tag de version</span>
+              <input
+                type="text"
+                [ngModel]="version()"
+                (ngModelChange)="version.set($event)"
+                placeholder="v1.0.0 ou commit-0e463202"
+              />
+              <small>Utilisez un tag immuable. SApixi l’appliquera à toutes les images de la release.</small>
+            </label>
+
+            <label class="field field--full">
+              <span>Note de déploiement <i>facultatif</i></span>
+              <textarea
+                rows="3"
+                [ngModel]="note()"
+                (ngModelChange)="note.set($event)"
+                placeholder="Décrivez brièvement cette version…"
+              ></textarea>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel section-card">
+          <header class="section-heading">
+            <span>03</span>
+            <div><h2>Synchronisation Argo CD</h2><p>Choisissez le niveau de contrôle avant l’application réelle dans Kubernetes.</p></div>
+          </header>
+
+          <div class="choice-grid">
+            <button
+              type="button"
+              class="choice-card"
+              [class.choice-card--active]="syncMode() === 'prepare_only'"
+              (click)="setSyncMode('prepare_only')"
+            >
+              <span class="choice-card__radio"></span>
+              <div><strong>Préparer uniquement</strong><p>Build, Nexus et GitOps sont exécutés. Argo CD n’est pas synchronisé.</p></div>
+            </button>
+
+            <button
+              type="button"
+              class="choice-card choice-card--recommended"
+              [class.choice-card--active]="syncMode() === 'confirm_before_sync'"
+              (click)="setSyncMode('confirm_before_sync')"
+            >
+              <span class="choice-card__badge">Recommandé</span>
+              <span class="choice-card__radio"></span>
+              <div><strong>Confirmer avant synchronisation</strong><p>Le pipeline attend votre validation juste avant Argo CD.</p></div>
+            </button>
+
+            <button
+              type="button"
+              class="choice-card"
+              [class.choice-card--active]="syncMode() === 'automatic'"
+              (click)="setSyncMode('automatic')"
+            >
+              <span class="choice-card__radio"></span>
+              <div><strong>Automatique</strong><p>Le pipeline va jusqu’à Kubernetes sans pause de confirmation.</p></div>
+            </button>
+          </div>
+        </section>
+      </main>
+
+      <aside class="summary-column">
+        <section class="panel readiness-card">
+          <header>
+            <div><p class="eyebrow">Prévalidation</p><h2>Prérequis techniques</h2></div>
+            <button type="button" class="icon-button" [disabled]="isChecking()" (click)="recheck()">↻</button>
+          </header>
+
+          @if (isChecking()) {
+            <div class="checking"><span class="loader"></span><p>Vérification en cours…</p></div>
+          } @else if (readiness(); as current) {
+            <div class="readiness-list">
+              @for (check of current.checks; track check.key) {
+                <article [class]="'check-row check-row--' + check.status">
+                  <span class="check-row__icon">{{ check.status === 'ready' ? '✓' : check.status === 'warning' ? '!' : '×' }}</span>
+                  <div><strong>{{ check.label }}</strong><p>{{ check.description }}</p></div>
+                  <small>{{ checkLabel(check.status) }}</small>
+                </article>
+              }
+            </div>
+
+            <div class="readiness-result" [class.readiness-result--blocked]="!current.ready">
+              <span>{{ current.ready ? '✓' : '!' }}</span>
+              <div>
+                <strong>{{ current.ready ? 'Prêt à lancer' : 'Action requise' }}</strong>
+                <p>{{ current.ready ? 'Tous les contrôles bloquants sont satisfaits.' : 'Corrigez les éléments bloquants avant de continuer.' }}</p>
+              </div>
+            </div>
+          }
+        </section>
+
+        <section class="panel launch-card">
+          <p class="eyebrow">Résumé</p>
+          <h2>{{ selectedProject()?.name ?? 'Aucun projet' }}</h2>
+          <dl>
+            <div><dt>Version</dt><dd>{{ version() || '—' }}</dd></div>
+            <div><dt>Génération</dt><dd>{{ selectedGeneration()?.label ?? '—' }}</dd></div>
+            <div><dt>Environnement</dt><dd>{{ selectedProject()?.environmentName ?? '—' }}</dd></div>
+            <div><dt>Synchronisation</dt><dd>{{ syncMode() === 'prepare_only' ? 'Préparer uniquement' : syncMode() === 'automatic' ? 'Automatique' : 'Avec confirmation' }}</dd></div>
+          </dl>
+
+          <button
+            class="button button--primary launch-button"
+            type="button"
+            [disabled]="!canSubmit()"
+            (click)="createAndStart()"
+          >
+            @if (isSubmitting()) {<span class="loader loader--small"></span> Création…}
+            @else {Créer et lancer <span>→</span>}
+          </button>
+
+          <p class="launch-help">L’API créera une exécution durable puis le worker prendra en charge le pipeline.</p>
+        </section>
+      </aside>
+    </div>
+  }
+</section>

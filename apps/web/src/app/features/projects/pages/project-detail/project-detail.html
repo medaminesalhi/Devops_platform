@@ -3,342 +3,364 @@
     <div>
       <a class="back-link" routerLink="/projects">← Retour aux projets</a>
       <p class="eyebrow">SApixi · cycle de préparation</p>
-
       @if (project(); as currentProject) {
         <div class="project-title-row">
           <div>
             <h1>{{ currentProject.name }}</h1>
-            <p>{{ currentProject.description ?? 'Préparation du projet pour le déploiement.' }}</p>
+            <p>{{ currentProject.description ?? 'Préparation et déploiement de l’application.' }}</p>
           </div>
-          <span class="project-mode">
-            {{ currentProject.operationMode === 'adopt_existing' ? 'Application existante' : 'Nouvelle application' }}
-          </span>
+          <span class="project-tag">{{ currentProject.operationMode === 'adopt_existing' ? 'Application existante' : 'Nouvelle application' }}</span>
         </div>
       } @else {
         <h1>Projet</h1>
       }
     </div>
-
-    <button
-      class="button button--secondary"
-      type="button"
-      [disabled]="isRefreshing() || workflowProgressLoading()"
-      (click)="refreshCurrentPhase()"
-    >
-      ↻ Actualiser
+    <button type="button" class="button button--secondary" [disabled]="isRefreshing()" (click)="refresh()">
+      {{ isRefreshing() ? 'Actualisation…' : '↻ Actualiser' }}
     </button>
   </header>
 
-  <nav class="phase-navigation" aria-label="Étapes du projet">
-    @for (phase of phases; track phase.key) {
-      <button
-        class="phase-tab"
-        type="button"
-        [class.phase-tab--active]="activePhase() === phase.key"
-        [class.phase-tab--completed]="phaseCompleted(phase.key)"
-        [class.phase-tab--locked]="!phaseUnlocked(phase.key)"
-        [disabled]="!phaseUnlocked(phase.key)"
-        (click)="openPhase(phase.key)"
-      >
-        <span class="phase-tab__number">
-          {{ phaseCompleted(phase.key) ? '✓' : phase.number }}
-        </span>
-        <span class="phase-tab__content">
-          <strong>{{ phase.label }}</strong>
-          <small>{{ phase.description }}</small>
-        </span>
-        @if (!phaseUnlocked(phase.key)) {
-          <span class="phase-tab__lock">🔒</span>
-        }
-      </button>
-    }
-  </nav>
+  <app-project-phase-stepper
+    [phases]="phases()"
+    [activePhase]="activePhase()"
+  />
 
-  @if (projectError()) {
-    <div class="alert alert--error" role="alert">
-      <span>!</span>
-      <div><strong>Projet inaccessible</strong><p>{{ projectError() }}</p></div>
-    </div>
+  @if (pageError()) {
+    <div class="alert alert--error"><strong>Projet inaccessible</strong><span>{{ pageError() }}</span></div>
+  }
+  @if (actionError()) {
+    <div class="alert alert--error"><strong>Action impossible</strong><span>{{ actionError() }}</span></div>
+  }
+  @if (successMessage()) {
+    <div class="alert alert--success"><strong>Opération réussie</strong><span>{{ successMessage() }}</span></div>
   }
 
-  @if (analysisError()) {
-    <div class="alert alert--error" role="alert">
-      <span>!</span>
-      <div><strong>Erreur d’analyse</strong><p>{{ analysisError() }}</p></div>
-    </div>
-  }
-
-  <main class="phase-surface">
+  @if (isLoading()) {
+    <section class="panel loading-state"><span class="spinner"></span><div><strong>Chargement du projet</strong><p>Lecture de la source, de l’analyse et du workflow.</p></div></section>
+  } @else {
     @switch (activePhase()) {
       @case ('configuration') {
-        <section class="phase-view">
-          <header class="phase-header">
-            <div class="phase-header__number">1</div>
-            <div>
-              <p class="eyebrow">PHASE 1 · CONFIGURATION</p>
-              <h2>Vérifier la source et l’environnement</h2>
-              <p>Cette étape présente les informations choisies lors de la création du projet.</p>
-            </div>
+        <main class="phase-content">
+          <header class="phase-heading">
+            <div><span class="phase-number">1</span></div>
+            <div><p class="eyebrow">Phase 1 · Configuration</p><h2>Projet, source et environnement</h2><p>Cette phase est enregistrée une seule fois puis réutilisée automatiquement dans toutes les phases suivantes.</p></div>
           </header>
 
-          @if (isLoadingProject()) {
-            <div class="state-card"><span class="spinner"></span><div><strong>Chargement du projet</strong><p>Lecture de la source et de l’environnement.</p></div></div>
-          } @else if (project(); as currentProject) {
+          @if (project(); as currentProject) {
             <div class="configuration-grid">
-              <section class="panel source-card">
-                <header>
-                  <span class="source-icon">&lt;/&gt;</span>
-                  <div><p class="eyebrow">SOURCE DU PROJET</p><h3>{{ sourceDisplayName() }}</h3><p>{{ sourceTypeLabel() }} · {{ sourceBranchLabel() }}</p></div>
-                </header>
-                <dl>
-                  <div><dt>Type</dt><dd>{{ sourceTypeLabel() }}</dd></div>
-                  <div><dt>Transport</dt><dd>{{ currentProject.source.transport }}</dd></div>
-                  <div><dt>Branche</dt><dd>{{ currentProject.source.branch }}</dd></div>
+              <section class="panel summary-card">
+                <header><span class="summary-icon">&lt;/&gt;</span><div><p class="eyebrow">Source du code</p><h3>{{ currentProject.source.repositoryPath ?? currentProject.source.archive?.originalName ?? 'Source' }}</h3><p>{{ currentProject.source.type === 'git' ? 'Repository Git' : 'Archive ZIP' }}</p></div></header>
+                <dl class="fact-grid">
+                  <div><dt>Branche</dt><dd>{{ currentProject.source.branch || '—' }}</dd></div>
                   <div><dt>Sous-dossier</dt><dd>{{ currentProject.source.subdirectory ?? 'Racine' }}</dd></div>
                   <div><dt>Visibilité</dt><dd>{{ currentProject.source.visibility }}</dd></div>
-                  <div><dt>Credential</dt><dd>{{ currentProject.source.credentialConfigured ? 'Configuré' : 'Non configuré' }}</dd></div>
+                  <div><dt>Credential</dt><dd>{{ currentProject.source.credentialConfigured || currentProject.source.visibility === 'public' ? 'Configuré' : 'Manquant' }}</dd></div>
                 </dl>
                 @if (currentProject.source.repositoryUrl) {
-                  <div class="code-box">{{ currentProject.source.repositoryUrl }}</div>
+                  <code class="code-line">{{ currentProject.source.repositoryUrl }}</code>
                 }
+                <div class="card-actions">
+                  <button class="button button--secondary" type="button" (click)="openCredentialEditor()">Remplacer le credential</button>
+                </div>
               </section>
 
-              <section class="panel environment-card">
-                <header><span class="environment-icon">ENV</span><div><p class="eyebrow">ENVIRONNEMENT PAR DÉFAUT</p><h3>{{ currentProject.defaultEnvironment?.name ?? 'Non sélectionné' }}</h3><p>Cible utilisée pour préparer le contrat.</p></div></header>
+              <section class="panel summary-card">
+                <header><span class="summary-icon">ENV</span><div><p class="eyebrow">Environnement choisi</p><h3>{{ currentProject.defaultEnvironment?.name ?? 'Non sélectionné' }}</h3><p>Infrastructure utilisée automatiquement pour la proposition, la génération et le déploiement.</p></div></header>
                 @if (currentProject.defaultEnvironment; as environment) {
-                  <dl>
+                  <dl class="fact-grid">
                     <div><dt>Type</dt><dd>{{ environment.environmentType }}</dd></div>
                     <div><dt>Namespace</dt><dd>{{ environment.namespace }}</dd></div>
                     <div><dt>Identifiant</dt><dd>#{{ environment.id }}</dd></div>
-                    <div><dt>Projet</dt><dd>{{ currentProject.status }}</dd></div>
+                    <div><dt>Statut projet</dt><dd>{{ currentProject.status }}</dd></div>
                   </dl>
-                } @else {
-                  <div class="inline-warning">Aucun environnement par défaut n’est associé au projet.</div>
+                }
+                @if (selectedEnvironment(); as environmentDetails) {
+                  <div class="service-list compact-service-list">
+                    @for (service of environmentDetails.services; track service.role) {
+                      <article><span class="service-dot" [class.online]="service.status === 'online'"></span><div><strong>{{ service.connectionName }}</strong><small>{{ service.role }} · {{ service.providerType }}</small></div><span>{{ service.status }}</span></article>
+                    }
+                  </div>
                 }
               </section>
             </div>
 
-            <section class="panel readiness-card">
-              <div>
-                <p class="eyebrow">PRÉREQUIS DE L’ANALYSE</p>
-                <h3>Le projet est prêt à être analysé</h3>
-                <p>SApixi clonera le repository ou extraira l’archive dans un espace temporaire.</p>
-              </div>
-              <ul>
-                <li [class.ok]="currentProject.source.status === 'ready'">Source enregistrée</li>
-                <li [class.ok]="currentProject.defaultEnvironment !== null">Environnement sélectionné</li>
-                <li [class.ok]="currentProject.source.type === 'zip' || currentProject.source.credentialConfigured || currentProject.source.visibility === 'public'">Accès à la source disponible</li>
-              </ul>
+            <section class="panel phase-summary">
+              <div><p class="eyebrow">État de la configuration</p><h3>{{ currentProject.status === 'active' ? 'Configuration terminée' : 'Configuration à compléter' }}</h3><p>Les phases suivantes ne redemandent ni l’environnement ni les adresses des intégrations.</p></div>
+              <a class="button button--primary" [routerLink]="['/projects', currentProject.id, 'analysis']">Ouvrir l’analyse →</a>
             </section>
           }
-        </section>
+
+          @if (credentialEditorOpen()) {
+            <section class="panel inline-editor">
+              <header><div><p class="eyebrow">Credential source</p><h3>Remplacer le secret enregistré</h3><p>L’ancien secret ne sera jamais affiché. La nouvelle valeur sera chiffrée.</p></div><button class="icon-button" type="button" (click)="credentialEditorOpen.set(false)">×</button></header>
+              <div class="form-grid">
+                <label class="field"><span>Origine</span><select [ngModel]="credentialDraft().credentialSource" (ngModelChange)="updateCredentialField('credentialSource', $event)"><option value="project">Propre au projet</option><option value="integration">Intégration</option></select></label>
+                <label class="field"><span>Méthode</span><select [ngModel]="credentialDraft().authMethod" (ngModelChange)="updateCredentialField('authMethod', $event)"><option value="https_token">Token HTTPS</option><option value="https_password">Mot de passe HTTPS</option><option value="ssh_key">Clé privée SSH</option></select></label>
+                <label class="field"><span>Username</span><input type="text" [ngModel]="credentialDraft().username" (ngModelChange)="updateCredentialField('username', $event)" /></label>
+                <label class="field field--full"><span>Nouveau secret</span><textarea rows="4" [ngModel]="credentialDraft().secret" (ngModelChange)="updateCredentialField('secret', $event)" placeholder="Saisir la nouvelle valeur"></textarea></label>
+              </div>
+              <footer class="editor-actions"><button class="button button--ghost" type="button" (click)="credentialEditorOpen.set(false)">Annuler</button><button class="button button--primary" type="button" [disabled]="isWorking()" (click)="saveCredential()">Enregistrer le nouveau secret</button></footer>
+            </section>
+          }
+        </main>
       }
 
       @case ('analysis') {
-        <section class="phase-view">
-          <header class="phase-header phase-header--actions">
-            <div class="phase-header__number">2</div>
-            <div>
-              <p class="eyebrow">PHASE 2 · ANALYSE</p>
-              <h2>Analyser le code et confirmer les composants</h2>
-              <p>Inventaire, détection des technologies, commandes, ports et éléments de déploiement existants.</p>
-            </div>
-            <button
-              class="button button--primary button--large"
-              type="button"
-              [disabled]="analysisRunning() || isStartingAnalysis()"
-              (click)="startAnalysis()"
-            >
-              ▶ {{ analysisActionLabel() }}
-            </button>
+        <main class="phase-content">
+          <header class="phase-heading phase-heading--action">
+            <div><span class="phase-number">2</span></div>
+            <div><p class="eyebrow">Phase 2 · Analyse</p><h2>Comprendre automatiquement l’application</h2><p>SApixi détecte les composants, technologies, commandes, ports et fichiers déjà disponibles.</p></div>
+            <button class="button button--primary" type="button" [disabled]="analysisRunning() || isWorking()" (click)="startAnalysis()">{{ analysis() ? 'Relancer l’analyse' : 'Démarrer l’analyse' }}</button>
           </header>
 
-          @if (isLoadingAnalysis()) {
-            <div class="state-card"><span class="spinner"></span><div><strong>Chargement de l’analyse</strong><p>Lecture de la dernière exécution.</p></div></div>
-          } @else if (analysis(); as currentAnalysis) {
-            <section class="panel analysis-execution">
-              <header>
-                <div>
-                  <p class="eyebrow">EXÉCUTION #{{ currentAnalysis.id }}</p>
-                  <h3>{{ analysisStatusLabel(currentAnalysis.status) }}</h3>
-                  <p>{{ currentStepLabel(currentAnalysis.currentStep) }}</p>
-                </div>
-                <div class="analysis-meta">
-                  <span>Version <strong>{{ shortVersion(currentAnalysis.analyzedCommitSha ?? currentAnalysis.branchHeadSha) }}</strong></span>
-                  <span>Progression <strong>{{ currentAnalysis.progress }} %</strong></span>
-                  <span>Composants <strong>{{ currentAnalysis.components.length }}</strong></span>
-                </div>
-              </header>
-
+          @if (analysis(); as currentAnalysis) {
+            <section class="panel execution-card">
+              <header><div><p class="eyebrow">Exécution #{{ currentAnalysis.id }}</p><h3>{{ analysisStatusLabel() }}</h3><p>Commit {{ shortVersion(currentAnalysis.analyzedCommitSha ?? currentAnalysis.branchHeadSha) }}</p></div><strong class="progress-value">{{ currentAnalysis.progress }} %</strong></header>
               <div class="progress-track"><span [style.width.%]="currentAnalysis.progress"></span></div>
-
-              <div class="analysis-step-grid">
-                @for (step of analysisSteps; track step.key) {
-                  <article class="analysis-step" [class.analysis-step--active]="stepState(step.key) === 'active'" [class.analysis-step--completed]="stepState(step.key) === 'completed'" [class.analysis-step--failed]="stepState(step.key) === 'failed'">
-                    <span>{{ stepState(step.key) === 'completed' ? '✓' : stepState(step.key) === 'failed' ? '!' : '•' }}</span>
-                    <div><strong>{{ step.label }}</strong><small>{{ step.description }}</small></div>
-                  </article>
-                }
-              </div>
-
-              @if (currentAnalysis.error) {
-                <div class="alert alert--error"><span>!</span><div><strong>{{ currentAnalysis.error.code }}</strong><p>{{ currentAnalysis.error.message }}</p></div></div>
+              @if (analysisEvents().length > 0) {
+                <div class="event-list compact-events">
+                  @for (event of analysisEvents(); track event.id) {
+                    <article [class.error]="event.level === 'error'"><time>{{ event.createdAt | date:'HH:mm:ss' }}</time><span>{{ event.step }}</span><p>{{ event.message }}</p></article>
+                  }
+                </div>
               }
             </section>
 
             @if (currentAnalysis.status === 'completed' || currentAnalysis.status === 'confirmed') {
-              <div class="analysis-kpis">
-                <article><span>Confiance</span><strong>{{ globalConfidence() }} %</strong></article>
-                <article><span>Déployables</span><strong>{{ deployableComponents().length }}</strong></article>
-                <article><span>Technologies</span><strong>{{ technologyCount() }}</strong></article>
-                <article><span>À générer</span><strong>{{ missingArtifactCount() }}</strong></article>
-              </div>
-
-              <section class="component-analysis-list">
-                <header class="section-heading"><div><p class="eyebrow">COMPOSANTS DÉTECTÉS</p><h3>Vérifier les résultats de l’analyse</h3></div><span>{{ currentAnalysis.components.length }} composant(s)</span></header>
-
-                @for (component of currentAnalysis.components; track component.id) {
-                  <article class="panel analysis-component">
-                    <header>
-                      <span class="component-type-icon">{{ component.componentType === 'frontend' ? 'UI' : component.componentType === 'backend' ? 'API' : '&lt;/&gt;' }}</span>
-                      <div class="component-main"><h3>{{ component.name }}</h3><p>{{ component.rootPath }}</p></div>
-                      <span class="technology-chip">{{ componentTechnology(component) }}</span>
-                      <span class="status-chip" [class.status-chip--success]="component.deployable">{{ component.deployable ? 'Déployable' : 'Ignoré' }}</span>
-                      @if (analysisEditable()) {
-                        <button class="button button--secondary button--small" type="button" (click)="startComponentEdit(component)">Modifier</button>
-                      }
-                    </header>
-
-                    <div class="component-facts">
-                      <article><span>Type</span><strong>{{ componentTypeLabel(component.componentType) }}</strong></article>
-                      <article><span>Port</span><strong>{{ component.detectedPort ?? 'Non détecté' }}</strong></article>
-                      <article><span>Build</span><strong>{{ displayValue(component.buildCommand) }}</strong></article>
-                      <article><span>Démarrage</span><strong>{{ displayValue(component.startCommand) }}</strong></article>
-                    </div>
-
-                    @if (editingComponentId() === component.id && componentDraft(); as draft) {
-                      <div class="component-edit-form">
-                        <div class="form-grid form-grid--three">
-                          <div class="field"><label>Nom</label><input type="text" [(ngModel)]="draft.name" /></div>
-                          <div class="field"><label>Type</label><input type="text" [(ngModel)]="draft.componentType" /></div>
-                          <div class="field"><label>Runtime</label><input type="text" [(ngModel)]="draft.runtime" /></div>
-                          <div class="field"><label>Framework</label><input type="text" [(ngModel)]="draft.framework" /></div>
-                          <div class="field"><label>Package manager</label><input type="text" [(ngModel)]="draft.packageManager" /></div>
-                          <div class="field"><label>Port</label><input type="number" [(ngModel)]="draft.detectedPort" /></div>
-                          <div class="field field--full"><label>Commande de build</label><input type="text" [(ngModel)]="draft.buildCommand" /></div>
-                          <div class="field field--full"><label>Commande de démarrage</label><input type="text" [(ngModel)]="draft.startCommand" /></div>
-                          <label class="switch-line field--full"><input type="checkbox" [(ngModel)]="draft.deployable" />Inclure ce composant</label>
-                        </div>
-                        @if (componentError()) { <p class="form-error">{{ componentError() }}</p> }
-                        <div class="edit-actions"><button class="button button--secondary" type="button" (click)="cancelComponentEdit()">Annuler</button><button class="button button--primary" type="button" [disabled]="savingComponentId() === component.id" (click)="saveComponent()">{{ savingComponentId() === component.id ? 'Enregistrement…' : 'Enregistrer' }}</button></div>
-                      </div>
-                    }
-
-                    @if (componentEvidence(component).length > 0) {
-                      <details class="evidence-details">
-                        <summary>Voir les preuves de détection ({{ componentEvidence(component).length }})</summary>
-                        @for (evidence of componentEvidence(component); track evidence.file + evidence.message) {
-                          <div class="evidence-row"><span></span><div><strong>{{ evidence.message }}</strong><code>{{ evidence.file }}</code></div></div>
-                        }
-                      </details>
-                    }
-                  </article>
-                }
+              <section class="section-block">
+                <header class="section-title"><div><p class="eyebrow">Résultats</p><h3>{{ currentAnalysis.components.length }} composant(s) détecté(s)</h3></div><span class="status-badge" [class.status-badge--success]="currentAnalysis.status === 'confirmed'">{{ currentAnalysis.status === 'confirmed' ? 'Confirmée' : 'À confirmer' }}</span></header>
+                <div class="component-list">
+                  @for (component of currentAnalysis.components; track component.id) {
+                    <article class="panel component-card">
+                      <header><span class="component-icon">{{ component.componentType === 'frontend' ? 'UI' : component.componentType === 'backend' ? 'API' : '&lt;/&gt;' }}</span><div><h3>{{ component.name }}</h3><p>{{ component.rootPath }}</p></div><span class="technology-pill">{{ component.framework || component.runtime || component.componentType }}</span><button class="button button--secondary button--small" type="button" [disabled]="currentAnalysis.status === 'confirmed'" (click)="editComponent(component)">Modifier</button></header>
+                      <dl class="component-facts"><div><dt>Runtime</dt><dd>{{ component.runtime ?? '—' }}</dd></div><div><dt>Port</dt><dd>{{ component.detectedPort ?? '—' }}</dd></div><div><dt>Build</dt><dd>{{ component.buildCommand ?? 'À proposer' }}</dd></div><div><dt>Démarrage</dt><dd>{{ component.startCommand ?? 'À proposer' }}</dd></div></dl>
+                    </article>
+                  }
+                </div>
               </section>
 
-              <footer class="panel confirmation-card" [class.confirmation-card--success]="analysisConfirmed()">
-                <div class="confirmation-content">
-                  <span>{{ analysisConfirmed() ? '✓' : '!' }}</span>
-                  <div>
-                    <p class="eyebrow">{{ analysisConfirmed() ? 'ANALYSE CONFIRMÉE' : 'CONFIRMATION REQUISE' }}</p>
-                    <h3>{{ analysisConfirmed() ? 'Le contrat peut maintenant être préparé' : 'Valider les composants détectés' }}</h3>
-                    <p>{{ analysisConfirmed() ? 'La phase Contrat est déverrouillée.' : 'Confirmez cette analyse pour figer la version du code et les composants.' }}</p>
+              @if (editingComponentId() !== null && componentDraft(); as draft) {
+                <section class="panel inline-editor">
+                  <header><div><p class="eyebrow">Correction humaine</p><h3>{{ draft.name }}</h3></div><button class="icon-button" type="button" (click)="cancelComponentEdit()">×</button></header>
+                  <div class="form-grid form-grid--three">
+                    <label class="field"><span>Nom</span><input type="text" [(ngModel)]="draft.name" /></label>
+                    <label class="field"><span>Type</span><input type="text" [(ngModel)]="draft.componentType" /></label>
+                    <label class="field"><span>Runtime</span><input type="text" [(ngModel)]="draft.runtime" /></label>
+                    <label class="field"><span>Framework</span><input type="text" [(ngModel)]="draft.framework" /></label>
+                    <label class="field"><span>Port</span><input type="number" [(ngModel)]="draft.detectedPort" /></label>
+                    <label class="toggle"><input type="checkbox" [(ngModel)]="draft.deployable" /><span>Composant déployable</span></label>
+                    <label class="field field--full"><span>Commande de build</span><input type="text" [(ngModel)]="draft.buildCommand" /></label>
+                    <label class="field field--full"><span>Commande de démarrage</span><input type="text" [(ngModel)]="draft.startCommand" /></label>
                   </div>
-                </div>
+                  <footer class="editor-actions"><button class="button button--ghost" type="button" (click)="cancelComponentEdit()">Annuler</button><button class="button button--primary" type="button" [disabled]="isWorking()" (click)="saveComponent()">Enregistrer</button></footer>
+                </section>
+              }
 
-                @if (confirmationError()) {
-                  <p class="form-error">{{ confirmationError() }}</p>
-                }
-
-                @if (currentAnalysis.status === 'completed') {
-                  <button class="button button--primary button--large" type="button" [disabled]="!canConfirm()" (click)="confirmAnalysis()">{{ isConfirming() ? 'Confirmation…' : 'Confirmer l’analyse' }}</button>
-                } @else if (currentAnalysis.status === 'confirmed') {
-                  <button class="button button--success button--large" type="button" disabled>✓ Analyse confirmée</button>
-                }
-              </footer>
+              @if (currentAnalysis.status !== 'confirmed') {
+                <section class="panel phase-summary"><div><p class="eyebrow">Confirmation</p><h3>Les résultats sont-ils corrects ?</h3><p>La proposition de déploiement utilisera cette version exacte du code et ces composants.</p></div><button class="button button--primary" type="button" [disabled]="isWorking()" (click)="confirmAnalysis()">Confirmer l’analyse →</button></section>
+              } @else {
+                <section class="panel phase-summary"><div><p class="eyebrow">Phase terminée</p><h3>Analyse confirmée</h3><p>La proposition de déploiement peut être préparée.</p></div><a class="button button--primary" [routerLink]="['/projects', projectId(), 'proposal']">Ouvrir la proposition →</a></section>
+              }
             }
           } @else {
-            <div class="state-card"><span>✦</span><div><strong>Aucune analyse disponible</strong><p>Lancez l’analyse de la version actuelle du projet.</p></div></div>
+            <section class="panel empty-state"><span>⌁</span><h3>Aucune analyse</h3><p>Démarrez l’analyse pour inventorier le repository.</p></section>
           }
-        </section>
+        </main>
       }
 
-      @case ('contract') {
-        @if (projectId(); as currentProjectId) {
-          <app-project-workflow
-            [projectId]="currentProjectId"
-            [screen]="'contract'"
-            [refreshToken]="workflowRefreshToken()"
-            (contractConfirmedChange)="onContractConfirmed($event)"
-            (generationStatusChange)="onGenerationStatus($event)"
-          ></app-project-workflow>
-        }
+      @case ('proposal') {
+        <main class="phase-content">
+          <header class="phase-heading">
+            <div><span class="phase-number">3</span></div>
+            <div><p class="eyebrow">Phase 3 · Proposition de déploiement</p><h2>Décider l’essentiel, laisser SApixi préparer le reste</h2><p>L’environnement est déjà choisi. L’IA et les règles SApixi proposent Docker, Kubernetes, Helm, GitOps et Argo CD.</p></div>
+          </header>
+
+          @if (selectedEnvironment(); as environment) {
+            <section class="panel environment-strip">
+              <div><p class="eyebrow">Environnement utilisé</p><h3>{{ environment.name }}</h3><p>{{ environment.environmentType }} · namespace {{ environment.namespace }}</p></div>
+              <div class="service-chips">
+                @for (service of environment.services; track service.role) {
+                  <span [class.offline]="service.status !== 'online'"><i></i>{{ service.role }} · {{ service.connectionName }}</span>
+                }
+              </div>
+              <a [routerLink]="['/projects', projectId(), 'configuration']">Modifier dans Configuration</a>
+            </section>
+          }
+
+          <section class="panel decision-card">
+            <header><div><p class="eyebrow">Décisions nécessaires</p><h3>Quelques choix avant la proposition</h3><p>Les paramètres avancés restent masqués par défaut.</p></div><button class="button button--ghost" type="button" (click)="showAdvancedProposal.set(!showAdvancedProposal())">{{ showAdvancedProposal() ? 'Masquer les détails' : 'Paramètres avancés' }}</button></header>
+            <div class="decision-grid">
+              <label class="field"><span>Namespace proposé</span><input type="text" [ngModel]="proposalDecisions().namespace" (ngModelChange)="updateProposalDecision('namespace', $event)" /></label>
+              <label class="field"><span>Accès de l’application</span><select [ngModel]="proposalDecisions().exposureMode" (ngModelChange)="updateProposalDecision('exposureMode', $event)"><option value="internal">Interne au cluster</option><option value="public">Accessible par une URL</option></select></label>
+              @if (proposalDecisions().exposureMode === 'public') {
+                <label class="field"><span>Domaine</span><input type="text" [ngModel]="proposalDecisions().domain" (ngModelChange)="updateProposalDecision('domain', $event)" placeholder="application.lab.local" /></label>
+              }
+              <label class="field"><span>Nombre d’instances</span><input type="number" min="1" max="20" [ngModel]="proposalDecisions().replicas" (ngModelChange)="updateProposalDecision('replicas', $event)" /></label>
+              <label class="field"><span>Stockage persistant</span><select [ngModel]="proposalDecisions().persistence" (ngModelChange)="updateProposalDecision('persistence', $event)"><option value="suggested">Utiliser la proposition SApixi</option><option value="none">Aucun volume</option><option value="required">Volume requis</option></select></label>
+              <label class="field"><span>Migration</span><select [ngModel]="proposalDecisions().migration" (ngModelChange)="updateProposalDecision('migration', $event)"><option value="automatic">Détecter et proposer</option><option value="enabled">Exécuter une migration</option><option value="disabled">Aucune migration</option></select></label>
+            </div>
+
+            @if (showAdvancedProposal()) {
+              <div class="advanced-note"><strong>Mode avancé</strong><p>Les commandes, ports, probes et ressources sont affichés après génération de la proposition. Ils restent modifiables avant confirmation.</p></div>
+            }
+          </section>
+
+          <section class="panel ai-card">
+            <header><div><p class="eyebrow">Moteur de proposition</p><h3>Préparation assistée par IA</h3><p>En cas d’indisponibilité, le mode déterministe applique les valeurs sécurisées de SApixi.</p></div></header>
+            <div class="mode-selector">
+              <button type="button" [class.active]="proposalMode() === 'hybrid'" (click)="proposalMode.set('hybrid')"><strong>Hybride avec IA</strong><small>Recommandé pour compléter les éléments incertains.</small></button>
+              <button type="button" [class.active]="proposalMode() === 'deterministic'" (click)="proposalMode.set('deterministic')"><strong>Standard SApixi</strong><small>Sans appel IA, avec valeurs par défaut sécurisées.</small></button>
+            </div>
+            @if (proposalMode() === 'hybrid') {
+              <div class="form-grid">
+                <label class="field"><span>Connexion IA</span><select [ngModel]="selectedAiConnectionId()" (ngModelChange)="selectAiConnection($event)"><option [ngValue]="null">Sélectionner</option>@for (connection of workflow()?.aiConnections ?? []; track connection.id) {<option [ngValue]="connection.id">{{ connection.name }} · {{ connection.providerType }} · {{ connection.status }}</option>}</select></label>
+                <label class="field"><span>Modèle</span><input type="text" list="proposal-models" [ngModel]="selectedAiModel()" (ngModelChange)="selectedAiModel.set($event)" /><datalist id="proposal-models">@for (model of aiModels(); track model) {<option [value]="model"></option>}</datalist></label>
+              </div>
+            }
+            <footer class="editor-actions"><span></span><button class="button button--primary" type="button" [disabled]="isWorking()" (click)="prepareProposal()">{{ isWorking() ? 'Préparation…' : 'Préparer la proposition →' }}</button></footer>
+          </section>
+
+          @if (proposal(); as currentProposal) {
+            <section class="proposal-results">
+              <header class="section-title"><div><p class="eyebrow">Proposition #{{ currentProposal.id }}</p><h3>Stratégie préparée pour {{ currentProposal.components.length }} composant(s)</h3></div><span class="status-badge" [class.status-badge--success]="currentProposal.status === 'confirmed'">{{ currentProposal.status }}</span></header>
+
+              @for (component of currentProposal.components; track component.componentId) {
+                <article class="panel proposal-component">
+                  <header><span class="component-icon">{{ component.componentType === 'frontend' ? 'UI' : 'API' }}</span><div><h3>{{ component.name }}</h3><p>{{ component.summary }}</p></div><span class="confidence">Confiance {{ component.confidence }} %</span></header>
+                  <div class="proposal-facts">
+                    <article><span>Docker</span><strong>{{ component.docker.strategy }}</strong></article>
+                    <article><span>Démarrage</span><strong>{{ component.docker.startCommand }}</strong></article>
+                    <article><span>Port</span><strong>{{ component.docker.port }}</strong></article>
+                    <article><span>Service</span><strong>{{ component.kubernetes.serviceType }}</strong></article>
+                    <article><span>Ingress</span><strong>{{ component.kubernetes.ingressEnabled ? component.kubernetes.host : 'Interne' }}</strong></article>
+                    <article><span>Ressources</span><strong>{{ component.kubernetes.cpuRequest }} / {{ component.kubernetes.memoryRequest }}</strong></article>
+                    <article><span>Probes</span><strong>{{ component.kubernetes.readinessPath ?? 'À confirmer' }}</strong></article>
+                    <article><span>Migration</span><strong>{{ component.migration.enabled ? component.migration.command : 'Désactivée' }}</strong></article>
+                  </div>
+                  @if (component.warnings.length > 0) {<div class="warning-list">@for (warning of component.warnings; track warning) {<p>△ {{ warning }}</p>}</div>}
+                </article>
+              }
+
+              @if (currentProposal.questions.length > 0) {
+                <section class="panel questions-card">
+                  <header><div><p class="eyebrow">Décisions restantes</p><h3>{{ currentProposal.questions.length }} question(s) à résoudre</h3></div></header>
+                  <div class="question-list">
+                    @for (question of currentProposal.questions; track question.id) {
+                      <label class="field"><span>{{ question.label }}</span><small>{{ question.description }}</small>@if (question.choices.length > 0) {<select [ngModel]="proposalAnswers()[question.id] ?? question.answer" (ngModelChange)="setProposalAnswer(question.id, $event)"><option value="">Sélectionner</option>@for (choice of question.choices; track choice) {<option [value]="choice">{{ choice }}</option>}</select>} @else {<input type="text" [ngModel]="proposalAnswers()[question.id] ?? question.answer" (ngModelChange)="setProposalAnswer(question.id, $event)" />}</label>
+                    }
+                  </div>
+                  <footer class="editor-actions"><span></span><button class="button button--secondary" type="button" [disabled]="isWorking()" (click)="saveProposalAnswers()">Enregistrer les réponses</button></footer>
+                </section>
+              }
+
+              <section class="panel phase-summary">
+                <div><p class="eyebrow">Confirmation</p><h3>{{ currentProposal.validation.valid ? 'Proposition prête à confirmer' : 'Corrections nécessaires' }}</h3><p>{{ currentProposal.validation.errorCount }} erreur(s), {{ currentProposal.validation.warningCount }} avertissement(s), {{ currentProposal.validation.questionCount }} question(s).</p></div>
+                @if (currentProposal.status === 'confirmed') {
+                  <a class="button button--primary" [routerLink]="['/projects', projectId(), 'generation']">Ouvrir la génération →</a>
+                } @else {
+                  <button class="button button--primary" type="button" [disabled]="!currentProposal.validation.valid || isWorking()" (click)="confirmProposal()">Confirmer la proposition →</button>
+                }
+              </section>
+            </section>
+          }
+        </main>
       }
 
       @case ('generation') {
-        @if (projectId(); as currentProjectId) {
-          <app-project-workflow
-            [projectId]="currentProjectId"
-            [screen]="'generation'"
-            [refreshToken]="workflowRefreshToken()"
-            (contractConfirmedChange)="onContractConfirmed($event)"
-            (generationStatusChange)="onGenerationStatus($event)"
-          ></app-project-workflow>
-        }
+        <main class="phase-content">
+          <header class="phase-heading">
+            <div><span class="phase-number">4</span></div>
+            <div><p class="eyebrow">Phase 4 · Génération et validation</p><h2>Produire, vérifier et approuver les fichiers</h2><p>La revue humaine fait partie de cette phase. Aucun fichier n’est déployé avant confirmation.</p></div>
+          </header>
+
+          <section class="panel generation-launch">
+            <div><p class="eyebrow">Nouvelle génération</p><h3>{{ generationStatusLabel() }}</h3><p>Le worker crée Docker, Helm et Argo CD à partir de la proposition confirmée.</p></div>
+            <div class="generation-controls">
+              <select [ngModel]="generationMode()" (ngModelChange)="generationMode.set($event)"><option value="deterministic">Déterministe</option><option value="hybrid">Hybride</option></select>
+              <button class="button button--primary" type="button" [disabled]="generationRunning() || isWorking()" (click)="startGeneration()">{{ generation() ? 'Nouvelle génération' : 'Démarrer la génération' }}</button>
+            </div>
+          </section>
+
+          @if (generation(); as currentGeneration) {
+            <nav class="generation-tabs">
+              <button type="button" [class.active]="generationTab() === 'progress'" (click)="setGenerationTab('progress')">Progression</button>
+              <button type="button" [class.active]="generationTab() === 'artifacts'" [disabled]="!generationReviewReady()" (click)="setGenerationTab('artifacts')">Artefacts</button>
+              <button type="button" [class.active]="generationTab() === 'validation'" [disabled]="!generationReviewReady()" (click)="setGenerationTab('validation')">Validation</button>
+            </nav>
+
+            @if (generationTab() === 'progress') {
+              <section class="panel execution-card">
+                <header><div><p class="eyebrow">Exécution #{{ currentGeneration.id }}</p><h3>{{ generationStatusLabel() }}</h3><p>{{ currentGeneration.currentStep }}</p></div><strong class="progress-value">{{ currentGeneration.progress }} %</strong></header>
+                <div class="progress-track"><span [style.width.%]="currentGeneration.progress"></span></div>
+                @if (currentGeneration.error) {<div class="alert alert--error"><strong>{{ currentGeneration.error.code }}</strong><span>{{ currentGeneration.error.message }}</span></div>}
+                <div class="event-list">
+                  @for (event of generationEvents(); track event.id) {
+                    <article [class.error]="event.level === 'error'" [class.success]="event.level === 'success'"><time>{{ event.createdAt | date:'HH:mm:ss' }}</time><span>{{ event.step }}</span><p>{{ event.message }}</p></article>
+                  } @empty {<div class="empty-inline">Aucun événement reçu.</div>}
+                </div>
+              </section>
+            }
+
+            @if (generationTab() === 'artifacts') {
+              <section class="artifact-workspace">
+                <aside class="panel artifact-list">
+                  <header><div><p class="eyebrow">Fichiers</p><h3>{{ artifacts().length }} artefact(s)</h3></div><button class="icon-button" type="button" (click)="loadArtifacts()">↻</button></header>
+                  <div>
+                    @for (artifact of artifacts(); track artifact.id) {
+                      <button type="button" class="artifact-item" [class.active]="selectedArtifact()?.id === artifact.id" (click)="selectArtifact(artifact.id)"><span>{{ artifact.artifactType.includes('helm') ? 'H' : artifact.artifactType.includes('argocd') ? 'A' : 'D' }}</span><div><strong>{{ artifact.relativePath }}</strong><small>{{ artifactTypeLabel(artifact.artifactType) }}</small></div><i [class.ok]="artifact.validationStatus === 'passed'" [class.warn]="artifact.validationStatus === 'warning'" [class.bad]="artifact.validationStatus === 'failed'"></i></button>
+                    }
+                  </div>
+                </aside>
+
+                <section class="panel artifact-editor">
+                  @if (selectedArtifact(); as artifact) {
+                    <header><div><p class="eyebrow">{{ artifactTypeLabel(artifact.artifactType) }}</p><h3>{{ artifact.relativePath }}</h3><p>{{ artifact.componentName ?? 'Fichier global' }}</p></div><div class="status-stack"><span>{{ artifact.validationStatus }}</span><span>{{ artifact.reviewStatus }}</span></div></header>
+                    @if (artifact.validationMessages.length > 0) {<div class="validation-messages">@for (message of artifact.validationMessages; track message.code + message.message) {<article [class.error]="message.level === 'error'"><strong>{{ message.code }}</strong><p>{{ message.message }}</p></article>}</div>}
+                    <label class="field code-field"><span>Contenu</span><textarea rows="24" spellcheck="false" [ngModel]="artifactDraft()" (ngModelChange)="artifactDraft.set($event)"></textarea></label>
+                    <label class="field"><span>Commentaire de revue</span><textarea rows="3" [ngModel]="artifactReviewComment()" (ngModelChange)="artifactReviewComment.set($event)"></textarea></label>
+                    <footer class="editor-actions"><button class="button button--secondary" type="button" [disabled]="isWorking() || generationConfirmed()" (click)="saveArtifact()">Enregistrer et revalider</button><div><button class="button button--danger" type="button" [disabled]="isWorking() || generationConfirmed()" (click)="reviewArtifact('rejected')">Rejeter</button><button class="button button--primary" type="button" [disabled]="isWorking() || generationConfirmed() || artifact.validationStatus === 'failed'" (click)="reviewArtifact('approved')">Approuver</button></div></footer>
+                  } @else {
+                    <div class="empty-state"><span>◫</span><h3>Sélectionnez un fichier</h3><p>Le contenu et les validations apparaîtront ici.</p></div>
+                  }
+                </section>
+              </section>
+            }
+
+            @if (generationTab() === 'validation') {
+              <section class="validation-dashboard">
+                <div class="metric-grid"><article class="panel"><span>Total</span><strong>{{ artifacts().length }}</strong></article><article class="panel"><span>Approuvés</span><strong class="positive">{{ approvedCount() }}</strong></article><article class="panel"><span>À revoir</span><strong>{{ pendingReviewCount() }}</strong></article><article class="panel"><span>Invalides</span><strong class="negative">{{ invalidCount() }}</strong></article></div>
+                <section class="panel validation-summary"><div><p class="eyebrow">Confirmation finale</p><h3>{{ canConfirmGeneration() ? 'Tous les contrôles sont satisfaits' : 'La revue doit être terminée' }}</h3><ul><li [class.ok]="invalidCount() === 0">Aucun fichier invalide</li><li [class.ok]="rejectedCount() === 0">Aucun fichier rejeté</li><li [class.ok]="artifacts().length > 0 && approvedCount() === artifacts().length">Tous les fichiers approuvés</li></ul></div><button class="button button--primary" type="button" [disabled]="!canConfirmGeneration() || isWorking()" (click)="confirmGeneration()">Confirmer les artefacts →</button></section>
+              </section>
+            }
+          }
+        </main>
       }
 
-      @case ('review') {
-        @if (projectId(); as currentProjectId) {
-          <app-project-workflow
-            [projectId]="currentProjectId"
-            [screen]="'review'"
-            [refreshToken]="workflowRefreshToken()"
-            (contractConfirmedChange)="onContractConfirmed($event)"
-            (generationStatusChange)="onGenerationStatus($event)"
-          ></app-project-workflow>
-        }
+      @case ('deployment') {
+        <main class="phase-content">
+          <header class="phase-heading">
+            <div><span class="phase-number">5</span></div>
+            <div><p class="eyebrow">Phase 5 · Déploiement</p><h2>Construire, publier et synchroniser</h2><p>Cette page utilisera les artefacts approuvés et l’environnement choisi en phase 1. Aucun paramètre d’infrastructure ne sera ressaisi.</p></div>
+          </header>
+
+          <section class="deployment-hero panel">
+            <div><p class="eyebrow">Prêt pour le moteur de déploiement</p><h3>{{ generationConfirmed() ? 'Prévalidation terminée' : 'Génération confirmée requise' }}</h3><p>Le backend de déploiement sera branché dans l’étape suivante.</p></div>
+            <button class="button button--primary" type="button" disabled>Déployer</button>
+          </section>
+
+          <div class="deployment-grid">
+            <section class="panel deployment-card"><header><span>01</span><div><h3>Préparation</h3><p>Vérifier Kubernetes, Argo CD, Nexus, GitOps et les secrets.</p></div></header><ul><li>Génération confirmée</li><li>Intégrations disponibles</li><li>Secrets requis présents</li></ul></section>
+            <section class="panel deployment-card"><header><span>02</span><div><h3>Build et publication</h3><p>Construire les images et les pousser vers Nexus.</p></div></header><ul><li>Tag basé sur le commit</li><li>Logs Docker en temps réel</li><li>Contrôle du push registry</li></ul></section>
+            <section class="panel deployment-card"><header><span>03</span><div><h3>GitOps et Argo CD</h3><p>Écrire les fichiers, pousser Git et synchroniser.</p></div></header><ul><li>Commit GitOps</li><li>AppProject et Applications</li><li>Synchronisation contrôlée</li></ul></section>
+            <section class="panel deployment-card"><header><span>04</span><div><h3>Kubernetes et santé</h3><p>Observer les pods, services, Ingress et migrations.</p></div></header><ul><li>Pods Ready</li><li>Argo CD Healthy / Synced</li><li>Diagnostic IA en cas d’échec</li></ul></section>
+          </div>
+
+          <section class="panel pipeline-preview">
+            <header><div><p class="eyebrow">Pipeline prévu</p><h3>Étapes du déploiement réel</h3></div></header>
+            <ol><li><span>1</span>Préparer le workspace</li><li><span>2</span>Construire les images</li><li><span>3</span>Pousser vers Nexus</li><li><span>4</span>Écrire et pousser GitOps</li><li><span>5</span>Mettre à jour Argo CD</li><li><span>6</span>Observer Kubernetes</li></ol>
+          </section>
+        </main>
       }
     }
-  </main>
-
-  <footer class="phase-footer">
-    <button
-      class="button button--secondary"
-      type="button"
-      [disabled]="activePhase() === 'configuration'"
-      (click)="goToPreviousPhase()"
-    >
-      ← Phase précédente
-    </button>
-
-    <div>
-      <span>Phase {{ activePhaseDefinition().number }} sur {{ phases.length }}</span>
-      <strong>{{ activePhaseDefinition().label }}</strong>
-    </div>
-
-    @if (activePhase() !== 'review') {
-      <button
-        class="button button--primary"
-        type="button"
-        [disabled]="!phaseUnlocked(phases[activePhaseNumber()].key)"
-        (click)="goToNextPhase()"
-      >
-        Phase suivante →
-      </button>
-    } @else {
-      <button class="button button--primary" type="button" [disabled]="workflowGenerationStatus() !== 'confirmed'">
-        Passer aux déploiements →
-      </button>
-    }
-  </footer>
+  }
 </section>

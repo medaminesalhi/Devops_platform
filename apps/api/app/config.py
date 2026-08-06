@@ -27,6 +27,12 @@ DEFAULT_PROJECT_ARCHIVE_ROOT = (
     / "project-archives"
 )
 
+DEFAULT_DEPLOYMENT_WORKSPACE_ROOT = (
+    API_ROOT
+    / "var"
+    / "deployments"
+)
+
 
 load_dotenv(
     ENV_FILE
@@ -209,4 +215,38 @@ class Config:
     MAX_CONTENT_LENGTH = (
         PROJECT_ARCHIVE_MAX_BYTES
         + 2 * 1024 * 1024
+    )
+    DEPLOYMENT_WORKSPACE_ROOT = os.getenv(
+        "DEPLOYMENT_WORKSPACE_ROOT",
+        str(DEFAULT_DEPLOYMENT_WORKSPACE_ROOT),
+    )
+
+    DEPLOYMENT_COMMAND_TIMEOUT_SECONDS = read_integer(
+        "DEPLOYMENT_COMMAND_TIMEOUT_SECONDS",
+        1800,
+    )
+
+    DEPLOYMENT_HTTP_TIMEOUT_SECONDS = read_integer(
+        "DEPLOYMENT_HTTP_TIMEOUT_SECONDS",
+        30,
+    )
+
+    DEPLOYMENT_HEALTH_TIMEOUT_SECONDS = read_integer(
+        "DEPLOYMENT_HEALTH_TIMEOUT_SECONDS",
+        600,
+    )
+
+    DEPLOYMENT_HEALTH_POLL_SECONDS = read_integer(
+        "DEPLOYMENT_HEALTH_POLL_SECONDS",
+        5,
+    )
+
+    DEPLOYMENT_AI_TIMEOUT_SECONDS = read_integer(
+        "DEPLOYMENT_AI_TIMEOUT_SECONDS",
+        90,
+    )
+
+    DEPLOYMENT_AI_MODEL = os.getenv(
+        "DEPLOYMENT_AI_MODEL",
+        "llama3.1:8b",
     )

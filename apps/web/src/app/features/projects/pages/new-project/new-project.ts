@@ -1,35 +1,14 @@
-import {
-  Component,
-  OnInit,
-  computed,
-  inject,
-  signal,
-} from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { finalize, forkJoin } from 'rxjs';
 
 import {
-  HttpErrorResponse,
-} from '@angular/common/http';
-
-import {
-  FormBuilder,
-  ReactiveFormsModule,
-  Validators,
-} from '@angular/forms';
-
-import {
-  Router,
-  RouterLink,
-} from '@angular/router';
-
-import {
-  finalize,
-} from 'rxjs';
-
-import {
-  CreateGitProjectRequest,
   CredentialSource,
   GitTokenType,
   GitTransport,
+  Project,
   ProjectEnvironmentOption,
   ProjectOperationMode,
   ProjectOptions,
@@ -41,1105 +20,451 @@ import {
   ValidateGitSourceRequest,
 } from '../../../../core/projects/projects';
 
-
 interface ApiErrorResponse {
   success: false;
-
-  error: {
-    code: string;
-    message: string;
-  };
+  error: { code: string; message: string };
 }
 
+type CreationStep = 1 | 2 | 3 | 4;
 
 @Component({
   selector: 'app-new-project',
-
-  imports: [
-    ReactiveFormsModule,
-    RouterLink,
-  ],
-
+  imports: [ReactiveFormsModule, RouterLink],
   templateUrl: './new-project.html',
   styleUrl: './new-project.scss',
 })
 export class NewProject implements OnInit {
-  private readonly projectsService =
-    inject(ProjectsService);
+  private readonly projectsService = inject(ProjectsService);
+  private readonly formBuilder = inject(FormBuilder);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
-  private readonly formBuilder =
-    inject(FormBuilder);
-
-  private readonly router =
-    inject(Router);
-
-
-  readonly options =
-    signal<ProjectOptions | null>(null);
-
-  readonly selectedConnectionId =
-    signal(0);
-
-  readonly operationMode =
-    signal<ProjectOperationMode>(
-      'new_application',
-    );
-
-  readonly sourceType =
-    signal<ProjectSourceType>('git');
-
-  readonly visibility =
-    signal<RepositoryVisibility>('public');
-
-  readonly transport =
-    signal<GitTransport>('https');
-
-  readonly credentialSource =
-    signal<CredentialSource>('none');
-
-  readonly authMethod =
-    signal<SourceAuthMethod>(
-      'https_token',
-    );
-
-  readonly selectedEnvironmentId =
-    signal<number | null>(null);
-
-  readonly selectedArchiveFile =
-    signal<File | null>(null);
-
-  readonly sourceValidation =
-    signal<SourceValidationResult | null>(
-      null,
-    );
+  readonly step = signal<CreationStep>(1);
+  readonly draftId = signal<number | null>(null);
+  readonly draft = signal<Project | null>(null);
+  readonly options = signal<ProjectOptions | null>(null);
+  readonly sourceValidation = signal<SourceValidationResult | null>(null);
+  readonly selectedArchiveFile = signal<File | null>(null);
+  readonly selectedEnvironmentId = signal<number | null>(null);
 
   readonly isLoading = signal(true);
+  readonly isSaving = signal(false);
   readonly isTesting = signal(false);
-  readonly isCreating = signal(false);
+  readonly pageError = signal<string | null>(null);
+  readonly stepError = signal<string | null>(null);
+  readonly successMessage = signal<string | null>(null);
 
-  readonly pageError =
-    signal<string | null>(null);
+  readonly identityForm = this.formBuilder.nonNullable.group({
+    operationMode: this.formBuilder.nonNullable.control<ProjectOperationMode>('new_application'),
+    name: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(140)]],
+    description: ['', [Validators.maxLength(1000)]],
+  });
 
-  readonly sourceError =
-    signal<string | null>(null);
+  readonly sourceForm = this.formBuilder.nonNullable.group({
+    sourceType: this.formBuilder.nonNullable.control<ProjectSourceType>('git'),
+    sourceConnectionId: [0],
+    repositoryUrl: [''],
+    branch: ['main'],
+    sourceSubdirectory: [''],
+    visibility: this.formBuilder.nonNullable.control<RepositoryVisibility>('private'),
+    transport: this.formBuilder.nonNullable.control<GitTransport>('https'),
+    credentialSource: this.formBuilder.nonNullable.control<CredentialSource>('project'),
+    authMethod: this.formBuilder.nonNullable.control<SourceAuthMethod>('https_token'),
+    tokenType: this.formBuilder.nonNullable.control<GitTokenType>('project_access_token'),
+    username: ['oauth2'],
+    secret: [''],
+  });
 
-  readonly sourceSuccess =
-    signal<string | null>(null);
+  readonly environments = computed<ProjectEnvironmentOption[]>(
+    () => this.options()?.environments ?? [],
+  );
 
-  readonly environmentError =
-    signal<string | null>(null);
+  readonly selectedConnection = computed(() => {
+    const id = Number(this.sourceForm.controls.sourceConnectionId.value);
+    return this.options()?.gitConnections.find(connection => connection.id === id) ?? null;
+  });
 
-  readonly creationError =
-    signal<string | null>(null);
+  readonly selectedEnvironment = computed(() => {
+    const id = this.selectedEnvironmentId();
+    return this.environments().find(environment => environment.id === id) ?? null;
+  });
 
+  readonly credentialAlreadyStored = computed(
+    () => this.draft()?.source.credentialConfigured === true,
+  );
 
-  readonly form =
-    this.formBuilder.nonNullable.group({
-      operationMode:
-        this.formBuilder.nonNullable.control<
-          ProjectOperationMode
-        >('new_application'),
+  readonly archiveLimitMegabytes = computed(
+    () => this.options()?.archiveLimits?.maxMegabytes || 0,
+  );
 
-      sourceType:
-        this.formBuilder.nonNullable.control<
-          ProjectSourceType
-        >('git'),
+  readonly sourceReviewLabel = computed(() => {
+    if (this.sourceForm.controls.sourceType.value === 'git') {
+      return this.sourceForm.controls.repositoryUrl.value || 'Repository Git';
+    }
 
-      name: [
-        '',
-        [
-          Validators.required,
-          Validators.minLength(3),
-          Validators.maxLength(140),
-        ],
-      ],
+    return this.selectedArchiveFile()?.name
+      || this.draft()?.source.archive?.originalName
+      || 'Archive ZIP';
+  });
 
-      description: [
-        '',
-        [
-          Validators.maxLength(1000),
-        ],
-      ],
-
-      sourceConnectionId: [0],
-
-      repositoryUrl: [''],
-
-      branch: ['main'],
-
-      sourceSubdirectory: [''],
-
-      visibility:
-        this.formBuilder.nonNullable.control<
-          RepositoryVisibility
-        >('public'),
-
-      transport:
-        this.formBuilder.nonNullable.control<
-          GitTransport
-        >('https'),
-
-      credentialSource:
-        this.formBuilder.nonNullable.control<
-          CredentialSource
-        >('none'),
-
-      authMethod:
-        this.formBuilder.nonNullable.control<
-          SourceAuthMethod
-        >('https_token'),
-
-      tokenType:
-        this.formBuilder.nonNullable.control<
-          GitTokenType
-        >('project_access_token'),
-
-      username: ['oauth2'],
-
-      secret: [''],
-    });
-
-
-  readonly selectedConnection =
-    computed(() => {
-      const connectionId =
-        this.selectedConnectionId();
-
-      return (
-        this.options()
-          ?.gitConnections
-          .find(
-            connection =>
-              connection.id === connectionId,
-          )
-        ?? null
-      );
-    });
-
-
-  readonly environments =
-    computed<ProjectEnvironmentOption[]>(
-      () =>
-        this.options()?.environments
-        ?? [],
-    );
-
-
-  readonly integrationCredentialCompatible =
-    computed(() => {
-      const connection =
-        this.selectedConnection();
-
-      if (
-        !connection
-        || !connection.credentialConfigured
-        || this.visibility() === 'public'
-      ) {
-        return false;
-      }
-
-      if (this.transport() === 'https') {
-        return (
-          connection.credentialAuthType
-            === 'basic'
-          || connection.credentialAuthType
-            === 'token'
-        );
-      }
-
-      return (
-        connection.credentialAuthType
-        === 'ssh_key'
-      );
-    });
-
+  readonly stepItems = [
+    { number: 1, label: 'Informations', description: 'Identité du projet' },
+    { number: 2, label: 'Source', description: 'Repository et credential' },
+    { number: 3, label: 'Environnement', description: 'Infrastructure cible' },
+    { number: 4, label: 'Vérification', description: 'Résumé et activation' },
+  ];
 
   ngOnInit(): void {
-    this.applySourceValidators();
-    this.loadOptions();
+    const draftId = Number(this.route.snapshot.queryParamMap.get('draftId'));
+    const requestedStep = Number(this.route.snapshot.queryParamMap.get('step'));
+
+    if (Number.isInteger(draftId) && draftId > 0) {
+      this.draftId.set(draftId);
+    }
+    if ([1, 2, 3, 4].includes(requestedStep)) {
+      this.step.set(requestedStep as CreationStep);
+    }
+
+    this.loadInitialData();
   }
 
+  selectOperationMode(mode: ProjectOperationMode): void {
+    this.identityForm.controls.operationMode.setValue(mode);
+  }
 
-  loadOptions(): void {
-    this.isLoading.set(true);
-    this.pageError.set(null);
+  selectSourceType(type: ProjectSourceType): void {
+    this.sourceForm.controls.sourceType.setValue(type);
+    this.sourceValidation.set(null);
+    this.successMessage.set(null);
+    this.stepError.set(null);
+  }
+
+  selectEnvironment(environmentId: number): void {
+    this.selectedEnvironmentId.set(environmentId);
+    this.stepError.set(null);
+  }
+
+  onArchiveSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.selectedArchiveFile.set(input.files?.item(0) ?? null);
+    this.sourceValidation.set(null);
+  }
+
+  goToStep(step: CreationStep): void {
+    if (step > this.highestUnlockedStep()) {
+      return;
+    }
+    this.step.set(step);
+    this.syncUrl();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  saveIdentityAndContinue(): void {
+    this.identityForm.markAllAsTouched();
+    this.stepError.set(null);
+
+    if (this.identityForm.invalid) {
+      this.stepError.set('Saisissez un nom de projet valide.');
+      return;
+    }
+
+    const values = this.identityForm.getRawValue();
+    this.isSaving.set(true);
+
+    const existingDraftId = this.draftId();
+    const request$ = existingDraftId
+      ? this.projectsService.getProject(existingDraftId)
+      : this.projectsService.createDraft({
+          operationMode: values.operationMode,
+          name: values.name.trim(),
+          description: values.description.trim() || null,
+        });
+
+    request$
+      .pipe(finalize(() => this.isSaving.set(false)))
+      .subscribe({
+        next: project => {
+          this.draft.set(project);
+          this.draftId.set(project.id);
+          this.step.set(2);
+          this.syncUrl();
+        },
+        error: error => this.stepError.set(this.resolveError(error)),
+      });
+  }
+
+  saveSourceAndContinue(): void {
+    const projectId = this.draftId();
+    if (!projectId) {
+      this.stepError.set('Le brouillon du projet doit être créé avant la source.');
+      return;
+    }
+
+    const request = this.buildSourceRequest();
+    if (!request) {
+      return;
+    }
+
+    this.isSaving.set(true);
+    this.stepError.set(null);
+    this.successMessage.set(null);
 
     this.projectsService
-      .getOptions()
-      .pipe(
-        finalize(() => {
-          this.isLoading.set(false);
-        }),
-      )
+      .saveDraftSource(projectId, request)
+      .pipe(finalize(() => this.isSaving.set(false)))
       .subscribe({
-        next: options => {
-          this.options.set(options);
-
-          const firstConnection =
-            options.gitConnections[0];
-
-          if (firstConnection) {
-            this.form.controls
-              .sourceConnectionId
-              .setValue(firstConnection.id);
-
-            this.selectedConnectionId.set(
-              firstConnection.id,
-            );
-          }
-
-          this.applySourceValidators();
+        next: result => {
+          this.draft.set(result.project);
+          this.sourceValidation.set(result.sourceValidation);
+          this.successMessage.set('La source et son credential ont été enregistrés de manière chiffrée.');
+          this.step.set(3);
+          this.syncUrl();
         },
-
-        error: (
-          error: HttpErrorResponse,
-        ) => {
-          this.pageError.set(
-            this.resolveError(error),
-          );
-        },
+        error: error => this.stepError.set(this.resolveError(error)),
       });
   }
 
-
-  selectOperationMode(
-    mode: ProjectOperationMode,
-  ): void {
-    this.operationMode.set(mode);
-
-    this.form.controls
-      .operationMode.setValue(mode);
-  }
-
-
-  selectSourceType(
-    type: ProjectSourceType,
-  ): void {
-    this.sourceType.set(type);
-
-    this.form.controls
-      .sourceType.setValue(type);
-
-    if (type === 'git') {
-      this.visibility.set('public');
-      this.transport.set('https');
-      this.credentialSource.set('none');
-
-      this.form.patchValue({
-        visibility: 'public',
-        transport: 'https',
-        credentialSource: 'none',
-      });
-    }
-
-    this.applySourceValidators();
-    this.invalidateSource();
-  }
-
-
-  onConnectionChanged(): void {
-    this.selectedConnectionId.set(
-      Number(
-        this.form.controls
-          .sourceConnectionId.value,
-      ),
-    );
-
-    if (
-      this.visibility() === 'private'
-    ) {
-      this.adjustCredentialSource();
-    }
-
-    this.invalidateSource();
-  }
-
-
-  onVisibilityChanged(
-    visibility: RepositoryVisibility,
-  ): void {
-    this.visibility.set(visibility);
-
-    this.form.controls
-      .visibility.setValue(visibility);
-
-    if (visibility === 'public') {
-      this.transport.set('https');
-      this.credentialSource.set('none');
-      this.authMethod.set('none');
-
-      this.form.patchValue({
-        transport: 'https',
-        credentialSource: 'none',
-        authMethod: 'none',
-        username: '',
-        secret: '',
-      });
-    } else {
-      this.transport.set('https');
-      this.authMethod.set('https_token');
-
-      this.form.patchValue({
-        transport: 'https',
-        authMethod: 'https_token',
-        username: 'oauth2',
-        secret: '',
-      });
-
-      this.adjustCredentialSource();
-    }
-
-    this.applySourceValidators();
-    this.invalidateSource();
-  }
-
-
-  onTransportChanged(
-    transport: GitTransport,
-  ): void {
-    this.transport.set(transport);
-
-    this.form.controls
-      .transport.setValue(transport);
-
-    if (transport === 'https') {
-      this.authMethod.set(
-        'https_token',
-      );
-
-      this.form.patchValue({
-        authMethod: 'https_token',
-        username: 'oauth2',
-        secret: '',
-      });
-    } else {
-      this.authMethod.set('ssh_key');
-
-      this.form.patchValue({
-        authMethod: 'ssh_key',
-        username: '',
-        secret: '',
-      });
-    }
-
-    this.adjustCredentialSource();
-    this.applySourceValidators();
-    this.invalidateSource();
-  }
-
-
-  onCredentialSourceChanged(
-    source: CredentialSource,
-  ): void {
-    this.credentialSource.set(source);
-
-    this.form.controls
-      .credentialSource.setValue(source);
-
-    this.applySourceValidators();
-    this.invalidateSource();
-  }
-
-
-  onAuthMethodChanged(
-    method: SourceAuthMethod,
-  ): void {
-    this.authMethod.set(method);
-
-    this.form.controls
-      .authMethod.setValue(method);
-
-    if (method === 'https_token') {
-      this.form.controls
-        .username.setValue('oauth2');
-
-    } else if (
-      method === 'https_password'
-    ) {
-      this.form.controls
-        .username.setValue('');
-    }
-
-    this.form.controls
-      .secret.setValue('');
-
-    this.applySourceValidators();
-    this.invalidateSource();
-  }
-
-
-  onTokenTypeChanged(): void {
-    const tokenType =
-      this.form.controls.tokenType.value;
-
-    if (tokenType === 'deploy_token') {
-      this.form.controls
-        .username.setValue('');
-    } else {
-      this.form.controls
-        .username.setValue('oauth2');
-    }
-
-    this.invalidateSource();
-  }
-
-
-  onArchiveSelected(
-    event: Event,
-  ): void {
-    const input =
-      event.target as HTMLInputElement;
-
-    const file =
-      input.files?.item(0) ?? null;
-
-    this.selectedArchiveFile.set(file);
-
-    this.invalidateSource();
-
-    if (!file) {
-      return;
-    }
-
-    if (
-      !file.name
-        .toLowerCase()
-        .endsWith('.zip')
-    ) {
-      this.sourceError.set(
-        (
-          'Sélectionnez un fichier '
-          + 'avec l’extension .zip.'
-        ),
-      );
-
-      return;
-    }
-
-    const maximumBytes =
-      this.options()
-        ?.archiveLimits.maxBytes;
-
-    if (
-      maximumBytes
-      && file.size > maximumBytes
-    ) {
-      this.sourceError.set(
-        (
-          'L’archive dépasse la limite de '
-          + `${this.options()
-            ?.archiveLimits.maxMegabytes} Mo.`
-        ),
-      );
-    }
-  }
-
-
-  selectEnvironment(
-    environmentId: number,
-  ): void {
-    this.selectedEnvironmentId.set(
-      environmentId,
-    );
-
-    this.environmentError.set(null);
-  }
-
-
-  adjustCredentialSource(): void {
-    if (this.visibility() === 'public') {
-      this.credentialSource.set('none');
-
-      this.form.controls
-        .credentialSource.setValue('none');
-
-      return;
-    }
-
-    const source: CredentialSource =
-      this.integrationCredentialCompatible()
-        ? 'integration'
-        : 'project';
-
-    this.credentialSource.set(source);
-
-    this.form.controls
-      .credentialSource.setValue(source);
-  }
-
-
-  invalidateSource(): void {
-    this.sourceValidation.set(null);
-    this.sourceError.set(null);
-    this.sourceSuccess.set(null);
-  }
-
-
-  validateSource(): void {
-    this.sourceError.set(null);
-    this.sourceSuccess.set(null);
-
-    const request =
-      this.buildValidationRequest();
-
-    if (!request) {
+  testStoredSource(): void {
+    const projectId = this.draftId();
+    if (!projectId) {
       return;
     }
 
     this.isTesting.set(true);
+    this.stepError.set(null);
+    this.successMessage.set(null);
 
     this.projectsService
-      .validateSource(request)
-      .pipe(
-        finalize(() => {
-          this.isTesting.set(false);
-        }),
-      )
+      .testStoredSource(projectId)
+      .pipe(finalize(() => this.isTesting.set(false)))
       .subscribe({
-        next: result => {
-          this.sourceValidation.set(result);
-
-          this.sourceSuccess.set(
-            result.sourceType === 'git'
-              ? (
-                  'Le repository et la branche '
-                  + 'sont accessibles.'
-                )
-              : (
-                  'L’archive ZIP est valide '
-                  + 'et prête pour l’analyse.'
-                ),
-          );
+        next: validation => {
+          this.sourceValidation.set(validation);
+          this.successMessage.set('La source enregistrée est accessible avec le credential stocké.');
         },
-
-        error: (
-          error: HttpErrorResponse,
-        ) => {
-          this.sourceError.set(
-            this.resolveError(error),
-          );
-        },
+        error: error => this.stepError.set(this.resolveError(error)),
       });
   }
 
+  saveEnvironmentAndContinue(): void {
+    const projectId = this.draftId();
+    const environmentId = this.selectedEnvironmentId();
 
-  createProject(): void {
-    this.form.controls
-      .name.markAsTouched();
-
-    this.creationError.set(null);
-    this.environmentError.set(null);
-
-    if (this.form.controls.name.invalid) {
-      this.creationError.set(
-        'Saisissez un nom de projet valide.',
-      );
-
+    if (!projectId || environmentId === null) {
+      this.stepError.set('Sélectionnez un environnement avant de continuer.');
       return;
     }
 
-    if (!this.sourceValidation()) {
-      this.creationError.set(
-        (
-          'Vérifiez la source avant '
-          + 'de créer le projet.'
-        ),
-      );
-
-      return;
-    }
-
-    const environmentId =
-      this.selectedEnvironmentId();
-
-    if (environmentId === null) {
-      this.environmentError.set(
-        'Sélectionnez un environnement.',
-      );
-
-      return;
-    }
-
-    const request =
-      this.buildCreationRequest(
-        environmentId,
-      );
-
-    if (!request) {
-      return;
-    }
-
-    this.isCreating.set(true);
+    this.isSaving.set(true);
+    this.stepError.set(null);
 
     this.projectsService
-      .createProject(request)
-      .pipe(
-        finalize(() => {
-          this.isCreating.set(false);
-        }),
-      )
+      .saveProjectEnvironment(projectId, { environmentId })
+      .pipe(finalize(() => this.isSaving.set(false)))
       .subscribe({
-        next: result => {
-          void this.router.navigate([
-            '/projects',
-            result.project.id,
-          ]);
+        next: project => {
+          this.draft.set(project);
+          this.step.set(4);
+          this.syncUrl();
         },
-
-        error: (
-          error: HttpErrorResponse,
-        ) => {
-          this.creationError.set(
-            this.resolveError(error),
-          );
-        },
+        error: error => this.stepError.set(this.resolveError(error)),
       });
   }
 
-
-  canCreate(): boolean {
-    return (
-      this.form.controls.name.valid
-      && this.sourceValidation() !== null
-      && this.selectedEnvironmentId()
-        !== null
-      && !this.isCreating()
-    );
-  }
-
-
-  credentialAuthLabel(): string {
-    const connection =
-      this.selectedConnection();
-
-    if (!connection) {
-      return 'Non configuré';
+  activateAndAnalyze(): void {
+    const projectId = this.draftId();
+    if (!projectId) {
+      return;
     }
 
-    const labels:
-      Record<string, string> = {
-        basic:
-          'Username et mot de passe',
+    this.isSaving.set(true);
+    this.stepError.set(null);
 
-        token:
-          'Username et token',
-
-        ssh_key:
-          'Clé privée SSH',
-
-        none:
-          'Aucun credential',
-      };
-
-    return (
-      labels[
-        connection.credentialAuthType
-      ]
-      ?? connection.credentialAuthType
-    );
+    this.projectsService
+      .activateProject(projectId)
+      .pipe(finalize(() => this.isSaving.set(false)))
+      .subscribe({
+        next: project => {
+          void this.router.navigate(['/projects', project.id, 'analysis']);
+        },
+        error: error => this.stepError.set(this.resolveError(error)),
+      });
   }
 
+  highestUnlockedStep(): CreationStep {
+    if (!this.draftId()) {
+      return 1;
+    }
+    if (!this.draft()?.source.repositoryUrl && this.draft()?.source.type !== 'zip') {
+      return 2;
+    }
+    if (!this.draft()?.defaultEnvironment) {
+      return 3;
+    }
+    return 4;
+  }
 
-  formatBytes(
-    value: number | null | undefined,
-  ): string {
+  formatBytes(value: number | null | undefined): string {
     if (!value) {
       return '0 o';
     }
-
     if (value < 1024) {
       return `${value} o`;
     }
-
     if (value < 1024 * 1024) {
-      return (
-        `${(value / 1024).toFixed(1)} Ko`
-      );
+      return `${(value / 1024).toFixed(1)} Ko`;
     }
-
-    return (
-      `${(
-        value
-        / 1024
-        / 1024
-      ).toFixed(1)} Mo`
-    );
+    return `${(value / 1024 / 1024).toFixed(1)} Mo`;
   }
 
+  private loadInitialData(): void {
+    this.isLoading.set(true);
+    this.pageError.set(null);
 
-  private buildValidationRequest():
-    ValidateGitSourceRequest
-    | FormData
-    | null {
-    if (this.sourceType() === 'zip') {
-      return this.buildZipFormData(false);
+    const draftId = this.draftId();
+    const options$ = this.projectsService.getOptions();
+    if (draftId) {
+      forkJoin({
+        options: options$,
+        project: this.projectsService.getProject(draftId),
+      })
+        .pipe(finalize(() => this.isLoading.set(false)))
+        .subscribe({
+          next: result => {
+            this.applyOptions(result.options);
+            this.applyDraft(result.project);
+          },
+          error: error => this.pageError.set(this.resolveError(error)),
+        });
+
+      return;
     }
 
-    return this.buildGitSourceRequest();
+    options$
+      .pipe(finalize(() => this.isLoading.set(false)))
+      .subscribe({
+        next: options => this.applyOptions(options),
+        error: error => this.pageError.set(this.resolveError(error)),
+      });
   }
 
-
-  private buildCreationRequest(
-    environmentId: number,
-  ): CreateGitProjectRequest
-    | FormData
-    | null {
-    const values =
-      this.form.getRawValue();
-
-    if (this.sourceType() === 'zip') {
-      return this.buildZipFormData(
-        true,
-        environmentId,
-      );
+  private applyOptions(options: ProjectOptions): void {
+    this.options.set(options);
+    const firstConnection = options.gitConnections[0];
+    if (firstConnection && this.sourceForm.controls.sourceConnectionId.value === 0) {
+      this.sourceForm.controls.sourceConnectionId.setValue(firstConnection.id);
     }
-
-    const sourceRequest =
-      this.buildGitSourceRequest();
-
-    if (!sourceRequest) {
-      return null;
-    }
-
-    return {
-      ...sourceRequest,
-
-      operationMode:
-        this.operationMode(),
-
-      name:
-        values.name.trim(),
-
-      description:
-        values.description.trim()
-        || null,
-
-      environmentId,
-    };
   }
 
+  private applyDraft(project: Project): void {
+    this.draft.set(project);
+    this.draftId.set(project.id);
+    this.identityForm.patchValue({
+      operationMode: project.operationMode,
+      name: project.name,
+      description: project.description ?? '',
+    });
+    this.sourceForm.patchValue({
+      sourceType: project.source.type,
+      sourceConnectionId: project.source.connectionId ?? 0,
+      repositoryUrl: project.source.repositoryUrl ?? '',
+      branch: project.source.branch || 'main',
+      sourceSubdirectory: project.source.subdirectory ?? '',
+      visibility: project.source.visibility,
+      transport: project.source.transport === 'archive' ? 'https' : project.source.transport,
+      credentialSource: project.source.credentialSource,
+      authMethod: project.source.authMethod,
+      tokenType: project.source.tokenType ?? 'project_access_token',
+      username: project.source.username ?? 'oauth2',
+      secret: '',
+    });
+    this.selectedEnvironmentId.set(project.defaultEnvironment?.id ?? null);
+  }
 
-  private buildGitSourceRequest():
-    ValidateGitSourceRequest | null {
-    const values =
-      this.form.getRawValue();
+  private buildSourceRequest(): ValidateGitSourceRequest | FormData | null {
+    if (this.sourceForm.controls.sourceType.value === 'zip') {
+      return this.buildZipFormData();
+    }
 
-    if (
-      Number(values.sourceConnectionId)
-      <= 0
-    ) {
-      this.sourceError.set(
-        'Sélectionnez le serveur GitLab.',
-      );
-
+    const values = this.sourceForm.getRawValue();
+    if (Number(values.sourceConnectionId) <= 0) {
+      this.stepError.set('Sélectionnez une connexion Git.');
+      return null;
+    }
+    if (!values.repositoryUrl.trim() || !values.branch.trim()) {
+      this.stepError.set('L’URL du repository et la branche sont obligatoires.');
       return null;
     }
 
-    if (!values.repositoryUrl.trim()) {
-      this.sourceError.set(
-        'Saisissez l’URL de clonage Git.',
-      );
+    const isPrivate = values.visibility === 'private';
+    const credentialSource: CredentialSource = isPrivate ? values.credentialSource : 'none';
+    const authMethod: SourceAuthMethod = isPrivate ? values.authMethod : 'none';
+    const existingCredential = this.credentialAlreadyStored();
+    const secret = values.secret.trim() || null;
 
+    if (isPrivate && credentialSource === 'project' && !secret && !existingCredential) {
+      this.stepError.set('Saisissez le token ou la clé privée du projet.');
       return null;
     }
-
-    if (!values.branch.trim()) {
-      this.sourceError.set(
-        'Saisissez la branche Git.',
-      );
-
+    if (isPrivate && values.transport === 'https' && !values.username.trim()) {
+      this.stepError.set('Le username Git est obligatoire pour HTTPS.');
       return null;
-    }
-
-    const visibility =
-      this.visibility();
-
-    const transport: GitTransport =
-      visibility === 'public'
-        ? 'https'
-        : this.transport();
-
-    const credentialSource:
-      CredentialSource =
-      visibility === 'public'
-        ? 'none'
-        : this.credentialSource();
-
-    let authMethod:
-      SourceAuthMethod = 'none';
-
-    let tokenType:
-      GitTokenType | null = null;
-
-    let username:
-      string | null = null;
-
-    let secret:
-      string | null = null;
-
-    if (
-      visibility === 'private'
-      && credentialSource === 'project'
-    ) {
-      authMethod =
-        transport === 'ssh'
-          ? 'ssh_key'
-          : this.authMethod();
-
-      username =
-        values.username.trim()
-        || null;
-
-      secret =
-        values.secret.trim()
-        || null;
-
-      if (
-        authMethod === 'https_token'
-      ) {
-        tokenType =
-          values.tokenType;
-      }
-
-      if (
-        transport === 'https'
-        && !username
-      ) {
-        this.sourceError.set(
-          'Le username Git est obligatoire.',
-        );
-
-        return null;
-      }
-
-      if (!secret) {
-        this.sourceError.set(
-          transport === 'ssh'
-            ? (
-                'La clé privée SSH '
-                + 'est obligatoire.'
-              )
-            : (
-                'Le mot de passe ou le token '
-                + 'est obligatoire.'
-              ),
-        );
-
-        return null;
-      }
     }
 
     return {
       sourceType: 'git',
-
-      sourceConnectionId:
-        Number(values.sourceConnectionId),
-
-      repositoryUrl:
-        values.repositoryUrl.trim(),
-
-      visibility,
-      transport,
+      sourceConnectionId: Number(values.sourceConnectionId),
+      repositoryUrl: values.repositoryUrl.trim(),
+      visibility: values.visibility,
+      transport: values.transport,
       credentialSource,
       authMethod,
-      tokenType,
-      username,
+      tokenType: authMethod === 'https_token' ? values.tokenType : null,
+      username: isPrivate ? values.username.trim() || null : null,
       secret,
-
-      branch:
-        values.branch.trim(),
-
-      sourceSubdirectory:
-        values.sourceSubdirectory.trim()
-        || null,
+      branch: values.branch.trim(),
+      sourceSubdirectory: values.sourceSubdirectory.trim() || null,
     };
   }
 
-
-  private buildZipFormData(
-    includeProject: boolean,
-    environmentId?: number,
-  ): FormData | null {
-    const archiveFile =
-      this.selectedArchiveFile();
-
-    if (!archiveFile) {
-      this.sourceError.set(
-        'Sélectionnez une archive ZIP.',
-      );
-
+  private buildZipFormData(): FormData | null {
+    const file = this.selectedArchiveFile();
+    if (!file) {
+      this.stepError.set('Sélectionnez une archive ZIP.');
+      return null;
+    }
+    const maxBytes = this.options()?.archiveLimits.maxBytes;
+    if (!file.name.toLowerCase().endsWith('.zip') || (maxBytes && file.size > maxBytes)) {
+      this.stepError.set('L’archive ZIP est invalide ou dépasse la taille autorisée.');
       return null;
     }
 
-    if (
-      !archiveFile.name
-        .toLowerCase()
-        .endsWith('.zip')
-    ) {
-      this.sourceError.set(
-        'Seuls les fichiers .zip sont acceptés.',
-      );
-
-      return null;
-    }
-
-    const maximumBytes =
-      this.options()
-        ?.archiveLimits.maxBytes;
-
-    if (
-      maximumBytes
-      && archiveFile.size > maximumBytes
-    ) {
-      this.sourceError.set(
-        (
-          'L’archive dépasse la limite de '
-          + `${this.options()
-            ?.archiveLimits.maxMegabytes} Mo.`
-        ),
-      );
-
-      return null;
-    }
-
-    const values =
-      this.form.getRawValue();
-
-    const payload:
-      Record<string, unknown> = {
-        sourceType: 'zip',
-
-        sourceSubdirectory:
-          values.sourceSubdirectory.trim()
-          || null,
-      };
-
-    if (includeProject) {
-      payload['operationMode'] =
-        this.operationMode();
-
-      payload['name'] =
-        values.name.trim();
-
-      payload['description'] =
-        values.description.trim()
-        || null;
-
-      payload['environmentId'] =
-        environmentId;
-    }
-
-    const formData =
-      new FormData();
-
-    formData.append(
-      'payload',
-      JSON.stringify(payload),
-    );
-
-    formData.append(
-      'archiveFile',
-      archiveFile,
-      archiveFile.name,
-    );
-
+    const formData = new FormData();
+    formData.append('payload', JSON.stringify({
+      sourceType: 'zip',
+      sourceSubdirectory: this.sourceForm.controls.sourceSubdirectory.value.trim() || null,
+    }));
+    formData.append('archiveFile', file, file.name);
     return formData;
   }
 
-
-  private applySourceValidators(): void {
-    const connectionControl =
-      this.form.controls.sourceConnectionId;
-
-    const repositoryControl =
-      this.form.controls.repositoryUrl;
-
-    const branchControl =
-      this.form.controls.branch;
-
-    const usernameControl =
-      this.form.controls.username;
-
-    const secretControl =
-      this.form.controls.secret;
-
-    connectionControl.clearValidators();
-    repositoryControl.clearValidators();
-    branchControl.clearValidators();
-    usernameControl.clearValidators();
-    secretControl.clearValidators();
-
-    if (this.sourceType() === 'git') {
-      connectionControl.setValidators([
-        Validators.required,
-        Validators.min(1),
-      ]);
-
-      repositoryControl.setValidators([
-        Validators.required,
-      ]);
-
-      branchControl.setValidators([
-        Validators.required,
-      ]);
-
-      if (
-        this.visibility() === 'private'
-        && this.credentialSource()
-          === 'project'
-      ) {
-        secretControl.setValidators([
-          Validators.required,
-        ]);
-
-        if (
-          this.transport() === 'https'
-        ) {
-          usernameControl.setValidators([
-            Validators.required,
-          ]);
-        }
-      }
-    }
-
-    connectionControl.updateValueAndValidity({
-      emitEvent: false,
-    });
-
-    repositoryControl.updateValueAndValidity({
-      emitEvent: false,
-    });
-
-    branchControl.updateValueAndValidity({
-      emitEvent: false,
-    });
-
-    usernameControl.updateValueAndValidity({
-      emitEvent: false,
-    });
-
-    secretControl.updateValueAndValidity({
-      emitEvent: false,
+  private syncUrl(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        draftId: this.draftId(),
+        step: this.step(),
+      },
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
     });
   }
 
-
-  private resolveError(
-    error: HttpErrorResponse,
-  ): string {
+  private resolveError(error: HttpErrorResponse): string {
     if (error.status === 0) {
-      return (
-        'Le backend Flask est inaccessible.'
-      );
+      return 'Le backend Flask est inaccessible.';
     }
-
-    const response =
-      error.error as
-        ApiErrorResponse | null;
-
-    return (
-      response?.error?.message
-      || `Erreur HTTP ${error.status}.`
-    );
+    const response = error.error as ApiErrorResponse | null;
+    return response?.error?.message || `Erreur HTTP ${error.status}.`;
   }
 }

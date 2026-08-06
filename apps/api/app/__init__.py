@@ -31,6 +31,12 @@ from app.dashboard.routes import (
     dashboard_blueprint,
 )
 
+from app.deployments import (
+    deployments_blueprint,
+    register_deployment_commands,
+)
+
+
 from app.database import (
     database_is_available,
 )
@@ -163,6 +169,11 @@ def create_app() -> Flask:
         generation_blueprint,
         url_prefix="/api/projects",
     )
+    
+    app.register_blueprint(
+        deployments_blueprint,
+        url_prefix="/api/deployments",
+    )
 
 
     # Nouveau workflow sécurisé
@@ -186,6 +197,8 @@ def create_app() -> Flask:
     register_integration_commands(
         app
     )
+
+    register_deployment_commands(app)
 
 
     @app.errorhandler(

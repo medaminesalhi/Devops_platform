@@ -1,0 +1,185 @@
+<section class="deployments-page">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">Exploitation</p>
+      <h1>Déploiements</h1>
+      <p>Suivez toutes les versions, les pipelines et la santé des applications depuis une seule console.</p>
+    </div>
+
+    <div class="page-heading__actions">
+      <button
+        class="button button--secondary"
+        type="button"
+        [disabled]="isRefreshing()"
+        (click)="loadDeployments(true)"
+      >
+        <span [class.spinning]="isRefreshing()">↻</span>
+        Actualiser
+      </button>
+
+      <a class="button button--primary" routerLink="/deployments/new">
+        <span>＋</span>
+        Nouveau déploiement
+      </a>
+    </div>
+  </header>
+
+  @if (demoMode) {
+    <section class="demo-banner">
+      <span class="demo-banner__icon">◈</span>
+      <div>
+        <strong>Aperçu frontend actif</strong>
+        <p>Les données sont simulées pour valider l’interface. Le prochain backend remplacera ce mode sans changer les pages.</p>
+      </div>
+    </section>
+  }
+
+  <section class="metric-grid" aria-label="Résumé des déploiements">
+    <article class="metric-card metric-card--neutral">
+      <span class="metric-card__icon">▦</span>
+      <div><strong>{{ total() }}</strong><small>Tous les déploiements</small></div>
+    </article>
+    <article class="metric-card metric-card--running">
+      <span class="metric-card__icon">↻</span>
+      <div><strong>{{ runningCount() }}</strong><small>En cours</small></div>
+    </article>
+    <article class="metric-card metric-card--waiting">
+      <span class="metric-card__icon">◷</span>
+      <div><strong>{{ waitingCount() }}</strong><small>À confirmer</small></div>
+    </article>
+    <article class="metric-card metric-card--success">
+      <span class="metric-card__icon">✓</span>
+      <div><strong>{{ succeededCount() }}</strong><small>Réussis</small></div>
+    </article>
+    <article class="metric-card metric-card--failed">
+      <span class="metric-card__icon">!</span>
+      <div><strong>{{ failedCount() }}</strong><small>Échoués</small></div>
+    </article>
+  </section>
+
+  <section class="filters-panel">
+    <form [formGroup]="filterForm" (ngSubmit)="loadDeployments()">
+      <label class="field field--search">
+        <span>Recherche</span>
+        <div class="search-control">
+          <i>⌕</i>
+          <input
+            type="search"
+            formControlName="search"
+            placeholder="Projet, version ou commit…"
+          />
+        </div>
+      </label>
+
+      <label class="field">
+        <span>État</span>
+        <select formControlName="status">
+          <option value="">Tous les états</option>
+          <option value="running">En cours</option>
+          <option value="waiting_confirmation">À confirmer</option>
+          <option value="succeeded">Réussi</option>
+          <option value="failed">Échoué</option>
+          <option value="cancelled">Annulé</option>
+        </select>
+      </label>
+
+      <div class="filter-actions">
+        <button class="button button--ghost" type="button" (click)="resetFilters()">
+          Réinitialiser
+        </button>
+        <button class="button button--secondary" type="submit">Filtrer</button>
+      </div>
+    </form>
+  </section>
+
+  @if (errorMessage()) {
+    <section class="message message--error">
+      <span>!</span>
+      <div><strong>Chargement impossible</strong><p>{{ errorMessage() }}</p></div>
+    </section>
+  }
+
+  <section class="deployments-card">
+    <header class="card-heading">
+      <div>
+        <p class="eyebrow">Historique global</p>
+        <h2>Exécutions récentes</h2>
+        <p>{{ total() }} déploiement(s) correspondent aux filtres.</p>
+      </div>
+    </header>
+
+    @if (isLoading()) {
+      <div class="loading-state">
+        <span class="loader"></span>
+        <p>Chargement des déploiements…</p>
+      </div>
+    } @else if (deployments().length === 0) {
+      <div class="empty-state">
+        <span>⇄</span>
+        <h3>Aucun déploiement</h3>
+        <p>Préparez une version approuvée depuis un projet, puis créez sa première exécution.</p>
+        <a class="button button--primary" routerLink="/deployments/new">Créer un déploiement</a>
+      </div>
+    } @else {
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Projet et version</th>
+              <th>Environnement</th>
+              <th>Étape actuelle</th>
+              <th>État</th>
+              <th>Progression</th>
+              <th>Déclenché par</th>
+              <th>Date</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (deployment of deployments(); track deployment.id) {
+              <tr>
+                <td>
+                  <div class="deployment-identity">
+                    <span>{{ deployment.projectName.charAt(0).toUpperCase() }}</span>
+                    <div>
+                      <strong>{{ deployment.projectName }}</strong>
+                      <small>{{ deployment.version }} · {{ deployment.sourceCommit.slice(0, 8) }}</small>
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <strong>{{ deployment.environmentName }}</strong>
+                  <small>{{ deployment.namespace }}</small>
+                </td>
+                <td>
+                  <strong>{{ deployment.currentStageLabel }}</strong>
+                  <small>Déploiement #{{ deployment.id }}</small>
+                </td>
+                <td>
+                  <span class="status-pill" [class]="'status-pill ' + statusClass(deployment.status)">
+                    <i></i>{{ statusLabel(deployment.status) }}
+                  </span>
+                </td>
+                <td>
+                  <div class="progress-cell">
+                    <div class="progress-track">
+                      <span [style.width.%]="deployment.progress"></span>
+                    </div>
+                    <small>{{ progressLabel(deployment) }}</small>
+                  </div>
+                </td>
+                <td>{{ deployment.createdByName }}</td>
+                <td>{{ deployment.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                <td>
+                  <a class="open-button" [routerLink]="['/deployments', deployment.id]">
+                    Ouvrir <span>→</span>
+                  </a>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+</section>

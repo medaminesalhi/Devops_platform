@@ -12,13 +12,8 @@
     </div>
   </header>
 
-  <nav
-    class="navigation"
-    aria-label="Navigation principale"
-  >
-    <p class="navigation__title">
-      Espace de travail
-    </p>
+  <nav class="navigation" aria-label="Navigation principale">
+    <p class="navigation__title">Espace de travail</p>
 
     <a
       class="navigation-item"
@@ -27,9 +22,7 @@
       [routerLinkActiveOptions]="{ exact: true }"
     >
       <span class="navigation-item__icon">⌂</span>
-      <span class="navigation-item__label">
-        Vue générale
-      </span>
+      <span class="navigation-item__label">Vue générale</span>
     </a>
 
     <a
@@ -38,34 +31,25 @@
       routerLinkActive="navigation-item--active"
     >
       <span class="navigation-item__icon">▣</span>
-      <span class="navigation-item__label">
-        Projets
-      </span>
+      <span class="navigation-item__label">Projets</span>
     </a>
 
-    <button
-      class="navigation-item navigation-item--disabled"
-      type="button"
-      disabled
+    <a
+      class="navigation-item"
+      routerLink="/deployments"
+      routerLinkActive="navigation-item--active"
     >
       <span class="navigation-item__icon">⇄</span>
-      <span class="navigation-item__label">
-        Déploiements
-      </span>
-    </button>
+      <span class="navigation-item__label">Déploiements</span>
+    </a>
 
     <a
       class="navigation-item"
       routerLink="/infrastructure"
       routerLinkActive="navigation-item--active"
     >
-      <span class="navigation-item__icon">
-        ◎
-      </span>
-
-      <span class="navigation-item__label">
-        Infrastructure
-      </span>
+      <span class="navigation-item__icon">◎</span>
+      <span class="navigation-item__label">Infrastructure</span>
     </a>
 
     <a
@@ -74,9 +58,7 @@
       routerLinkActive="navigation-item--active"
     >
       <span class="navigation-item__icon">↗</span>
-      <span class="navigation-item__label">
-        Intégrations
-      </span>
+      <span class="navigation-item__label">Intégrations</span>
     </a>
 
     <button
@@ -85,22 +67,16 @@
       disabled
     >
       <span class="navigation-item__icon">⚙</span>
-      <span class="navigation-item__label">
-        Paramètres
-      </span>
+      <span class="navigation-item__label">Paramètres</span>
     </button>
   </nav>
 
   <footer class="sidebar-footer">
-    <div class="user-avatar">
-      AS
-    </div>
-
+    <div class="user-avatar">AS</div>
     <div class="user-information">
       <strong>Amine Salhi</strong>
       <span>Administrateur</span>
     </div>
-
     <button
       class="logout-button"
       type="button"

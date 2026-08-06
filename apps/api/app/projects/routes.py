@@ -913,3 +913,8 @@ def project_detail_route(
             },
         }
     )
+
+
+# Routes additionnelles du parcours progressif.
+from app.projects import drafts as _draft_routes  # noqa: E402,F401
+from app.projects import proposals as _proposal_routes  # noqa: E402,F401

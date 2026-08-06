@@ -1,0 +1,118 @@
+:host {
+  display: block;
+}
+
+.phase-stepper {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #dbe5e8;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgb(15 42 50 / 6%);
+}
+
+.phase-stepper__item {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: #617984;
+  text-decoration: none;
+  transition: 160ms ease;
+}
+
+.phase-stepper__item:not(.phase-stepper__item--locked):hover {
+  border-color: #cbdadd;
+  background: #f7fafb;
+  color: #12343d;
+}
+
+.phase-stepper__item--active {
+  border-color: #0e5e68;
+  background: #eaf4f4;
+  color: #0c3c45;
+}
+
+.phase-stepper__item--completed:not(.phase-stepper__item--active) {
+  color: #315441;
+}
+
+.phase-stepper__item--locked {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.phase-stepper__number {
+  display: grid;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  background: #edf2f3;
+  color: #6d848d;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.phase-stepper__item--active .phase-stepper__number {
+  background: #0f626c;
+  color: #ffffff;
+}
+
+.phase-stepper__item--completed .phase-stepper__number {
+  background: #dff1c9;
+  color: #4c8a00;
+}
+
+.phase-stepper__text {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.phase-stepper__text strong {
+  overflow: hidden;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phase-stepper__text small {
+  overflow: hidden;
+  color: #8aa0a8;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phase-stepper__lock {
+  margin-left: auto;
+  font-size: 13px;
+}
+
+@media (max-width: 1100px) {
+  .phase-stepper {
+    grid-template-columns: repeat(5, minmax(116px, 1fr));
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .phase-stepper {
+    display: flex;
+  }
+
+  .phase-stepper__item {
+    flex: 0 0 180px;
+  }
+}

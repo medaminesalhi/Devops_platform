@@ -1,0 +1,107 @@
+<section class="gateway-page">
+  <app-project-phase-stepper [phases]="phases()" activePhase="deployment" />
+
+  @if (errorMessage()) {
+    <section class="message message--error"><span>!</span><p>{{ errorMessage() }}</p></section>
+  }
+
+  @if (isLoading()) {
+    <section class="loading-card"><span class="loader"></span><p>Préparation de la phase Déploiement…</p></section>
+  } @else {
+    <header class="phase-heading">
+      <span class="phase-number">5</span>
+      <div>
+        <p class="eyebrow">Phase 5 · Transition</p>
+        <h1>Prêt à déployer</h1>
+        <p>Le projet est préparé. Les exécutions, logs, ressources et diagnostics sont gérés dans la console Déploiements.</p>
+      </div>
+    </header>
+
+    @if (readiness(); as current) {
+      <section class="launch-panel">
+        <div class="launch-copy">
+          <span class="launch-icon">⇄</span>
+          <div>
+            <p class="eyebrow">Version approuvée</p>
+            <h2>{{ current.projectName }}</h2>
+            <p>{{ current.generationLabel ?? 'Aucune génération' }} · {{ current.sourceCommit?.slice(0, 12) ?? 'Commit indisponible' }}</p>
+          </div>
+        </div>
+
+        <div class="launch-meta">
+          <article><span>Environnement</span><strong>{{ current.environmentName ?? '—' }}</strong></article>
+          <article><span>Namespace</span><strong>{{ current.namespace ?? '—' }}</strong></article>
+          <article><span>Composants</span><strong>{{ current.componentCount }}</strong></article>
+          <article><span>État</span><strong [class.ready]="current.ready">{{ current.ready ? 'Prêt' : 'Action requise' }}</strong></article>
+        </div>
+
+        <div class="launch-actions">
+          <a class="button button--secondary" routerLink="/deployments">Voir tous les déploiements</a>
+          <a
+            class="button button--primary"
+            routerLink="/deployments/new"
+            [queryParams]="{ projectId: current.projectId, generationId: current.generationId }"
+            [class.button--disabled]="!current.ready"
+            [attr.aria-disabled]="!current.ready"
+          >
+            Créer le déploiement <span>→</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel readiness-card">
+          <header><div><p class="eyebrow">Prévalidation</p><h2>Prérequis</h2></div><span>{{ current.checks.length }}</span></header>
+          <div class="checks-list">
+            @for (check of current.checks; track check.key) {
+              <div [class]="'check-row check-row--' + check.status">
+                <span>{{ check.status === 'ready' ? '✓' : check.status === 'warning' ? '!' : '×' }}</span>
+                <div><strong>{{ check.label }}</strong><p>{{ check.description }}</p></div>
+                <small>{{ check.integrationName ?? 'Projet' }}</small>
+              </div>
+            }
+          </div>
+        </article>
+
+        <article class="panel separation-card">
+          <p class="eyebrow">Séparation des responsabilités</p>
+          <h2>Pourquoi ouvrir la console Déploiements ?</h2>
+          <div class="separation-list">
+            <div><span>Projet</span><p>Prépare et approuve une version reproductible.</p></div>
+            <i>→</i>
+            <div><span>Déploiement</span><p>Exécute, surveille, diagnostique et relance.</p></div>
+          </div>
+          <ul>
+            <li>Pipeline et logs en temps réel</li>
+            <li>Ressources Kubernetes et santé Argo CD</li>
+            <li>Diagnostic IA interactif et corrections contrôlées</li>
+            <li>Historique de toutes les exécutions</li>
+          </ul>
+        </article>
+      </section>
+
+      <section class="panel history-card">
+        <header>
+          <div><p class="eyebrow">Ce projet</p><h2>Déploiements récents</h2><p>Les nouvelles exécutions se créent ensuite directement depuis le menu Déploiements.</p></div>
+          <a routerLink="/deployments">Historique global →</a>
+        </header>
+
+        @if (recentDeployments().length === 0) {
+          <div class="empty-state"><span>⇄</span><h3>Aucune exécution</h3><p>Créez le premier déploiement de cette version.</p></div>
+        } @else {
+          <div class="history-list">
+            @for (deployment of recentDeployments(); track deployment.id) {
+              <a [routerLink]="['/deployments', deployment.id]">
+                <span class="history-id">#{{ deployment.id }}</span>
+                <div><strong>{{ deployment.version }}</strong><small>{{ deployment.createdAt | date:'dd/MM/yyyy HH:mm' }}</small></div>
+                <span>{{ deployment.currentStageLabel }}</span>
+                <i [class]="'status status--' + deployment.status.replace('_', '-')">{{ statusLabel(deployment.status) }}</i>
+                <b>→</b>
+              </a>
+            }
+          </div>
+        }
+      </section>
+    }
+  }
+</section>

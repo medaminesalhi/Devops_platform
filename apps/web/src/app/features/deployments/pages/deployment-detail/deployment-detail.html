@@ -1,0 +1,295 @@
+<section class="deployment-detail-page">
+  <nav class="breadcrumb" aria-label="Fil d’Ariane">
+    <a routerLink="/deployments">Déploiements</a>
+    <span>›</span>
+    <strong>#{{ deployment()?.id ?? '—' }}</strong>
+  </nav>
+
+  @if (errorMessage()) {
+    <section class="message message--error"><span>!</span><div><strong>Opération impossible</strong><p>{{ errorMessage() }}</p></div></section>
+  }
+  @if (successMessage()) {
+    <section class="message message--success"><span>✓</span><p>{{ successMessage() }}</p></section>
+  }
+
+  @if (isLoading()) {
+    <section class="loading-card"><span class="loader"></span><p>Chargement de la console…</p></section>
+  } @else if (deployment(); as current) {
+    <header class="deployment-header">
+      <div class="deployment-header__identity">
+        <span class="deployment-id">#{{ current.id }}</span>
+        <div>
+          <div class="title-row">
+            <h1>{{ current.projectName }}</h1>
+            <span [class]="'status-pill status-pill--' + current.status.replace('_', '-')"><i></i>{{ statusLabel(current.status) }}</span>
+          </div>
+          <p>{{ current.version }} · {{ current.environmentName }} · {{ current.namespace }}</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button class="button button--secondary" type="button" [disabled]="isRefreshing()" (click)="refresh()">
+          <span [class.spinning]="isRefreshing()">↻</span> Actualiser
+        </button>
+        @if (canConfirmSync()) {
+          <button class="button button--warning" type="button" [disabled]="isWorking()" (click)="confirmSync()">Confirmer Argo CD</button>
+        }
+        @if (canRetry()) {
+          <button class="button button--primary" type="button" [disabled]="isWorking()" (click)="retry()">Relancer depuis l’erreur</button>
+        }
+        @if (canCancel()) {
+          <button class="button button--danger" type="button" [disabled]="isWorking()" (click)="cancel()">Annuler</button>
+        }
+      </div>
+    </header>
+
+    @if (demoMode) {
+      <section class="demo-banner"><span>◈</span><p>Console interactive de démonstration. Le statut en cours progresse automatiquement pour valider l’interface temps réel.</p></section>
+    }
+
+    <section class="overview-grid">
+      <article class="overview-card overview-card--progress">
+        <div class="overview-card__heading"><span>Progression</span><strong>{{ current.progress }} %</strong></div>
+        <div class="main-progress"><span [style.width.%]="current.progress"></span></div>
+        <p>{{ current.currentStageLabel }}</p>
+      </article>
+      <article class="overview-card"><span>Commit source</span><strong>{{ current.sourceCommit.slice(0, 12) }}</strong><small>Génération #{{ current.generationId }}</small></article>
+      <article class="overview-card"><span>GitOps</span><strong>{{ current.gitopsCommit ?? 'En attente' }}</strong><small>{{ current.syncMode === 'confirm_before_sync' ? 'Synchronisation contrôlée' : current.syncMode === 'automatic' ? 'Synchronisation automatique' : 'Préparation uniquement' }}</small></article>
+      <article class="overview-card"><span>Déclenché par</span><strong>{{ current.createdByName }}</strong><small>{{ current.createdAt | date:'dd/MM/yyyy HH:mm' }}</small></article>
+    </section>
+
+    @if (current.incident; as incident) {
+      <section class="incident-banner">
+        <div class="incident-banner__icon">!</div>
+        <div class="incident-banner__content">
+          <p class="eyebrow">Incident détecté</p>
+          <h2>{{ incident.title }}</h2>
+          <p>{{ incident.message }}</p>
+          <div class="incident-meta">
+            <span>Code <strong>{{ incident.code }}</strong></span>
+            <span>Étape <strong>{{ current.currentStageLabel }}</strong></span>
+            @if (incident.integrationName) {<span>Connexion <strong>{{ incident.integrationName }}</strong></span>}
+          </div>
+        </div>
+        <div class="incident-actions">
+          <button class="button button--light-danger" type="button" (click)="setTab('logs')">Voir les logs</button>
+          <button class="button button--primary" type="button" [disabled]="isWorking()" (click)="requestDiagnosis()">Analyser avec l’IA</button>
+        </div>
+      </section>
+    }
+
+    @if (current.status === 'waiting_confirmation') {
+      <section class="confirmation-banner">
+        <span>◷</span>
+        <div><strong>Le pipeline attend votre confirmation</strong><p>Les images sont publiées et GitOps est prêt. Vérifiez les changements puis autorisez la synchronisation Argo CD.</p></div>
+        <button class="button button--warning" type="button" [disabled]="isWorking()" (click)="confirmSync()">Confirmer la synchronisation</button>
+      </section>
+    }
+
+    @if (current.status === 'succeeded') {
+      <section class="success-banner">
+        <span>✓</span>
+        <div><strong>Déploiement réussi</strong><p>Argo CD est synchronisé et les ressources Kubernetes sont saines.</p></div>
+        @if (current.health.applicationUrl) {<button class="button button--success" type="button" (click)="openApplication()">Ouvrir l’application ↗</button>}
+      </section>
+    }
+
+    <nav class="tabs" aria-label="Sections du déploiement">
+      <button type="button" [class.active]="activeTab() === 'pipeline'" (click)="setTab('pipeline')"><span>▤</span>Pipeline</button>
+      <button type="button" [class.active]="activeTab() === 'logs'" (click)="setTab('logs')"><span>_</span>Logs <i>{{ current.logs.length }}</i></button>
+      <button type="button" [class.active]="activeTab() === 'resources'" (click)="setTab('resources')"><span>◎</span>Ressources <i>{{ current.resources.length }}</i></button>
+      <button type="button" [class.active]="activeTab() === 'assistant'" (click)="setTab('assistant')"><span>✦</span>Diagnostic IA @if (current.incident) {<b></b>}</button>
+    </nav>
+
+    @if (activeTab() === 'pipeline') {
+      <div class="pipeline-layout">
+        <section class="panel pipeline-card">
+          <header class="panel-heading">
+            <div><p class="eyebrow">Exécution contrôlée</p><h2>Pipeline de déploiement</h2><p>Chaque étape est persistée et peut être reprise selon le type d’erreur.</p></div>
+            <label class="live-toggle"><input type="checkbox" [checked]="liveMode()" (change)="toggleLiveMode()"/><span></span>Temps réel</label>
+          </header>
+
+          <div class="steps-list">
+            @for (step of current.steps; track step.id) {
+              <button type="button" class="step-row" [class.step-row--expanded]="selectedStepId() === step.id" [class]="'step-row step-row--' + step.status" (click)="selectStep(step.id)">
+                <span class="step-index">
+                  @switch (step.status) {
+                    @case ('succeeded') { ✓ }
+                    @case ('failed') { ! }
+                    @case ('running') { <i class="step-spinner"></i> }
+                    @case ('cancelled') { × }
+                    @default { {{ step.order }} }
+                  }
+                </span>
+                <div class="step-copy"><strong>{{ step.label }}</strong><p>{{ step.description }}</p></div>
+                <div class="step-meta"><span>{{ stepStatusLabel(step.status) }}</span>@if (step.durationSeconds) {<small>{{ step.durationSeconds }} s</small>}</div>
+                <span class="step-chevron">⌄</span>
+              </button>
+
+              @if (selectedStepId() === step.id) {
+                <article class="step-details">
+                  <div><span>Début</span><strong>{{ step.startedAt ? (step.startedAt | date:'HH:mm:ss') : '—' }}</strong></div>
+                  <div><span>Fin</span><strong>{{ step.finishedAt ? (step.finishedAt | date:'HH:mm:ss') : '—' }}</strong></div>
+                  <div><span>Code d’erreur</span><strong>{{ step.errorCode ?? 'Aucun' }}</strong></div>
+                  <div class="step-details__message"><span>Résultat</span><strong>{{ step.errorMessage ?? (step.status === 'succeeded' ? 'Étape terminée correctement.' : 'Aucun détail supplémentaire.') }}</strong></div>
+                </article>
+              }
+            }
+          </div>
+        </section>
+
+        <aside class="pipeline-sidebar">
+          <section class="panel component-card">
+            <header><p class="eyebrow">Release</p><h2>Composants</h2></header>
+            <div>
+              @for (component of current.components; track component.id) {
+                <article>
+                  <span class="component-icon">{{ component.type === 'frontend' ? 'W' : 'A' }}</span>
+                  <div><strong>{{ component.name }}</strong><p>{{ component.imageRepository }}:{{ component.imageTag }}</p></div>
+                  <small>{{ component.replicas }} réplica(s)</small>
+                </article>
+              }
+            </div>
+          </section>
+
+          <section class="panel health-card">
+            <header><p class="eyebrow">État cible</p><h2>Santé</h2></header>
+            <dl>
+              <div><dt>Argo CD Sync</dt><dd [class.good]="current.health.argocdSync === 'Synced'">{{ current.health.argocdSync }}</dd></div>
+              <div><dt>Application</dt><dd [class.good]="current.health.argocdHealth === 'Healthy'">{{ current.health.argocdHealth }}</dd></div>
+              <div><dt>Pods prêts</dt><dd>{{ current.health.readyPods }}/{{ current.health.totalPods }}</dd></div>
+              <div><dt>Ingress</dt><dd [class.good]="current.health.ingressReady">{{ current.health.ingressReady ? 'Disponible' : 'En attente' }}</dd></div>
+              <div><dt>Migration</dt><dd>{{ current.health.migrationStatus }}</dd></div>
+            </dl>
+          </section>
+        </aside>
+      </div>
+    }
+
+    @if (activeTab() === 'logs') {
+      <section class="panel logs-card">
+        <header class="logs-toolbar">
+          <div><p class="eyebrow">Streaming</p><h2>Logs en temps réel</h2></div>
+          <div class="log-filters">
+            <select [ngModel]="selectedLogScope()" (ngModelChange)="selectedLogScope.set($event)">
+              <option value="all">Tous les services</option>
+              <option value="system">Système</option><option value="docker">Docker</option><option value="nexus">Nexus</option><option value="gitops">GitOps</option><option value="argocd">Argo CD</option><option value="kubernetes">Kubernetes</option><option value="application">Application</option>
+            </select>
+            <select [ngModel]="selectedLogLevel()" (ngModelChange)="selectedLogLevel.set($event)">
+              <option value="all">Tous les niveaux</option><option value="info">Information</option><option value="success">Succès</option><option value="warning">Avertissement</option><option value="error">Erreur</option>
+            </select>
+            <label class="live-toggle"><input type="checkbox" [checked]="liveMode()" (change)="toggleLiveMode()"/><span></span>Suivre</label>
+          </div>
+        </header>
+
+        <div class="terminal">
+          <div class="terminal__topbar"><span></span><span></span><span></span><strong>deployment-{{ current.id }}.log</strong><small>{{ filteredLogs().length }} ligne(s)</small></div>
+          <div class="terminal__body">
+            @if (filteredLogs().length === 0) {
+              <p class="terminal-empty">Aucun log ne correspond aux filtres.</p>
+            } @else {
+              @for (log of filteredLogs(); track log.id) {
+                <article [class]="'log-line log-line--' + log.level">
+                  <time>{{ log.createdAt | date:'HH:mm:ss' }}</time>
+                  <span class="log-level">{{ log.level.toUpperCase() }}</span>
+                  <span class="log-scope">{{ scopeLabel(log.scope) }}</span>
+                  <p>{{ log.message }}</p>
+                </article>
+              }
+            }
+          </div>
+        </div>
+      </section>
+    }
+
+    @if (activeTab() === 'resources') {
+      <section class="panel resources-card">
+        <header class="panel-heading">
+          <div><p class="eyebrow">État réel</p><h2>Ressources Kubernetes et Argo CD</h2><p>Les valeurs sensibles restent masquées.</p></div>
+          <select [ngModel]="selectedResourceKind()" (ngModelChange)="selectedResourceKind.set($event)">
+            <option value="all">Toutes les ressources</option><option value="argocd_application">Applications Argo CD</option><option value="deployment">Deployments</option><option value="pod">Pods</option><option value="service">Services</option><option value="ingress">Ingress</option><option value="job">Jobs</option><option value="pvc">Volumes</option>
+          </select>
+        </header>
+
+        @if (filteredResources().length === 0) {
+          <div class="empty-state"><span>◎</span><h3>Aucune ressource disponible</h3><p>Les ressources apparaîtront après la synchronisation Argo CD.</p></div>
+        } @else {
+          <div class="resource-table-wrap">
+            <table class="resource-table">
+              <thead><tr><th>Ressource</th><th>Namespace</th><th>État</th><th>Prêt</th><th>Image</th><th>Redémarrages</th><th>Âge</th><th></th></tr></thead>
+              <tbody>
+                @for (resource of filteredResources(); track resource.id) {
+                  <tr>
+                    <td><strong>{{ resource.name }}</strong><small>{{ resourceKindLabel(resource.kind) }}</small></td>
+                    <td>{{ resource.namespace }}</td>
+                    <td><span [class]="'health-pill health-pill--' + resource.health"><i></i>{{ resource.status }}</span></td>
+                    <td>{{ resource.ready ?? '—' }}</td>
+                    <td><code>{{ resource.image ?? '—' }}</code></td>
+                    <td>{{ resource.restarts ?? '—' }}</td>
+                    <td>{{ resource.age }}</td>
+                    <td>@if (resource.url) {<a [href]="resource.url" target="_blank" rel="noopener noreferrer">Ouvrir ↗</a>}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </section>
+    }
+
+    @if (activeTab() === 'assistant') {
+      <div class="assistant-layout">
+        <section class="panel diagnosis-card">
+          <header class="panel-heading">
+            <div><p class="eyebrow">Analyse contrôlée</p><h2>Diagnostic IA</h2><p>Les logs utiles sont filtrés et aucun secret n’est transmis.</p></div>
+            @if (current.incident && current.diagnostic.status === 'idle') {<button class="button button--primary" type="button" [disabled]="isWorking()" (click)="requestDiagnosis()">Lancer le diagnostic</button>}
+          </header>
+
+          @if (!current.incident) {
+            <div class="empty-state"><span>✦</span><h3>Aucun incident à analyser</h3><p>L’assistant sera activé automatiquement lorsqu’une étape échoue.</p></div>
+          } @else if (current.diagnostic.status === 'idle' || current.diagnostic.status === 'running') {
+            <div class="diagnosis-loading"><span class="assistant-orb">✦</span><h3>{{ current.diagnostic.status === 'running' ? 'Analyse en cours…' : 'Diagnostic disponible' }}</h3><p>L’IA examinera uniquement l’étape échouée, les événements et les artefacts concernés.</p></div>
+          } @else {
+            <div class="diagnosis-summary">
+              <div class="diagnosis-title"><span>✦</span><div><p>Cause probable</p><h3>{{ current.diagnostic.cause }}</h3></div><small>Confiance {{ current.diagnostic.confidence }}</small></div>
+              <p class="diagnosis-explanation">{{ current.diagnostic.explanation }}</p>
+              <div class="evidence-list"><strong>Preuves utilisées</strong><ul>@for (evidence of current.diagnostic.evidence; track evidence) {<li>{{ evidence }}</li>}</ul></div>
+            </div>
+
+            <div class="corrections-list">
+              @for (correction of current.diagnostic.corrections; track correction.id) {
+                <article class="correction-card">
+                  <header><div><p class="eyebrow">Correction proposée</p><h3>{{ correction.title }}</h3></div><span [class]="'risk-pill risk-pill--' + correction.risk">Risque {{ correction.risk }}</span></header>
+                  <p>{{ correction.summary }}</p>
+                  <dl><div><dt>Phase concernée</dt><dd>{{ phaseLabel(correction.targetPhase) }}</dd></div>@if (correction.targetFile) {<div><dt>Fichier</dt><dd>{{ correction.targetFile }}</dd></div>}</dl>
+                  @if (correction.diff) {<pre><code>{{ correction.diff }}</code></pre>}
+                  <footer>
+                    @if (correction.targetPhase === 'integration') {<a class="button button--secondary" routerLink="/integrations">Ouvrir l’intégration</a>}
+                    @if (correction.status === 'proposed') {<button class="button button--primary" type="button" [disabled]="isWorking()" (click)="approveCorrection(correction)">Approuver la correction</button>}
+                    @else {<span class="approved-label">✓ Correction {{ correction.status }}</span>}
+                  </footer>
+                </article>
+              }
+            </div>
+          }
+        </section>
+
+        <aside class="panel chat-card">
+          <header><span class="assistant-orb assistant-orb--small">✦</span><div><h2>Assistant de résolution</h2><p>Discutez de la cause et de la correction.</p></div></header>
+          <div class="chat-messages">
+            @for (message of current.chat; track message.id) {
+              <article [class]="'chat-message chat-message--' + message.role">
+                <span>{{ message.role === 'assistant' ? 'IA' : message.role === 'user' ? 'Vous' : 'SApixi' }}</span>
+                <div><p>{{ message.content }}</p><time>{{ message.createdAt | date:'HH:mm' }}</time></div>
+              </article>
+            }
+          </div>
+          <footer class="chat-composer">
+            <textarea rows="3" [ngModel]="chatInput()" (ngModelChange)="chatInput.set($event)" placeholder="Demandez une explication ou une autre solution…" (keydown.control.enter)="sendMessage()"></textarea>
+            <div><small>Ctrl + Entrée pour envoyer</small><button class="button button--primary" type="button" [disabled]="!chatInput().trim() || isWorking()" (click)="sendMessage()">Envoyer ↑</button></div>
+          </footer>
+        </aside>
+      </div>
+    }
+  }
+</section>

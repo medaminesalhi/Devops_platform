@@ -1,18 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { Observable, map } from 'rxjs';
-
 import { Auth } from '../auth/auth';
 
-export type ProjectWorkflowScreen =
-  | 'contract'
-  | 'generation'
-  | 'review';
-
-export type WorkflowGenerationMode =
-  | 'hybrid'
-  | 'deterministic';
-
+export type WorkflowGenerationMode = 'hybrid' | 'deterministic';
 export type WorkflowGenerationStatus =
   | 'pending'
   | 'running'
@@ -22,21 +13,13 @@ export type WorkflowGenerationStatus =
   | 'failed'
   | 'cancelled'
   | 'superseded';
-
-export type ArtifactValidationStatus =
-  | 'pending'
-  | 'passed'
-  | 'warning'
-  | 'failed';
-
-export type ArtifactReviewStatus =
-  | 'pending_review'
-  | 'approved'
-  | 'rejected';
-
-export type ArtifactReviewDecision =
-  | 'approved'
-  | 'rejected';
+export type ArtifactValidationStatus = 'pending' | 'passed' | 'warning' | 'failed';
+export type ArtifactReviewStatus = 'pending_review' | 'approved' | 'rejected';
+export type ArtifactReviewDecision = 'approved' | 'rejected';
+export type ProposalStatus = 'preparing' | 'needs_input' | 'ready' | 'confirmed' | 'failed';
+export type ExposureMode = 'internal' | 'public';
+export type PersistenceChoice = 'none' | 'suggested' | 'required';
+export type MigrationChoice = 'automatic' | 'enabled' | 'disabled';
 
 export interface WorkflowProjectSummary {
   id: number;
@@ -154,11 +137,7 @@ export interface DeploymentContractVolume {
   name: string;
   mountPath: string;
   size: string;
-  accessMode:
-    | 'ReadWriteOnce'
-    | 'ReadOnlyMany'
-    | 'ReadWriteMany'
-    | 'ReadWriteOncePod';
+  accessMode: 'ReadWriteOnce' | 'ReadOnlyMany' | 'ReadWriteMany' | 'ReadWriteOncePod';
   storageClass: string;
   readOnly: boolean;
 }
@@ -169,10 +148,7 @@ export interface DeploymentContractComponent {
   slug: string;
   rootPath: string;
   componentType: string;
-  runtime: {
-    name: string;
-    version: string;
-  };
+  runtime: { name: string; version: string };
   framework: string;
   packageManager: string;
   deployable: boolean;
@@ -219,11 +195,7 @@ export interface DeploymentContractComponent {
   configuration: DeploymentContractVariable[];
   secrets: DeploymentContractVariable[];
   volumes: DeploymentContractVolume[];
-  migration: {
-    enabled: boolean;
-    command: string;
-    backoffLimit: number;
-  };
+  migration: { enabled: boolean; command: string; backoffLimit: number };
   dependencies: string[];
 }
 
@@ -243,16 +215,8 @@ export interface DeploymentContract {
     namespace: string;
     domain: string | null;
     kubernetes: { server: string };
-    registry: {
-      host: string;
-      repositoryPrefix: string;
-      imagePullSecretName: string;
-    };
-    gitops: {
-      repositoryUrl: string;
-      targetRevision: string;
-      basePath: string;
-    };
+    registry: { host: string; repositoryPrefix: string; imagePullSecretName: string };
+    gitops: { repositoryUrl: string; targetRevision: string; basePath: string };
     argocd: {
       serverUrl: string;
       namespace: string;
@@ -286,14 +250,90 @@ export interface SavedDeploymentContract {
   validation: ContractValidationReport;
   project: { name: string; slug: string };
   analysis: { version: string | null; confirmedAt: string | null };
-  environment: {
-    name: string;
-    code: string;
-    environmentType: string;
-  };
+  environment: { name: string; code: string; environmentType: string };
   createdBy: number | null;
   updatedBy: number | null;
   confirmedBy: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  confirmedAt: string | null;
+}
+
+export interface DeploymentProposalDecisions {
+  namespace: string;
+  exposureMode: ExposureMode;
+  domain: string | null;
+  replicas: number;
+  persistence: PersistenceChoice;
+  migration: MigrationChoice;
+}
+
+export interface DeploymentProposalQuestion {
+  id: string;
+  componentId: number | null;
+  label: string;
+  description: string;
+  required: boolean;
+  answer: string | null;
+  choices: string[];
+}
+
+export interface DeploymentProposalComponent {
+  componentId: number;
+  name: string;
+  componentType: string;
+  runtime: string;
+  framework: string;
+  confidence: number;
+  summary: string;
+  docker: {
+    strategy: string;
+    installCommand: string;
+    buildCommand: string;
+    startCommand: string;
+    port: number;
+  };
+  kubernetes: {
+    serviceType: string;
+    ingressEnabled: boolean;
+    host: string | null;
+    replicas: number;
+    readinessPath: string | null;
+    livenessPath: string | null;
+    cpuRequest: string;
+    cpuLimit: string;
+    memoryRequest: string;
+    memoryLimit: string;
+  };
+  persistence: {
+    enabled: boolean;
+    mountPath: string | null;
+    size: string | null;
+  };
+  migration: {
+    enabled: boolean;
+    command: string | null;
+    requiresConfirmation: boolean;
+  };
+  warnings: string[];
+}
+
+export interface DeploymentProposal {
+  id: number;
+  projectId: number;
+  analysisRunId: number;
+  environmentId: number;
+  contractId: number | null;
+  status: ProposalStatus;
+  mode: WorkflowGenerationMode;
+  aiConnectionId: number | null;
+  aiModel: string | null;
+  decisions: DeploymentProposalDecisions;
+  environment: WorkflowEnvironment;
+  components: DeploymentProposalComponent[];
+  questions: DeploymentProposalQuestion[];
+  warnings: string[];
+  validation: ContractValidationReport;
   createdAt: string | null;
   updatedAt: string | null;
   confirmedAt: string | null;
@@ -386,6 +426,7 @@ export interface WorkflowOverview {
   components: WorkflowComponentSummary[];
   environments: WorkflowEnvironment[];
   latestContract: SavedDeploymentContract | null;
+  latestProposal?: DeploymentProposal | null;
   aiConnections: WorkflowAiConnection[];
   latestGeneration: WorkflowGeneration | null;
 }
@@ -402,63 +443,67 @@ export class WorkflowService {
 
   getOverview(projectId: number): Observable<WorkflowOverview> {
     return this.http
-      .get<ApiResponse<WorkflowOverview>>(
-        `/api/projects/${projectId}/workflow`,
-        { headers: this.headers() },
-      )
+      .get<ApiResponse<WorkflowOverview>>(`/api/projects/${projectId}/workflow`, {
+        headers: this.headers(),
+      })
       .pipe(map(response => response.data));
   }
 
-  previewContract(
-    projectId: number,
-    environmentId: number,
-  ): Observable<{
-    contract: DeploymentContract;
-    validation: ContractValidationReport;
-  }> {
+  getLatestProposal(projectId: number): Observable<DeploymentProposal | null> {
     return this.http
-      .post<ApiResponse<{
-        contract: DeploymentContract;
-        validation: ContractValidationReport;
-      }>>(
-        `/api/projects/${projectId}/deployment-contracts/preview`,
-        { environmentId },
+      .get<ApiResponse<{ proposal: DeploymentProposal | null }>>(
+        `/api/projects/${projectId}/deployment-proposals/latest`,
         { headers: this.headers() },
       )
-      .pipe(map(response => response.data));
+      .pipe(map(response => response.data.proposal));
   }
 
-  saveContract(
+  prepareProposal(
     projectId: number,
-    environmentId: number,
-    contract: DeploymentContract,
-  ): Observable<SavedDeploymentContract> {
+    payload: {
+      mode: WorkflowGenerationMode;
+      aiConnectionId: number | null;
+      aiModel: string | null;
+      decisions: DeploymentProposalDecisions;
+    },
+  ): Observable<DeploymentProposal> {
     return this.http
-      .put<ApiResponse<{ contract: SavedDeploymentContract }>>(
-        `/api/projects/${projectId}/deployment-contracts`,
-        { environmentId, contract },
+      .post<ApiResponse<{ proposal: DeploymentProposal }>>(
+        `/api/projects/${projectId}/deployment-proposals`,
+        payload,
         { headers: this.headers() },
       )
-      .pipe(map(response => response.data.contract));
+      .pipe(map(response => response.data.proposal));
   }
 
-  confirmContract(
+  saveProposalAnswers(
     projectId: number,
-    contractId: number,
-  ): Observable<SavedDeploymentContract> {
+    proposalId: number,
+    payload: {
+      decisions: DeploymentProposalDecisions;
+      answers: Record<string, string>;
+    },
+  ): Observable<DeploymentProposal> {
     return this.http
-      .post<ApiResponse<{ contract: SavedDeploymentContract }>>(
-        `/api/projects/${projectId}/deployment-contracts/${contractId}/confirm`,
+      .put<ApiResponse<{ proposal: DeploymentProposal }>>(
+        `/api/projects/${projectId}/deployment-proposals/${proposalId}`,
+        payload,
+        { headers: this.headers() },
+      )
+      .pipe(map(response => response.data.proposal));
+  }
+
+  confirmProposal(projectId: number, proposalId: number): Observable<DeploymentProposal> {
+    return this.http
+      .post<ApiResponse<{ proposal: DeploymentProposal }>>(
+        `/api/projects/${projectId}/deployment-proposals/${proposalId}/confirm`,
         {},
         { headers: this.headers() },
       )
-      .pipe(map(response => response.data.contract));
+      .pipe(map(response => response.data.proposal));
   }
 
-  getAiModels(
-    projectId: number,
-    connectionId: number,
-  ): Observable<string[]> {
+  getAiModels(projectId: number, connectionId: number): Observable<string[]> {
     return this.http
       .get<ApiResponse<{ models: string[] }>>(
         `/api/projects/${projectId}/workflow/ai-connections/${connectionId}/models`,
@@ -495,7 +540,6 @@ export class WorkflowService {
     generation: WorkflowGeneration;
   }> {
     const params = new HttpParams().set('afterId', String(afterId));
-
     return this.http
       .get<ApiResponse<{
         events: WorkflowGenerationEvent[];
@@ -508,10 +552,7 @@ export class WorkflowService {
       .pipe(map(response => response.data));
   }
 
-  getArtifacts(
-    projectId: number,
-    generationId: number,
-  ): Observable<WorkflowArtifact[]> {
+  getArtifacts(projectId: number, generationId: number): Observable<WorkflowArtifact[]> {
     return this.http
       .get<ApiResponse<{ artifacts: WorkflowArtifact[] }>>(
         `/api/projects/${projectId}/workflow/generations/${generationId}/artifacts`,
@@ -564,10 +605,7 @@ export class WorkflowService {
       .pipe(map(response => response.data.artifact));
   }
 
-  confirmGeneration(
-    projectId: number,
-    generationId: number,
-  ): Observable<WorkflowGeneration> {
+  confirmGeneration(projectId: number, generationId: number): Observable<WorkflowGeneration> {
     return this.http
       .post<ApiResponse<{ generation: WorkflowGeneration }>>(
         `/api/projects/${projectId}/workflow/generations/${generationId}/confirm`,
@@ -579,7 +617,6 @@ export class WorkflowService {
 
   private headers(): HttpHeaders {
     const token = this.auth.getAccessToken();
-
     return token
       ? new HttpHeaders({ Authorization: `Bearer ${token}` })
       : new HttpHeaders();

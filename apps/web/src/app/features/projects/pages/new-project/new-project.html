@@ -1,823 +1,255 @@
 <section class="new-project-page">
   <header class="page-heading">
     <div>
-      <p class="eyebrow">
-        PIXIMIND / PROJETS
-      </p>
-
-      <h1>
-        Nouveau projet
-      </h1>
-
-      <p>
-        Ajoutez une application à Piximind, puis lancez son analyse.
-      </p>
+      <a routerLink="/projects" class="back-link">← Retour aux projets</a>
+      <p class="eyebrow">SApixi · configuration du projet</p>
+      <h1>Nouveau projet</h1>
+      <p>Configurez l’identité, la source et l’environnement. Chaque étape est enregistrée avant de continuer.</p>
     </div>
+    @if (draftId()) {
+      <span class="draft-badge">Brouillon #{{ draftId() }}</span>
+    }
   </header>
 
-  <nav
-    class="workflow"
-    aria-label="Étapes de déploiement"
-  >
-    <div class="workflow-step workflow-step--active">
-      <span>1</span>
-      <strong>Création</strong>
-    </div>
-
-    <div class="workflow-step">
-      <span>2</span>
-      <strong>Analyse</strong>
-    </div>
-
-    <div class="workflow-step">
-      <span>3</span>
-      <strong>Génération</strong>
-    </div>
-
-    <div class="workflow-step">
-      <span>4</span>
-      <strong>Confirmation</strong>
-    </div>
-
-    <div class="workflow-step">
-      <span>5</span>
-      <strong>Déploiement</strong>
-    </div>
+  <nav class="creation-stepper" aria-label="Étapes de création">
+    @for (item of stepItems; track item.number) {
+      <button
+        type="button"
+        class="creation-step"
+        [class.creation-step--active]="step() === item.number"
+        [class.creation-step--completed]="step() > item.number"
+        [disabled]="item.number > highestUnlockedStep()"
+        (click)="goToStep(item.number === 1 ? 1 : item.number === 2 ? 2 : item.number === 3 ? 3 : 4)"
+      >
+        <span>{{ step() > item.number ? '✓' : item.number }}</span>
+        <div>
+          <strong>{{ item.label }}</strong>
+          <small>{{ item.description }}</small>
+        </div>
+      </button>
+    }
   </nav>
 
-  <aside class="page-note">
-    Pour publier une nouvelle version d’un projet déjà géré par
-    Piximind, ouvrez directement ce projet depuis la liste des projets.
-  </aside>
-
   @if (pageError()) {
-    <section
-      class="message message--error"
-      role="alert"
-    >
-      {{ pageError() }}
-    </section>
+    <div class="alert alert--error"><strong>Chargement impossible</strong><span>{{ pageError() }}</span></div>
+  }
+  @if (stepError()) {
+    <div class="alert alert--error"><strong>Action impossible</strong><span>{{ stepError() }}</span></div>
+  }
+  @if (successMessage()) {
+    <div class="alert alert--success"><strong>Enregistré</strong><span>{{ successMessage() }}</span></div>
   }
 
   @if (isLoading()) {
-    <section class="loading-card">
-      Chargement des connexions et des environnements…
-    </section>
+    <section class="panel loading-state"><span class="spinner"></span><div><strong>Chargement</strong><p>Préparation des options de création.</p></div></section>
   } @else {
-    <form
-      class="project-form"
-      [formGroup]="form"
-      (ngSubmit)="createProject()"
-    >
-      <section class="form-card">
-        <header class="form-card__header">
-          <span class="step-number">1</span>
+    @switch (step()) {
+      @case (1) {
+        <form class="panel step-panel" [formGroup]="identityForm" (ngSubmit)="saveIdentityAndContinue()">
+          <header class="step-panel__header">
+            <span class="step-kicker">01</span>
+            <div><p class="eyebrow">Informations</p><h2>Identifier le projet</h2><p>Ces informations seront visibles dans toute la plateforme.</p></div>
+          </header>
 
-          <div>
-            <h2>Projet</h2>
-
-            <p>
-              Définissez le scénario et l’identité de l’application.
-            </p>
-          </div>
-        </header>
-
-        <div class="form-card__body">
-          <div class="compact-choice-grid">
-            <button
-              type="button"
-              class="compact-choice"
-              [class.compact-choice--active]="
-                operationMode() === 'new_application'
-              "
-              (click)="selectOperationMode('new_application')"
-            >
-              <strong>Nouvelle application</strong>
-
-              <span>
-                Premier déploiement avec Piximind.
-              </span>
+          <div class="choice-grid">
+            <button type="button" class="choice-card" [class.choice-card--selected]="identityForm.controls.operationMode.value === 'new_application'" (click)="selectOperationMode('new_application')">
+              <span>＋</span><div><strong>Nouvelle application</strong><small>Premier déploiement géré par SApixi.</small></div>
             </button>
-
-            <button
-              type="button"
-              class="compact-choice"
-              [class.compact-choice--active]="
-                operationMode() === 'adopt_existing'
-              "
-              (click)="selectOperationMode('adopt_existing')"
-            >
-              <strong>Application déjà déployée</strong>
-
-              <span>
-                Import et suivi d’un déploiement existant.
-              </span>
+            <button type="button" class="choice-card" [class.choice-card--selected]="identityForm.controls.operationMode.value === 'adopt_existing'" (click)="selectOperationMode('adopt_existing')">
+              <span>↗</span><div><strong>Application existante</strong><small>Import d’une application déjà déployée.</small></div>
             </button>
           </div>
-
-          @if (
-            operationMode() === 'adopt_existing'
-          ) {
-            <p class="inline-note">
-              Piximind enregistrera le projet sans modifier le
-              déploiement existant. La découverte Kubernetes et
-              Argo CD sera effectuée pendant la phase d’analyse.
-            </p>
-          }
 
           <div class="form-grid">
-            <div class="form-field">
-              <label for="projectName">
-                Nom du projet
-              </label>
-
-              <input
-                id="projectName"
-                type="text"
-                formControlName="name"
-                placeholder="Exemple : sapixi-platform"
-              />
-
-              @if (
-                form.controls.name.touched
-                && form.controls.name.invalid
-              ) {
-                <small class="field-error">
-                  Le nom doit contenir entre 3 et 140 caractères.
-                </small>
-              }
-            </div>
-
-            <div class="form-field">
-              <label for="projectDescription">
-                Description
-              </label>
-
-              <textarea
-                id="projectDescription"
-                rows="3"
-                formControlName="description"
-                placeholder="Description courte du projet"
-              ></textarea>
-            </div>
+            <label class="field">
+              <span>Nom du projet</span>
+              <input type="text" formControlName="name" placeholder="sapixi-platform" />
+              <small>Entre 3 et 140 caractères.</small>
+            </label>
+            <label class="field">
+              <span>Description</span>
+              <textarea formControlName="description" rows="4" placeholder="Description courte du projet"></textarea>
+            </label>
           </div>
-        </div>
-      </section>
 
-      <section class="form-card">
-        <header class="form-card__header">
-          <span class="step-number">2</span>
-
-          <div>
-            <h2>Source du code</h2>
-
-            <p>
-              Choisissez un repository Git ou une archive ZIP.
-            </p>
-          </div>
-        </header>
-
-        <div class="form-card__body">
-          <div class="compact-choice-grid">
-            <button
-              type="button"
-              class="compact-choice"
-              [class.compact-choice--active]="
-                sourceType() === 'git'
-              "
-              (click)="selectSourceType('git')"
-            >
-              <strong>Repository Git</strong>
-              <span>GitLab public ou privé.</span>
+          <footer class="step-actions">
+            <a routerLink="/projects" class="button button--ghost">Annuler</a>
+            <button class="button button--primary" type="submit" [disabled]="isSaving()">
+              {{ isSaving() ? 'Enregistrement…' : 'Continuer vers la source →' }}
             </button>
+          </footer>
+        </form>
+      }
 
-            <button
-              type="button"
-              class="compact-choice"
-              [class.compact-choice--active]="
-                sourceType() === 'zip'
-              "
-              (click)="selectSourceType('zip')"
-            >
-              <strong>Archive ZIP</strong>
+      @case (2) {
+        <form class="panel step-panel" [formGroup]="sourceForm" (ngSubmit)="saveSourceAndContinue()">
+          <header class="step-panel__header">
+            <span class="step-kicker">02</span>
+            <div><p class="eyebrow">Source du code</p><h2>Enregistrer le repository et son accès</h2><p>Le credential privé est chiffré côté backend et n’est jamais renvoyé au navigateur.</p></div>
+          </header>
 
-              <span>
-                Projet fourni sous forme compressée.
-              </span>
-            </button>
+          <div class="segmented-control">
+            <button type="button" [class.active]="sourceForm.controls.sourceType.value === 'git'" (click)="selectSourceType('git')">Repository Git</button>
+            <button type="button" [class.active]="sourceForm.controls.sourceType.value === 'zip'" (click)="selectSourceType('zip')">Archive ZIP</button>
           </div>
 
-          @if (sourceType() === 'git') {
-            <div class="source-section">
-              <div class="form-field">
-                <label for="sourceConnectionId">
-                  Serveur GitLab
-                </label>
-
-                <select
-                  id="sourceConnectionId"
-                  formControlName="sourceConnectionId"
-                  (change)="onConnectionChanged()"
-                >
-                  <option [value]="0">
-                    Sélectionner un serveur
-                  </option>
-
-                  @for (
-                    connection of
-                      options()?.gitConnections ?? [];
-                    track connection.id
-                  ) {
-                    <option [value]="connection.id">
-                      {{ connection.name }}
-                      —
-                      {{ connection.baseUrl }}
-                    </option>
+          @if (sourceForm.controls.sourceType.value === 'git') {
+            <div class="form-grid form-grid--two">
+              <label class="field field--full">
+                <span>Connexion Git</span>
+                <select formControlName="sourceConnectionId">
+                  @for (connection of options()?.gitConnections ?? []; track connection.id) {
+                    <option [value]="connection.id">{{ connection.name }} · {{ connection.status }}</option>
                   }
                 </select>
-
-                @if (selectedConnection()) {
-                  <small class="field-help">
-                    {{ selectedConnection()?.status }}
-                    · SSL
-                    {{
-                      selectedConnection()?.verifySsl
-                        ? 'vérifié'
-                        : 'désactivé'
-                    }}
-                  </small>
-                }
-              </div>
-
-              <div class="subsection">
-                <h3>Visibilité</h3>
-
-                <div class="compact-choice-grid">
-                  <button
-                    type="button"
-                    class="compact-choice"
-                    [class.compact-choice--active]="
-                      visibility() === 'public'
-                    "
-                    (click)="onVisibilityChanged('public')"
-                  >
-                    <strong>Public</strong>
-                    <span>Aucun credential.</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    class="compact-choice"
-                    [class.compact-choice--active]="
-                      visibility() === 'private'
-                    "
-                    (click)="onVisibilityChanged('private')"
-                  >
-                    <strong>Privé</strong>
-                    <span>Accès HTTPS ou SSH.</span>
-                  </button>
-                </div>
-              </div>
-
-              @if (visibility() === 'private') {
-                <div class="subsection">
-                  <h3>Méthode d’accès</h3>
-
-                  <div class="compact-choice-grid">
-                    <button
-                      type="button"
-                      class="compact-choice"
-                      [class.compact-choice--active]="
-                        transport() === 'https'
-                      "
-                      (click)="onTransportChanged('https')"
-                    >
-                      <strong>HTTPS</strong>
-                      <span>Mot de passe ou token.</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      class="compact-choice"
-                      [class.compact-choice--active]="
-                        transport() === 'ssh'
-                      "
-                      (click)="onTransportChanged('ssh')"
-                    >
-                      <strong>SSH</strong>
-                      <span>Clé privée SSH.</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div class="subsection">
-                  <h3>Credential</h3>
-
-                  <div class="compact-choice-grid">
-                    <button
-                      type="button"
-                      class="compact-choice"
-                      [class.compact-choice--active]="
-                        credentialSource() === 'integration'
-                      "
-                      [disabled]="
-                        !integrationCredentialCompatible()
-                      "
-                      (click)="
-                        onCredentialSourceChanged('integration')
-                      "
-                    >
-                      <strong>Connexion existante</strong>
-
-                      <span>
-                        Réutiliser le secret d’Intégrations.
-                      </span>
-                    </button>
-
-                    <button
-                      type="button"
-                      class="compact-choice"
-                      [class.compact-choice--active]="
-                        credentialSource() === 'project'
-                      "
-                      (click)="
-                        onCredentialSourceChanged('project')
-                      "
-                    >
-                      <strong>Propre au projet</strong>
-
-                      <span>
-                        Saisir un secret spécifique.
-                      </span>
-                    </button>
-                  </div>
-                </div>
-
-                @if (
-                  credentialSource() === 'integration'
-                ) {
-                  <div class="credential-summary">
-                    <strong>
-                      {{ credentialAuthLabel() }}
-                    </strong>
-
-                    <span>
-                      Username :
-                      {{
-                        selectedConnection()?.credentialUsername
-                        ?? 'non défini'
-                      }}
-                    </span>
-                  </div>
-                }
-
-                @if (
-                  credentialSource() === 'project'
-                  && transport() === 'https'
-                ) {
-                  <div class="subsection">
-                    <h3>Authentification HTTPS</h3>
-
-                    <div class="compact-choice-grid">
-                      <button
-                        type="button"
-                        class="compact-choice"
-                        [class.compact-choice--active]="
-                          authMethod() === 'https_password'
-                        "
-                        (click)="
-                          onAuthMethodChanged('https_password')
-                        "
-                      >
-                        <strong>Mot de passe</strong>
-
-                        <span>
-                          Compte GitLab classique.
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        class="compact-choice"
-                        [class.compact-choice--active]="
-                          authMethod() === 'https_token'
-                        "
-                        (click)="
-                          onAuthMethodChanged('https_token')
-                        "
-                      >
-                        <strong>Token</strong>
-
-                        <span>
-                          Personal, Project, Group ou Deploy Token.
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-
-                  @if (
-                    authMethod() === 'https_token'
-                  ) {
-                    <div class="form-field">
-                      <label for="tokenType">
-                        Type de token
-                      </label>
-
-                      <select
-                        id="tokenType"
-                        formControlName="tokenType"
-                        (change)="onTokenTypeChanged()"
-                      >
-                        <option value="personal_access_token">
-                          Personal Access Token
-                        </option>
-
-                        <option value="project_access_token">
-                          Project Access Token
-                        </option>
-
-                        <option value="group_access_token">
-                          Group Access Token
-                        </option>
-
-                        <option value="deploy_token">
-                          Deploy Token
-                        </option>
-
-                        <option value="generic_token">
-                          Autre token compatible
-                        </option>
-                      </select>
-                    </div>
-                  }
-
-                  <div class="form-grid">
-                    <div class="form-field">
-                      <label for="gitUsername">
-                        Username Git
-                      </label>
-
-                      <input
-                        id="gitUsername"
-                        type="text"
-                        formControlName="username"
-                        placeholder="oauth2"
-                        autocomplete="username"
-                        (input)="invalidateSource()"
-                      />
-
-                      <small class="field-help">
-                        Pour un Deploy Token, utilisez le username
-                        fourni par GitLab.
-                      </small>
-                    </div>
-
-                    <div class="form-field">
-                      <label for="gitSecret">
-                        @if (
-                          authMethod() === 'https_token'
-                        ) {
-                          Token GitLab
-                        } @else {
-                          Mot de passe GitLab
-                        }
-                      </label>
-
-                      <input
-                        id="gitSecret"
-                        type="password"
-                        formControlName="secret"
-                        autocomplete="new-password"
-                        (input)="invalidateSource()"
-                      />
-                    </div>
-                  </div>
-                }
-
-                @if (
-                  credentialSource() === 'project'
-                  && transport() === 'ssh'
-                ) {
-                  <div class="form-field">
-                    <label for="sshPrivateKey">
-                      Clé privée SSH
-                    </label>
-
-                    <textarea
-                      id="sshPrivateKey"
-                      rows="7"
-                      formControlName="secret"
-                      autocomplete="off"
-                      placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-                      (input)="invalidateSource()"
-                    ></textarea>
-
-                    <small class="field-help">
-                      La clé publique correspondante doit être
-                      autorisée dans GitLab.
-                    </small>
-                  </div>
-                }
-              }
-
-              <div class="form-grid form-grid--repository">
-                <div class="form-field form-field--wide">
-                  <label for="repositoryUrl">
-                    URL de clonage
-                  </label>
-
-                  <input
-                    id="repositoryUrl"
-                    type="text"
-                    formControlName="repositoryUrl"
-                    [placeholder]="
-                      transport() === 'ssh'
-                      && visibility() === 'private'
-                        ? 'git@gitlab.example.com:groupe/projet.git'
-                        : 'https://gitlab.example.com/groupe/projet.git'
-                    "
-                    autocomplete="off"
-                    (input)="invalidateSource()"
-                  />
-                </div>
-
-                <div class="form-field">
-                  <label for="branch">
-                    Branche
-                  </label>
-
-                  <input
-                    id="branch"
-                    type="text"
-                    formControlName="branch"
-                    placeholder="main"
-                    autocomplete="off"
-                    (input)="invalidateSource()"
-                  />
-                </div>
-              </div>
-            </div>
-          } @else {
-            <div class="source-section">
-              <div class="upload-field">
-                <input
-                  id="archiveFile"
-                  type="file"
-                  accept=".zip,application/zip"
-                  (change)="onArchiveSelected($event)"
-                />
-
-                <label for="archiveFile">
-                  <strong>
-                    Choisir une archive ZIP
-                  </strong>
-
-                  <span>
-                    Taille maximale :
-                    {{
-                      options()?.archiveLimits?.maxMegabytes
-                      ?? 100
-                    }}
-                    Mo
-                  </span>
-                </label>
-
-                @if (
-                  selectedArchiveFile();
-                  as file
-                ) {
-                  <div class="selected-file">
-                    <strong>
-                      {{ file.name }}
-                    </strong>
-
-                    <span>
-                      {{ formatBytes(file.size) }}
-                    </span>
-                  </div>
-                }
-              </div>
-
-              <p class="inline-note">
-                L’archive est contrôlée en phase 1, puis extraite
-                dans un workspace sécurisé pendant la phase
-                d’analyse.
-              </p>
-            </div>
-          }
-
-          <details class="advanced-options">
-            <summary>
-              Options avancées
-            </summary>
-
-            <div class="form-field">
-              <label for="sourceSubdirectory">
-                Sous-dossier de l’application
+                <small>Connexion configurée dans la page Intégrations.</small>
               </label>
 
-              <input
-                id="sourceSubdirectory"
-                type="text"
-                formControlName="sourceSubdirectory"
-                placeholder="Exemple : apps/api"
-                autocomplete="off"
-                (input)="invalidateSource()"
-              />
+              <label class="field field--full">
+                <span>URL de clonage</span>
+                <input type="text" formControlName="repositoryUrl" placeholder="https://gitlab.example.com/groupe/projet.git" />
+              </label>
 
-              <small class="field-help">
-                Laissez vide pour analyser toute la source.
-              </small>
+              <label class="field"><span>Branche</span><input type="text" formControlName="branch" placeholder="main" /></label>
+              <label class="field"><span>Sous-dossier</span><input type="text" formControlName="sourceSubdirectory" placeholder="apps/api ou vide" /></label>
+              <label class="field">
+                <span>Visibilité</span>
+                <select formControlName="visibility">
+                  <option value="public">Public</option>
+                  <option value="private">Privé</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Transport</span>
+                <select formControlName="transport">
+                  <option value="https">HTTPS</option>
+                  <option value="ssh">SSH</option>
+                </select>
+              </label>
             </div>
-          </details>
 
-          <div class="source-actions">
-            <button
-              class="secondary-button"
-              type="button"
-              [disabled]="isTesting()"
-              (click)="validateSource()"
-            >
-              {{
-                isTesting()
-                  ? 'Vérification…'
-                  : 'Vérifier la source'
-              }}
-            </button>
+            @if (sourceForm.controls.visibility.value === 'private') {
+              <section class="credential-box">
+                <header><div><p class="eyebrow">Credential privé</p><h3>Choisir la source du secret</h3></div>@if (credentialAlreadyStored()) {<span class="status-pill status-pill--success">Déjà enregistré</span>}</header>
+                <div class="form-grid form-grid--two">
+                  <label class="field">
+                    <span>Origine</span>
+                    <select formControlName="credentialSource">
+                      <option value="integration">Credential de l’intégration</option>
+                      <option value="project">Credential propre au projet</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>Méthode</span>
+                    <select formControlName="authMethod">
+                      <option value="https_token">Token HTTPS</option>
+                      <option value="https_password">Mot de passe HTTPS</option>
+                      <option value="ssh_key">Clé privée SSH</option>
+                    </select>
+                  </label>
 
-            @if (sourceError()) {
-              <div
-                class="message message--error"
-                role="alert"
-              >
-                {{ sourceError() }}
-              </div>
-            }
-
-            @if (
-              sourceValidation();
-              as validation
-            ) {
-              <div
-                class="validation-card"
-                role="status"
-              >
-                <div class="validation-card__heading">
-                  <span>✓</span>
-
-                  <div>
-                    <strong>Source validée</strong>
-                    <p>{{ sourceSuccess() }}</p>
-                  </div>
+                  @if (sourceForm.controls.credentialSource.value === 'project') {
+                    @if (sourceForm.controls.authMethod.value === 'https_token') {
+                      <label class="field">
+                        <span>Type de token</span>
+                        <select formControlName="tokenType">
+                          <option value="project_access_token">Project Access Token</option>
+                          <option value="personal_access_token">Personal Access Token</option>
+                          <option value="group_access_token">Group Access Token</option>
+                          <option value="deploy_token">Deploy Token</option>
+                          <option value="generic_token">Autre token</option>
+                        </select>
+                      </label>
+                    }
+                    <label class="field"><span>Username Git</span><input type="text" formControlName="username" placeholder="oauth2" /></label>
+                    <label class="field field--full">
+                      <span>{{ sourceForm.controls.authMethod.value === 'ssh_key' ? 'Clé privée SSH' : 'Token ou mot de passe' }}</span>
+                      <textarea formControlName="secret" rows="4" [placeholder]="credentialAlreadyStored() ? 'Laisser vide pour conserver le secret enregistré' : 'Saisir le secret une seule fois'"></textarea>
+                      <small>{{ credentialAlreadyStored() ? 'Le secret actuel reste utilisé tant qu’aucune nouvelle valeur n’est saisie.' : 'La valeur sera chiffrée immédiatement après validation.' }}</small>
+                    </label>
+                  }
                 </div>
+              </section>
+            }
+          } @else {
+            <div class="upload-zone">
+              <input id="archive-file" type="file" accept=".zip,application/zip" (change)="onArchiveSelected($event)" />
+              <label for="archive-file"><span>⇧</span><strong>Choisir une archive ZIP</strong><small>Limite : {{ archiveLimitMegabytes() }} Mo</small></label>
+              @if (selectedArchiveFile(); as file) {<p>{{ file.name }} · {{ formatBytes(file.size) }}</p>}
+            </div>
+            <label class="field"><span>Sous-dossier à analyser</span><input type="text" formControlName="sourceSubdirectory" placeholder="Vide pour la racine" /></label>
+          }
 
-                @if (
-                  validation.sourceType === 'git'
-                ) {
-                  <dl class="validation-data">
-                    <div>
-                      <dt>Repository</dt>
-                      <dd>{{ validation.repositoryPath }}</dd>
-                    </div>
+          @if (sourceValidation(); as validation) {
+            <div class="source-result"><span>✓</span><div><strong>Source vérifiée</strong><p>{{ validation.repositoryPath ?? validation.archive?.originalName ?? 'Source prête' }}</p></div></div>
+          }
 
-                    <div>
-                      <dt>Branche</dt>
-                      <dd>{{ validation.branch }}</dd>
-                    </div>
+          <footer class="step-actions">
+            <button class="button button--ghost" type="button" (click)="goToStep(1)">← Retour</button>
+            <div>
+              @if (credentialAlreadyStored()) {
+                <button class="button button--secondary" type="button" [disabled]="isTesting()" (click)="testStoredSource()">{{ isTesting() ? 'Test…' : 'Tester le credential enregistré' }}</button>
+              }
+              <button class="button button--primary" type="submit" [disabled]="isSaving()">{{ isSaving() ? 'Vérification…' : 'Vérifier, enregistrer et continuer →' }}</button>
+            </div>
+          </footer>
+        </form>
+      }
 
-                    <div>
-                      <dt>Commit</dt>
+      @case (3) {
+        <section class="panel step-panel">
+          <header class="step-panel__header">
+            <span class="step-kicker">03</span>
+            <div><p class="eyebrow">Environnement</p><h2>Choisir l’infrastructure cible</h2><p>L’environnement assemble les connexions Kubernetes, Argo CD, registre, GitOps, stockage et IA configurées dans Infrastructure.</p></div>
+          </header>
 
-                      <dd>
-                        {{
-                          validation.commitSha
-                            ?.slice(0, 12)
-                        }}
-                      </dd>
-                    </div>
-                  </dl>
-                } @else if (
-                  validation.archive;
-                  as archive
-                ) {
-                  <dl class="validation-data">
-                    <div>
-                      <dt>Archive</dt>
-                      <dd>{{ archive.originalName }}</dd>
-                    </div>
-
-                    <div>
-                      <dt>Fichiers</dt>
-                      <dd>{{ archive.entryCount }}</dd>
-                    </div>
-
-                    <div>
-                      <dt>Taille</dt>
-                      <dd>{{ formatBytes(archive.sizeBytes) }}</dd>
-                    </div>
-                  </dl>
-                }
-              </div>
+          <div class="environment-grid">
+            @for (environment of environments(); track environment.id) {
+              <button type="button" class="environment-card" [class.environment-card--selected]="selectedEnvironmentId() === environment.id" (click)="selectEnvironment(environment.id)">
+                <span class="environment-card__icon">ENV</span>
+                <div><strong>{{ environment.name }}</strong><small>{{ environment.environmentType }}</small></div>
+                <dl><div><dt>Namespace</dt><dd>{{ environment.namespace }}</dd></div><div><dt>Domaine</dt><dd>{{ environment.domain ?? 'Non défini' }}</dd></div></dl>
+                <span class="status-pill" [class.status-pill--success]="environment.configurationStatus === 'ready'">{{ environment.configurationStatus }}</span>
+              </button>
             }
           </div>
-        </div>
-      </section>
 
-      <section class="form-card">
-        <header class="form-card__header">
-          <span class="step-number">3</span>
+          <div class="info-note"><strong>Important</strong><p>Les adresses Kubernetes, Argo CD, Nexus et GitOps ne seront pas ressaisies dans les phases suivantes. Elles proviennent de cet environnement.</p></div>
 
-          <div>
-            <h2>Environnement</h2>
+          <footer class="step-actions">
+            <button class="button button--ghost" type="button" (click)="goToStep(2)">← Retour</button>
+            <button class="button button--primary" type="button" [disabled]="selectedEnvironmentId() === null || isSaving()" (click)="saveEnvironmentAndContinue()">{{ isSaving() ? 'Enregistrement…' : 'Continuer vers la vérification →' }}</button>
+          </footer>
+        </section>
+      }
 
-            <p>
-              Sélectionnez une seule cible de déploiement.
-            </p>
+      @case (4) {
+        <section class="panel step-panel review-panel">
+          <header class="step-panel__header">
+            <span class="step-kicker">04</span>
+            <div><p class="eyebrow">Vérification</p><h2>Confirmer la configuration</h2><p>Après activation, SApixi ouvre directement la phase d’analyse.</p></div>
+          </header>
+
+          <div class="review-grid">
+            <article><span>Projet</span><strong>{{ identityForm.controls.name.value }}</strong><small>{{ identityForm.controls.operationMode.value === 'new_application' ? 'Nouvelle application' : 'Application existante' }}</small></article>
+            <article><span>Source</span><strong>{{ sourceReviewLabel() }}</strong><small>{{ sourceForm.controls.sourceType.value === 'git' ? sourceForm.controls.branch.value : 'Archive ZIP' }}</small></article>
+            <article><span>Credential</span><strong>{{ credentialAlreadyStored() || sourceForm.controls.visibility.value === 'public' ? 'Enregistré' : 'À vérifier' }}</strong><small>{{ sourceForm.controls.visibility.value }}</small></article>
+            <article><span>Environnement</span><strong>{{ selectedEnvironment()?.name ?? draft()?.defaultEnvironment?.name ?? 'Non sélectionné' }}</strong><small>{{ selectedEnvironment()?.namespace ?? draft()?.defaultEnvironment?.namespace }}</small></article>
           </div>
-        </header>
 
-        <div class="form-card__body">
-          @if (environments().length === 0) {
-            <div class="empty-state">
-              Aucun environnement n’est disponible.
-            </div>
-          } @else {
-            <div class="environment-list">
-              @for (
-                environment of environments();
-                track environment.id
-              ) {
-                <label
-                  class="environment-option"
-                  [class.environment-option--selected]="
-                    selectedEnvironmentId()
-                    === environment.id
-                  "
-                >
-                  <input
-                    type="radio"
-                    name="environment"
-                    [checked]="
-                      selectedEnvironmentId()
-                      === environment.id
-                    "
-                    (change)="
-                      selectEnvironment(
-                        environment.id
-                      )
-                    "
-                  />
+          <div class="activation-checklist">
+            <p><span>✓</span> Identité enregistrée</p>
+            <p><span>✓</span> Source et credential enregistrés</p>
+            <p><span>✓</span> Environnement associé</p>
+            <p><span>→</span> Prochaine étape : analyse technique</p>
+          </div>
 
-                  <span>
-                    {{ environment.name }}
-                  </span>
-                </label>
-              }
-            </div>
-          }
-
-          @if (environmentError()) {
-            <div
-              class="message message--error"
-              role="alert"
-            >
-              {{ environmentError() }}
-            </div>
-          }
-        </div>
-      </section>
-
-      <footer class="form-footer">
-        <a
-          class="cancel-button"
-          routerLink="/projects"
-        >
-          Annuler
-        </a>
-
-        <div class="form-footer__actions">
-          @if (creationError()) {
-            <div
-              class="message message--error"
-              role="alert"
-            >
-              {{ creationError() }}
-            </div>
-          }
-
-          <button
-            class="primary-button"
-            type="submit"
-            [disabled]="!canCreate()"
-          >
-            {{
-              isCreating()
-                ? 'Création…'
-                : 'Créer le projet'
-            }}
-          </button>
-        </div>
-      </footer>
-    </form>
+          <footer class="step-actions">
+            <button class="button button--ghost" type="button" (click)="goToStep(3)">← Retour</button>
+            <button class="button button--primary" type="button" [disabled]="isSaving()" (click)="activateAndAnalyze()">{{ isSaving() ? 'Activation…' : 'Créer le projet et ouvrir l’analyse →' }}</button>
+          </footer>
+        </section>
+      }
+    }
   }
 </section>

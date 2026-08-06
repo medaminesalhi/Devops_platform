@@ -1,0 +1,29 @@
+<nav class="phase-stepper" aria-label="Phases du projet">
+  @for (phase of phases; track phase.key) {
+    @if (phase.unlocked) {
+      <a
+        class="phase-stepper__item"
+        [class.phase-stepper__item--active]="activePhase === phase.key"
+        [class.phase-stepper__item--completed]="phase.completed"
+        [routerLink]="phase.path"
+      >
+        <span class="phase-stepper__number">
+          {{ phase.completed ? '✓' : phase.number }}
+        </span>
+        <span class="phase-stepper__text">
+          <strong>{{ phase.label }}</strong>
+          <small>{{ phase.description }}</small>
+        </span>
+      </a>
+    } @else {
+      <span class="phase-stepper__item phase-stepper__item--locked" aria-disabled="true">
+        <span class="phase-stepper__number">{{ phase.number }}</span>
+        <span class="phase-stepper__text">
+          <strong>{{ phase.label }}</strong>
+          <small>{{ phase.description }}</small>
+        </span>
+        <span class="phase-stepper__lock" aria-hidden="true">⌁</span>
+      </span>
+    }
+  }
+</nav>
