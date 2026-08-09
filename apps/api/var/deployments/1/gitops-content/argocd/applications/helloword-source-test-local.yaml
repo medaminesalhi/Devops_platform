@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: helloword-source-test-local
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+  labels:
+    sapixi.io/managed: 'true'
+    sapixi.io/project: helloword
+    sapixi.io/environment: test-local
+    sapixi.io/component: source
+spec:
+  project: helloword-test-local
+  source:
+    repoURL: https://gitlab.docker.piximind.com
+    targetRevision: main
+    path: projects/helloword/test-local/helloword/test-local/source
+    helm:
+      releaseName: helloword-source
+  destination:
+    server: https://100.96.79.120:6443
+    namespace: pixismart-test
+  syncPolicy:
+    syncOptions:
+    - CreateNamespace=true
+    - ApplyOutOfSyncOnly=true
+  revisionHistoryLimit: 10

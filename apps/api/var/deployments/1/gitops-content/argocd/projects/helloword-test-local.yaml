@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: helloword-test-local
+  namespace: argocd
+  labels:
+    sapixi.io/managed: 'true'
+    sapixi.io/project: helloword
+    sapixi.io/environment: test-local
+spec:
+  description: Projet Argo CD géré par SApixi pour helloword dans test-local.
+  sourceRepos:
+  - https://gitlab.docker.piximind.com
+  destinations:
+  - server: https://100.96.79.120:6443
+    namespace: pixismart-test
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+  orphanedResources:
+    warn: true

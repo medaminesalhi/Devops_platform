@@ -52,6 +52,8 @@ export interface IntegrationConnection {
   providerType: ProviderType;
 
   baseUrl: string;
+  registryUrl: string | null;
+  registryRepository: string | null;
   environment: string;
   description: string | null;
 
@@ -86,6 +88,8 @@ export interface IntegrationConfiguration {
   providerType: ProviderType;
 
   baseUrl: string;
+  registryUrl: string | null;
+  registryRepository: string | null;
   description: string | null;
 
   authType: AuthenticationType;

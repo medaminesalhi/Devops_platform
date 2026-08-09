@@ -402,7 +402,7 @@ def list_generation_options() -> list[dict[str, Any]]:
 
                 WHERE project.archived_at IS NULL
                   AND project.status = 'active'
-                  AND generation.status = 'completed'
+                  AND generation.status = 'confirmed'
 
                 GROUP BY
                     project.id,
@@ -515,6 +515,8 @@ def list_environment_connections(environment_id: int) -> list[dict[str, Any]]:
                     service.name,
                     service.provider_type,
                     service.base_url,
+                    service.registry_url,
+                    service.registry_repository,
                     service.environment,
                     service.description,
                     service.enabled,

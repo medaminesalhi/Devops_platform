@@ -334,7 +334,7 @@ def build_preflight(
 
     artifacts_ready = bool(
         generation
-        and generation.get("status") == "completed"
+        and generation.get("status") == "confirmed"
         and int(generation.get("artifact_count") or 0) > 0
         and int(generation.get("unapproved_artifact_count") or 0) == 0
     )
@@ -690,10 +690,10 @@ def create_deployment(payload: dict[str, Any], user_id: int) -> dict[str, Any]:
             "Le projet doit être actif avant le déploiement.",
             409,
         )
-    if generation.get("status") != "completed":
+    if generation.get("status") != "confirmed":
         raise DeploymentServiceError(
-            "GENERATION_NOT_COMPLETED",
-            "La génération sélectionnée n’est pas terminée.",
+            "GENERATION_NOT_CONFIRMED",
+            "La génération sélectionnée doit être confirmée avant le déploiement.",
             409,
         )
     if int(generation.get("artifact_count") or 0) == 0:
@@ -737,7 +737,13 @@ def create_deployment(payload: dict[str, Any], user_id: int) -> dict[str, Any]:
             409,
         )
     registry_host = (
-        ((contract.get("target") or {}).get("registry") or {}).get("host")
+        _registry_host(
+            str(
+                registry.get("registry_url")
+                or ""
+            )
+        )
+        or ((contract.get("target") or {}).get("registry") or {}).get("host")
         or _registry_host(str(registry.get("base_url") or ""))
     )
     if not registry_host:

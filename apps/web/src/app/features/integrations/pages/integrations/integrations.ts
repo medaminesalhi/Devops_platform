@@ -200,6 +200,24 @@ export class Integrations
           ],
         ],
 
+        registryRepository: [
+          '',
+
+          [
+            Validators.maxLength(200),
+          ],
+        ],
+
+        registryUrl: [
+          '',
+
+          [
+            Validators.pattern(
+              /^https?:\/\/.+/i,
+            ),
+          ],
+        ],
+
         description: [
           '',
 
@@ -482,6 +500,8 @@ export class Integrations
       providerType: '',
       name: '',
       baseUrl: '',
+      registryRepository: '',
+      registryUrl: '',
       description: '',
       authType: 'none',
       username: '',
@@ -523,6 +543,10 @@ export class Integrations
       connection.baseUrl,
     );
 
+    this.configureProviderSpecificValidators(
+      connection.providerType,
+    );
+
     this.connectionForm.reset({
       category:
         definition.category,
@@ -535,6 +559,14 @@ export class Integrations
 
       baseUrl:
         connection.baseUrl,
+
+      registryRepository:
+        connection.registryRepository
+        ?? '',
+
+      registryUrl:
+        connection.registryUrl
+        ?? '',
 
       description:
         connection.description
@@ -604,10 +636,16 @@ export class Integrations
 
     this.currentBaseUrl.set('');
 
+    this.configureProviderSpecificValidators(
+      null,
+    );
+
     this.connectionForm.patchValue({
       providerType: '',
       name: '',
       baseUrl: '',
+      registryRepository: '',
+      registryUrl: '',
       authType: 'none',
       username: '',
       credential: '',
@@ -645,9 +683,15 @@ export class Integrations
 
     this.currentBaseUrl.set('');
 
+    this.configureProviderSpecificValidators(
+      providerType,
+    );
+
     this.connectionForm.patchValue({
       name: '',
       baseUrl: '',
+      registryRepository: '',
+      registryUrl: '',
 
       authType:
         definition.defaultAuthType,
@@ -1109,6 +1153,54 @@ export class Integrations
   }
 
 
+  private configureProviderSpecificValidators(
+    providerType: ProviderType | null,
+  ): void {
+    const registryRepository =
+      this.connectionForm.controls
+        .registryRepository;
+
+    const registryUrl =
+      this.connectionForm.controls
+        .registryUrl;
+
+    if (providerType === 'nexus') {
+      registryRepository.setValidators([
+        Validators.required,
+        Validators.maxLength(200),
+      ]);
+
+      registryUrl.setValidators([
+        Validators.required,
+        Validators.pattern(
+          /^https?:\/\/.+/i,
+        ),
+      ]);
+    }
+    else {
+      registryRepository.setValidators([
+        Validators.maxLength(200),
+      ]);
+
+      registryUrl.setValidators([
+        Validators.pattern(
+          /^https?:\/\/.+/i,
+        ),
+      ]);
+    }
+
+    registryRepository
+      .updateValueAndValidity({
+        emitEvent: false,
+      });
+
+    registryUrl
+      .updateValueAndValidity({
+        emitEvent: false,
+      });
+  }
+
+
   private buildConfiguration():
     IntegrationConfiguration {
     const values =
@@ -1124,6 +1216,14 @@ export class Integrations
 
       baseUrl:
         values.baseUrl.trim(),
+
+      registryRepository:
+        values.registryRepository.trim()
+        || null,
+
+      registryUrl:
+        values.registryUrl.trim()
+        || null,
 
       description:
         values.description.trim()

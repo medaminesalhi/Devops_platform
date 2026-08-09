@@ -462,6 +462,37 @@
           </div>
 
 
+          @if (connection.providerType === 'nexus') {
+            <div>
+              <dt>
+                Repository Docker
+              </dt>
+
+              <dd>
+                {{
+                  connection.registryRepository
+                  || 'Non configuré'
+                }}
+              </dd>
+            </div>
+
+            <div>
+              <dt>
+                Registry Docker
+              </dt>
+
+              <dd>
+                <code>
+                  {{
+                    connection.registryUrl
+                    || 'Non configuré'
+                  }}
+                </code>
+              </dd>
+            </div>
+          }
+
+
           <div>
             <dt>
               Endpoint contrôlé
@@ -1032,6 +1063,109 @@
                 }
               </label>
             </div>
+
+
+            @if (provider.type === 'nexus') {
+              <div class="form-grid two-columns">
+                <label class="form-field">
+                  <span>
+                    Repository Docker Nexus
+                  </span>
+
+                  <input
+                    type="text"
+                    formControlName="registryRepository"
+                    placeholder="Exemple : nexus-docker"
+                  />
+
+                  <small>
+                    Nom du repository Docker hosted
+                    configuré dans Nexus.
+                  </small>
+
+                  @if (
+                    connectionForm.controls
+                      .registryRepository.touched
+
+                    && connectionForm.controls
+                      .registryRepository.invalid
+                  ) {
+                    <small class="field-error">
+                      Le repository Docker est obligatoire.
+                    </small>
+                  }
+                </label>
+
+
+                <label class="form-field">
+                  <span>
+                    URL du registre Docker
+                  </span>
+
+                  <input
+                    type="text"
+                    formControlName="registryUrl"
+                    placeholder="http://<host>:8084"
+                  />
+
+                  <small>
+                    Endpoint utilisé par docker login,
+                    docker push et Kubernetes.
+                  </small>
+
+                  @if (
+                    connectionForm.controls
+                      .registryUrl.touched
+
+                    && connectionForm.controls
+                      .registryUrl.invalid
+                  ) {
+                    <small class="field-error">
+                      Saisissez une URL commençant par
+                      http:// ou https://.
+                    </small>
+                  }
+                </label>
+              </div>
+
+              <div class="url-preview">
+                <div>
+                  <span>API Nexus</span>
+                  <strong>{{ connectionForm.controls.baseUrl.value }}</strong>
+                </div>
+
+                <div>
+                  <span>Repository Docker</span>
+                  <strong>
+                    {{
+                      connectionForm.controls.registryRepository.value
+                      || 'Non défini'
+                    }}
+                  </strong>
+                </div>
+
+                <div>
+                  <span>Registry Docker</span>
+                  <strong>
+                    {{
+                      connectionForm.controls.registryUrl.value
+                      || 'Non défini'
+                    }}
+                  </strong>
+                </div>
+
+                <div class="preview-url">
+                  <span>Test Registry V2</span>
+                  <code>
+                    {{
+                      connectionForm.controls.registryUrl.value
+                        ? connectionForm.controls.registryUrl.value + '/v2/'
+                        : 'Non défini'
+                    }}
+                  </code>
+                </div>
+              </div>
+            }
 
 
             @if (currentBaseUrl()) {

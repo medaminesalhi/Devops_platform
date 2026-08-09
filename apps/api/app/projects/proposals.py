@@ -275,6 +275,8 @@ def _load_context(project_id: int) -> ProposalContext:
                     integration.name AS connection_name,
                     integration.provider_type,
                     integration.base_url,
+                    integration.registry_url,
+                    integration.registry_repository,
                     integration.description,
                     integration.enabled,
                     integration.verify_ssl,
@@ -345,6 +347,8 @@ def _environment_json(context: ProposalContext) -> dict[str, Any]:
                 "connectionName": item["connection_name"],
                 "providerType": item["provider_type"],
                 "baseUrl": item["base_url"],
+                "registryUrl": item.get("registry_url"),
+                "registryRepository": item.get("registry_repository"),
                 "status": item["status"],
                 "lastCheckedAt": _iso(item.get("last_checked_at")),
                 "lastLatencyMs": item.get("last_latency_ms"),
@@ -1242,7 +1246,14 @@ def _contract_from_proposal(
             "domain": decisions.get("domain"),
             "kubernetes": {"server": kubernetes["base_url"]},
             "registry": {
-                "host": _registry_host(registry["base_url"]),
+                "host": _registry_host(
+                    registry.get("registry_url")
+                    or registry["base_url"]
+                ),
+                "repositoryName": (
+                    registry.get("registry_repository")
+                    or ""
+                ),
                 "repositoryPrefix": context.project["slug"],
                 "imagePullSecretName": "registry-credentials",
             },

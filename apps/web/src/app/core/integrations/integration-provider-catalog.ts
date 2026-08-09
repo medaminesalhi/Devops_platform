@@ -229,7 +229,7 @@ export const PROVIDER_DEFINITIONS:
         'https://nexus.example.com',
 
       endpointPath:
-        '/service/rest/v1/status',
+        '/service/rest/v1/repositories',
 
       exactUrl:
         false,
@@ -251,11 +251,11 @@ export const PROVIDER_DEFINITIONS:
             + 'un reverse proxy.',
         },
         {
-          port: 8082,
-          label: 'Docker',
+          port: 8084,
+          label: 'Docker Registry',
           usage:
-            'Exemple de port distinct '
-            + 'pour un registre Docker.',
+            'Exemple de connecteur HTTP '
+            + 'd’un repository Docker hosted.',
         },
       ],
 
@@ -287,14 +287,14 @@ export const PROVIDER_DEFINITIONS:
 
       helpMessages: [
         (
-          'Saisissez ici l’adresse '
-          + 'de l’API Nexus.'
+          'L’URL du serveur correspond à '
+          + 'l’interface et à l’API REST Nexus '
+          + '(par exemple :8081).'
         ),
         (
-          'Le registre Docker peut '
-          + 'utiliser un autre port ; '
-          + 'il sera configuré lors '
-          + 'du build.'
+          'Choisissez aussi le repository Docker hosted '
+          + 'et renseignez son connecteur Docker distinct '
+          + '(par exemple :8084).'
         ),
       ],
     },

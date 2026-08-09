@@ -567,8 +567,12 @@ class DockerProvider:
         return {"images": built}
 
     def _registry_host(self) -> str:
-        base_url = str(self.registry_connection.get("base_url") or "")
-        parsed = urlparse(base_url)
+        registry_url = str(
+            self.registry_connection.get("registry_url")
+            or self.registry_connection.get("base_url")
+            or ""
+        ).strip()
+        parsed = urlparse(registry_url)
         host = parsed.netloc or parsed.path
         return host.strip().rstrip("/")
 
@@ -610,11 +614,46 @@ class DockerProvider:
                 timeout=60,
             )
         except DeploymentExecutionError as error:
+            message = error.message or ""
+
+            if re.search(
+                r"HTTP response to HTTPS client|server gave HTTP response",
+                message,
+                re.I,
+            ):
+                raise DeploymentExecutionError(
+                    "REGISTRY_PROTOCOL_MISMATCH",
+                    (
+                        "Le registre Nexus répond en HTTP alors que "
+                        "Docker tente une connexion HTTPS. Déclarez "
+                        "ce registry HTTP dans les insecure-registries "
+                        "du moteur Docker ou activez HTTPS côté Nexus."
+                    ),
+                    stage="registry",
+                    title="Protocole du registre Nexus incompatible",
+                    retryable=True,
+                    integration_name=self.registry_connection.get("name"),
+                ) from error
+
+            if re.search(
+                r"unauthorized|authentication required|denied|incorrect username|incorrect password",
+                message,
+                re.I,
+            ):
+                raise DeploymentExecutionError(
+                    "REGISTRY_AUTHENTICATION_FAILED",
+                    "Nexus a refusé le credential configuré.",
+                    stage="registry",
+                    title="Échec de l’authentification Nexus",
+                    retryable=True,
+                    integration_name=self.registry_connection.get("name"),
+                ) from error
+
             raise DeploymentExecutionError(
-                "REGISTRY_AUTHENTICATION_FAILED",
-                "Nexus a refusé le credential configuré.",
+                "REGISTRY_CONNECTION_FAILED",
+                message or "Connexion au registre Nexus impossible.",
                 stage="registry",
-                title="Échec de l’authentification Nexus",
+                title="Connexion au registre Nexus impossible",
                 retryable=True,
                 integration_name=self.registry_connection.get("name"),
             ) from error

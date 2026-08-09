@@ -168,6 +168,12 @@ def connection_to_json(
         "baseUrl":
             connection["base_url"],
 
+        "registryUrl":
+            connection.get("registry_url"),
+
+        "registryRepository":
+            connection.get("registry_repository"),
+
         "environment":
             connection["environment"],
 
@@ -362,6 +368,28 @@ def read_payload(
         )
     )
 
+    registry_url = normalize_url(
+        payload.get(
+            "registryUrl",
+            (
+                existing.get("registry_url")
+                if existing
+                else ""
+            ),
+        )
+    )
+
+    registry_repository = normalize_string(
+        payload.get(
+            "registryRepository",
+            (
+                existing.get("registry_repository")
+                if existing
+                else ""
+            ),
+        )
+    )
+
     raw_description = payload.get(
         "description",
         (
@@ -406,6 +434,16 @@ def read_payload(
 
         "base_url":
             base_url,
+
+        "registry_url": (
+            registry_url
+            or None
+        ),
+
+        "registry_repository": (
+            registry_repository
+            or None
+        ),
 
         "environment": (
             existing["environment"]
@@ -535,6 +573,41 @@ def validate_configuration(
             "L'adresse doit commencer "
             "par http:// ou https://."
         )
+
+    if provider_type == "nexus":
+        registry_url = str(
+            configuration.get("registry_url")
+            or ""
+        ).strip()
+
+        registry_repository = str(
+            configuration.get(
+                "registry_repository"
+            )
+            or ""
+        ).strip()
+
+        if not registry_url:
+            return (
+                "L'URL du registre Docker "
+                "Nexus est obligatoire."
+            )
+
+        if not validate_provider_url(
+            "nexus",
+            registry_url,
+        ):
+            return (
+                "L'URL du registre Docker "
+                "doit commencer par "
+                "http:// ou https://."
+            )
+
+        if not registry_repository:
+            return (
+                "Le repository Docker Nexus "
+                "est obligatoire."
+            )
 
     auth_type = (
         configuration["auth_type"]
@@ -826,6 +899,14 @@ def create_new_connection():
                     "base_url"
                 ],
 
+                registry_url=configuration[
+                    "registry_url"
+                ],
+
+                registry_repository=configuration[
+                    "registry_repository"
+                ],
+
                 environment=
                     configuration[
                         "environment"
@@ -985,6 +1066,16 @@ def modify_connection(
                 base_url=
                     configuration[
                         "base_url"
+                    ],
+
+                registry_url=
+                    configuration[
+                        "registry_url"
+                    ],
+
+                registry_repository=
+                    configuration[
+                        "registry_repository"
                     ],
 
                 environment=
@@ -1224,6 +1315,16 @@ def test_draft_connection():
             configuration[
                 "base_url"
             ],
+
+        "registry_url":
+            configuration.get(
+                "registry_url"
+            ),
+
+        "registry_repository":
+            configuration.get(
+                "registry_repository"
+            ),
 
         "verify_ssl":
             configuration[
