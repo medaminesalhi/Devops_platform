@@ -822,7 +822,7 @@ export class DeploymentsService {
       { key: 'kubernetes', label: 'Kubernetes', description: 'Le cluster cible répond et le namespace est disponible.', status: 'ready', integrationName: 'cluster-lab', actionLabel: 'Ouvrir', actionPath: '/integrations' },
       { key: 'argocd', label: 'Argo CD', description: 'Le service GitOps est accessible.', status: 'ready', integrationName: 'argocd-lab', actionLabel: 'Ouvrir', actionPath: '/integrations' },
       { key: 'registry', label: 'Registre Nexus', description: 'Le registre accepte les opérations de lecture.', status: 'ready', integrationName: 'nexus-lab', actionLabel: 'Ouvrir', actionPath: '/integrations' },
-      { key: 'gitops', label: 'Repository GitOps', description: 'Le repository et son credential sont disponibles.', status: 'ready', integrationName: 'gitops-lab', actionLabel: 'Ouvrir', actionPath: '/integrations' },
+      { key: 'gitops', label: 'Source Argo CD', description: 'La source Argo CD sélectionnée est disponible.', status: 'ready', integrationName: 'gitops-lab', actionLabel: 'Ouvrir', actionPath: '/integrations' },
       { key: 'secrets', label: 'Secrets Kubernetes', description: 'Tous les secrets requis sont associés.', status: 'ready', integrationName: null, actionLabel: null, actionPath: null },
     ];
   }
@@ -840,8 +840,8 @@ export class DeploymentsService {
       ['source', 'Récupérer le commit approuvé', 'Charger exactement la version analysée.'],
       ['build', 'Construire les images', 'Exécuter les builds Docker contrôlés.'],
       ['registry', 'Publier vers Nexus', 'Pousser les images et enregistrer les digests.'],
-      ['gitops', 'Publier dans GitOps', 'Versionner Helm et les références d’images.'],
-      ['argocd', 'Synchroniser Argo CD', 'Appliquer la version GitOps confirmée.'],
+      ['gitops', 'Publier la configuration', 'Publier les charts vers la source Argo CD sélectionnée.'],
+      ['argocd', 'Synchroniser Argo CD', 'Synchroniser la source confirmée avec Kubernetes.'],
       ['kubernetes', 'Observer Kubernetes', 'Attendre les pods, services et jobs.'],
       ['health', 'Vérifier la santé', 'Contrôler Argo CD, les probes et l’Ingress.'],
     ];

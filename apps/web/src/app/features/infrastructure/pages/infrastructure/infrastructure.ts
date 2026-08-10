@@ -166,13 +166,13 @@ const SERVICE_DEFINITIONS:
 
       description:
         (
-          'GitLab stocke les manifests '
-          + 'et charts utilisés '
-          + 'par Argo CD.'
+          'Optionnel. Nécessaire uniquement si '
+          + 'la source Argo CD choisie en phase 3 '
+          + 'est un repository GitLab.'
         ),
 
       required:
-        true,
+        false,
 
       providers: [
         'gitlab',
@@ -394,7 +394,7 @@ export class Infrastructure
 
             Validators.pattern(
               (
-                /^[a-z0-9]+(?:[-a-z0-9]*[a-z0-9])?$/
+                /^[a-z0-9]+ (?:[-a-z0-9]*[a-z0-9])?$/
               )
             ),
           ],

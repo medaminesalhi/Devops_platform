@@ -15,8 +15,6 @@ CONNECTION_SELECT = """
         connection.name,
         connection.provider_type,
         connection.base_url,
-        connection.registry_url,
-        connection.registry_repository,
         connection.environment,
         connection.description,
         connection.enabled,
@@ -82,7 +80,8 @@ def list_connections(
             f"""
                 {CONNECTION_SELECT}
 
-                ORDER BY connection.name ASC;
+                ORDER BY
+                    connection.name ASC;
             """
         ).fetchall()
 
@@ -102,8 +101,6 @@ def create_connection(
     name: str,
     provider_type: str,
     base_url: str,
-    registry_url: str | None,
-    registry_repository: str | None,
     environment: str,
     description: str | None,
     verify_ssl: bool,
@@ -115,6 +112,27 @@ def create_connection(
     failure_threshold: int,
     user_id: int,
 ) -> dict[str, Any]:
+    """
+    Crée une connexion d'intégration.
+
+    La connexion contient uniquement les informations
+    nécessaires pour joindre le fournisseur.
+
+    Exemple :
+        Nexus :
+            base_url = http://100.96.79.120:8081
+
+        GitLab :
+            base_url = https://gitlab.example.com
+
+        Argo CD :
+            base_url = https://argocd.example.com
+
+    Les repositories Docker, Helm ou Git ne sont pas
+    choisis ici. Ils sont découverts dynamiquement puis
+    sélectionnés plus tard dans le workflow du projet.
+    """
+
     with get_database_connection() as connection:
         created_row = connection.execute(
             """
@@ -123,8 +141,6 @@ def create_connection(
                         name,
                         provider_type,
                         base_url,
-                        registry_url,
-                        registry_repository,
                         environment,
                         description,
                         verify_ssl,
@@ -143,8 +159,6 @@ def create_connection(
                     %s,
                     %s,
                     %s,
-                    %s,
-                    %s,
                     %s
                 )
                 RETURNING id;
@@ -153,8 +167,6 @@ def create_connection(
                 name,
                 provider_type,
                 base_url,
-                registry_url,
-                registry_repository,
                 environment,
                 description,
                 verify_ssl,
@@ -220,11 +232,20 @@ def create_connection(
                 user_id,
                 json.dumps(
                     {
-                        "name": name,
+                        "name":
+                            name,
+
                         "providerType":
                             provider_type,
+
+                        "baseUrl":
+                            base_url,
+
                         "verifySsl":
                             verify_ssl,
+
+                        "authType":
+                            auth_type,
                     }
                 ),
             ),
@@ -250,8 +271,6 @@ def update_connection(
     name: str,
     provider_type: str,
     base_url: str,
-    registry_url: str | None,
-    registry_repository: str | None,
     environment: str,
     description: str | None,
     verify_ssl: bool,
@@ -264,6 +283,17 @@ def update_connection(
     failure_threshold: int,
     user_id: int,
 ) -> dict[str, Any] | None:
+    """
+    Met à jour une connexion existante.
+
+    Les repositories découverts auprès de Nexus,
+    GitLab ou d'un autre fournisseur ne sont pas
+    stockés ici comme propriété unique de la connexion.
+
+    Si replace_secret=False, le secret déjà enregistré
+    est conservé.
+    """
+
     with get_database_connection() as connection:
         updated_row = connection.execute(
             """
@@ -273,8 +303,6 @@ def update_connection(
                     name = %s,
                     provider_type = %s,
                     base_url = %s,
-                    registry_url = %s,
-                    registry_repository = %s,
                     environment = %s,
                     description = %s,
                     verify_ssl = %s,
@@ -297,8 +325,6 @@ def update_connection(
                 name,
                 provider_type,
                 base_url,
-                registry_url,
-                registry_repository,
                 environment,
                 description,
                 verify_ssl,
@@ -407,11 +433,21 @@ def update_connection(
                 user_id,
                 json.dumps(
                     {
-                        "name": name,
+                        "name":
+                            name,
+
                         "providerType":
                             provider_type,
+
+                        "baseUrl":
+                            base_url,
+
                         "verifySsl":
                             verify_ssl,
+
+                        "authType":
+                            auth_type,
+
                         "credentialReplaced":
                             replace_secret,
                     }
@@ -437,16 +473,24 @@ def delete_connection(
 
         if existing is None:
             return {
-                "deleted": False,
-                "reason": "not_found",
-                "usageCount": 0,
-                "name": None,
+                "deleted":
+                    False,
+
+                "reason":
+                    "not_found",
+
+                "usageCount":
+                    0,
+
+                "name":
+                    None,
             }
 
         usage_row = connection.execute(
             """
                 SELECT
-                    COUNT(*)::INTEGER AS total
+                    COUNT(*)::INTEGER
+                        AS total
 
                 FROM environment_connections
 
@@ -465,10 +509,17 @@ def delete_connection(
 
         if usage_count > 0:
             return {
-                "deleted": False,
-                "reason": "in_use",
-                "usageCount": usage_count,
-                "name": existing["name"],
+                "deleted":
+                    False,
+
+                "reason":
+                    "in_use",
+
+                "usageCount":
+                    usage_count,
+
+                "name":
+                    existing["name"],
             }
 
         connection.execute(
@@ -484,10 +535,17 @@ def delete_connection(
         )
 
         return {
-            "deleted": True,
-            "reason": None,
-            "usageCount": 0,
-            "name": existing["name"],
+            "deleted":
+                True,
+
+            "reason":
+                None,
+
+            "usageCount":
+                0,
+
+            "name":
+                existing["name"],
         }
 
 
@@ -518,7 +576,8 @@ def list_due_connection_ids(
                     )
 
                 ORDER BY
-                    last_checked_at NULLS FIRST;
+                    last_checked_at
+                        NULLS FIRST;
             """
         ).fetchall()
 
@@ -581,9 +640,15 @@ def save_health_result(
                 final_status,
                 result["http_status"],
                 result["latency_ms"],
-                result["server_reachable"],
-                result["authenticated"],
-                result["checked_url"],
+                result[
+                    "server_reachable"
+                ],
+                result[
+                    "authenticated"
+                ],
+                result[
+                    "checked_url"
+                ],
                 result["message"],
             ),
         )
@@ -609,8 +674,11 @@ def save_health_result(
                 result["http_status"],
                 (
                     None
-                    if final_status == "online"
-                    else result["message"]
+                    if final_status
+                    == "online"
+                    else result[
+                        "message"
+                    ]
                 ),
                 result["latency_ms"],
                 connection_id,
@@ -623,17 +691,19 @@ def save_health_result(
 
         if (
             final_status == "offline"
-            and previous_status != "offline"
+            and previous_status
+            != "offline"
         ):
             connection.execute(
                 """
-                    INSERT INTO notifications (
-                        connection_id,
-                        notification_type,
-                        severity,
-                        title,
-                        message
-                    )
+                    INSERT INTO
+                        notifications (
+                            connection_id,
+                            notification_type,
+                            severity,
+                            title,
+                            message
+                        )
                     VALUES (
                         %s,
                         'integration.offline',
@@ -654,17 +724,19 @@ def save_health_result(
 
         elif (
             final_status == "online"
-            and previous_status == "offline"
+            and previous_status
+            == "offline"
         ):
             connection.execute(
                 """
-                    INSERT INTO notifications (
-                        connection_id,
-                        notification_type,
-                        severity,
-                        title,
-                        message
-                    )
+                    INSERT INTO
+                        notifications (
+                            connection_id,
+                            notification_type,
+                            severity,
+                            title,
+                            message
+                        )
                     VALUES (
                         %s,
                         'integration.recovered',
@@ -681,7 +753,8 @@ def save_health_result(
                     ),
                     (
                         "Le service répond "
-                        "de nouveau correctement."
+                        "de nouveau "
+                        "correctement."
                     ),
                 ),
             )

@@ -219,8 +219,8 @@ export const PROVIDER_DEFINITIONS:
         'Nexus Repository',
 
       description:
-        'Images Docker et artefacts '
-        + 'de construction.',
+        'Repositories Docker, Helm et autres '
+        + 'artefacts Nexus.',
 
       namePlaceholder:
         'Exemple : Nexus principal',
@@ -229,7 +229,7 @@ export const PROVIDER_DEFINITIONS:
         'https://nexus.example.com',
 
       endpointPath:
-        '/service/rest/v1/repositories',
+        '/service/rest/v1/status',
 
       exactUrl:
         false,
@@ -251,11 +251,11 @@ export const PROVIDER_DEFINITIONS:
             + 'un reverse proxy.',
         },
         {
-          port: 8084,
-          label: 'Docker Registry',
+          port: 8082,
+          label: 'Docker',
           usage:
-            'Exemple de connecteur HTTP '
-            + 'd’un repository Docker hosted.',
+            'Exemple de port distinct '
+            + 'pour un registre Docker.',
         },
       ],
 
@@ -283,18 +283,21 @@ export const PROVIDER_DEFINITIONS:
         true,
 
       helpTitle:
-        'API Nexus et registre Docker',
+        'Connexion à l’API Nexus',
 
       helpMessages: [
         (
-          'L’URL du serveur correspond à '
-          + 'l’interface et à l’API REST Nexus '
-          + '(par exemple :8081).'
+          'Saisissez uniquement l’adresse '
+          + 'du serveur Nexus (API/UI), par exemple :8081.'
         ),
         (
-          'Choisissez aussi le repository Docker hosted '
-          + 'et renseignez son connecteur Docker distinct '
-          + '(par exemple :8084).'
+          'Après le test, SApixi détecte automatiquement '
+          + 'les repositories Docker et Helm ainsi que '
+          + 'les connecteurs Docker publiés.'
+        ),
+        (
+          'Aucun repository n’est choisi dans Intégrations : '
+          + 'le choix se fait dans la phase 3 du projet.'
         ),
       ],
     },

@@ -31,7 +31,6 @@ REQUIRED_SERVICE_ROLES = {
     "kubernetes": "Kubernetes",
     "argocd": "Argo CD",
     "container_registry": "Registre Nexus",
-    "gitops_repository": "Repository GitOps",
 }
 
 STAGE_LABELS = {
@@ -39,7 +38,7 @@ STAGE_LABELS = {
     "source": "Récupération du code",
     "build": "Build Docker",
     "registry": "Publication Nexus",
-    "gitops": "Publication GitOps",
+    "gitops": "Publication de la configuration",
     "argocd": "Synchronisation Argo CD",
     "kubernetes": "Vérification Kubernetes",
     "health": "Vérification de santé",
@@ -343,9 +342,9 @@ def build_preflight(
             "key": "artifacts",
             "label": "Artefacts approuvés",
             "description": (
-                "La génération sélectionnée est complète et tous les fichiers sont approuvés."
+                "La génération sélectionnée est confirmée et tous les fichiers sont approuvés."
                 if artifacts_ready
-                else "La génération doit être terminée et tous les artefacts doivent être approuvés."
+                else "La génération doit être confirmée et tous les artefacts doivent être approuvés."
             ),
             "status": "ready" if artifacts_ready else "blocked",
             "integrationName": None,
@@ -383,7 +382,12 @@ def build_preflight(
     )
     by_role = {item["service_role"]: item for item in services}
 
-    for role, label in REQUIRED_SERVICE_ROLES.items():
+    required_roles = dict(REQUIRED_SERVICE_ROLES)
+    delivery_mode = str(((contract or {}).get("target") or {}).get("delivery", {}).get("mode") or "git")
+    if delivery_mode == "git":
+        required_roles["gitops_repository"] = "Repository GitOps"
+
+    for role, label in required_roles.items():
         service = by_role.get(role)
         if service is None:
             status = "blocked"
@@ -736,14 +740,10 @@ def create_deployment(payload: dict[str, Any], user_id: int) -> dict[str, Any]:
             "L’environnement ne contient aucun registre de conteneurs.",
             409,
         )
+    registry_target = ((contract.get("target") or {}).get("registry") or {})
     registry_host = (
-        _registry_host(
-            str(
-                registry.get("registry_url")
-                or ""
-            )
-        )
-        or ((contract.get("target") or {}).get("registry") or {}).get("host")
+        registry_target.get("host")
+        or _registry_host(str(registry_target.get("endpointUrl") or ""))
         or _registry_host(str(registry.get("base_url") or ""))
     )
     if not registry_host:

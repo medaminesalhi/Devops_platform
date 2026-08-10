@@ -220,15 +220,15 @@ def render_project_artifacts(
         )
 
 
-    gitops = require_dict(
+    delivery = require_dict(
         target,
-        "gitops",
+        "delivery",
     )
 
 
-    gitops_base_path = safe_path(
+    delivery_base_path = safe_path(
         str(
-            gitops.get("basePath")
+            delivery.get("basePath")
             or "projects"
         )
     )
@@ -310,7 +310,7 @@ def render_project_artifacts(
 
 
         chart_root = join_path(
-            gitops_base_path,
+            delivery_base_path,
 
             (
                 f"{project_slug}/"
@@ -2674,9 +2674,9 @@ def render_argocd_project(
     )
 
 
-    gitops = require_dict(
+    delivery = require_dict(
         target,
-        "gitops",
+        "delivery",
     )
 
 
@@ -2715,7 +2715,7 @@ def render_argocd_project(
 
 
     repository_url = str(
-        gitops.get(
+        delivery.get(
             "repositoryUrl"
         )
         or ""
@@ -2838,6 +2838,9 @@ def render_argocd_project(
 
             "destinationNamespace":
                 namespace,
+
+            "deliveryMode":
+                str(delivery.get("mode") or "git"),
         },
     )
 
@@ -2868,9 +2871,9 @@ def render_argocd_application(
     )
 
 
-    gitops = require_dict(
+    delivery = require_dict(
         target,
-        "gitops",
+        "delivery",
     )
 
 
@@ -3013,40 +3016,28 @@ def render_argocd_application(
             "project":
                 argocd_project_name,
 
-            "source": {
-                "repoURL":
-                    str(
-                        gitops.get(
-                            "repositoryUrl"
-                        )
-                        or ""
+            "source": (
+                {
+                    "repoURL": str(delivery.get("repositoryUrl") or ""),
+                    "targetRevision": str(delivery.get("targetRevision") or "main"),
+                    "path": str(component_summary["chartPath"]),
+                    "helm": {
+                        "releaseName": dns_name(f"{project_slug}-{component_slug}"),
+                    },
+                }
+                if str(delivery.get("mode") or "git") == "git"
+                else {
+                    "repoURL": str(delivery.get("repositoryUrl") or ""),
+                    "chart": component_slug,
+                    "targetRevision": str(
+                        delivery.get("targetRevision")
+                        or "__SAPIXI_HELM_VERSION__"
                     ),
-
-                "targetRevision":
-                    str(
-                        gitops.get(
-                            "targetRevision"
-                        )
-                        or "main"
-                    ),
-
-                "path":
-                    str(
-                        component_summary[
-                            "chartPath"
-                        ]
-                    ),
-
-                "helm": {
-                    "releaseName":
-                        dns_name(
-                            (
-                                f"{project_slug}-"
-                                f"{component_slug}"
-                            )
-                        ),
-                },
-            },
+                    "helm": {
+                        "releaseName": dns_name(f"{project_slug}-{component_slug}"),
+                    },
+                }
+            ),
 
             "destination": {
                 "server":
@@ -3110,6 +3101,9 @@ def render_argocd_application(
 
             "automaticSync":
                 allow_automatic,
+
+            "deliveryMode":
+                str(delivery.get("mode") or "git"),
 
             "chartPath":
                 component_summary[

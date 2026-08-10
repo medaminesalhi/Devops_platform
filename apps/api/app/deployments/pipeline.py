@@ -13,6 +13,7 @@ from app.deployments.runtime import (
     DeploymentWorkspace,
     DockerProvider,
     GitOpsProvider,
+    HelmRepositoryProvider,
     KubernetesProvider,
     WorkspaceProvider,
 )
@@ -62,12 +63,6 @@ class DeploymentPipeline:
             "Registre Nexus",
             "registry",
         )
-        self.gitops_connection = self._require_connection(
-            environment_id,
-            "gitops_repository",
-            "Repository GitOps",
-            "gitops",
-        )
         self.argocd_connection = self._require_connection(
             environment_id,
             "argocd",
@@ -81,6 +76,28 @@ class DeploymentPipeline:
             "kubernetes",
         )
 
+        delivery = ((self.contract.get("target") or {}).get("delivery") or {})
+        self.delivery_mode = str(delivery.get("mode") or "git")
+        self.gitops_connection: dict[str, Any] | None = None
+        if self.delivery_mode == "git":
+            self.gitops_connection = self._require_connection(
+                environment_id,
+                "gitops_repository",
+                "Repository GitOps",
+                "gitops",
+            )
+            source_connection = self.gitops_connection
+        elif self.delivery_mode == "helm":
+            source_connection = self.registry_connection
+        else:
+            raise DeploymentExecutionError(
+                "DELIVERY_MODE_INVALID",
+                f"Le mode de publication {self.delivery_mode!r} est invalide.",
+                stage="gitops",
+                title="Mode de publication invalide",
+                requires_new_generation=True,
+            )
+
         self.workspace_provider = WorkspaceProvider(
             deployment=deployment,
             workspace=self.workspace,
@@ -92,20 +109,32 @@ class DeploymentPipeline:
             logger=self.logger,
             runner=self.runner,
             registry_connection=self.registry_connection,
-        )
-        self.gitops_provider = GitOpsProvider(
-            deployment=deployment,
-            workspace=self.workspace,
-            logger=self.logger,
-            runner=self.runner,
-            gitops_connection=self.gitops_connection,
             contract=self.contract,
         )
+        if self.delivery_mode == "git":
+            self.delivery_provider = GitOpsProvider(
+                deployment=deployment,
+                workspace=self.workspace,
+                logger=self.logger,
+                runner=self.runner,
+                gitops_connection=self.gitops_connection,
+                contract=self.contract,
+            )
+        else:
+            self.delivery_provider = HelmRepositoryProvider(
+                deployment=deployment,
+                workspace=self.workspace,
+                logger=self.logger,
+                registry_connection=self.registry_connection,
+                contract=self.contract,
+            )
         self.argocd_provider = ArgoCdProvider(
             deployment=deployment,
             workspace=self.workspace,
             logger=self.logger,
             connection=self.argocd_connection,
+            source_connection=source_connection,
+            contract=self.contract,
         )
         self.kubernetes_provider = KubernetesProvider(
             deployment=deployment,
@@ -208,14 +237,14 @@ class DeploymentPipeline:
                     self.deployment_id,
                     status="succeeded",
                     current_stage="gitops",
-                    current_stage_label="Release préparée dans GitOps",
+                    current_stage_label="Release préparée dans la source Argo CD",
                     progress=100,
                     finished_at=datetime.now(timezone.utc),
                 )
                 self.logger.write(
                     "system",
                     "success",
-                    "La release a été préparée et publiée dans GitOps sans synchronisation Argo CD.",
+                    "La release a été préparée et publiée dans la source Argo CD sans synchronisation.",
                 )
                 return
 
@@ -272,11 +301,12 @@ class DeploymentPipeline:
         elif stage == "registry":
             details = self.docker_provider.push_images()
         elif stage == "gitops":
-            details = self.gitops_provider.publish()
-            repository.update_deployment(
-                self.deployment_id,
-                gitops_commit=details.get("gitopsCommit"),
-            )
+            details = self.delivery_provider.publish()
+            if details.get("gitopsCommit"):
+                repository.update_deployment(
+                    self.deployment_id,
+                    gitops_commit=details.get("gitopsCommit"),
+                )
         elif stage == "argocd":
             details = self.argocd_provider.apply_and_sync()
         elif stage == "kubernetes":

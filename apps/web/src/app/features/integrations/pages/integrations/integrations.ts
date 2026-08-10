@@ -40,6 +40,7 @@ import {
   DeletedConnectionResult,
   IntegrationConfiguration,
   IntegrationConnection,
+  IntegrationRepositoryOption,
   IntegrationTestResult,
   IntegrationsService,
   ProviderType,
@@ -142,6 +143,22 @@ export class Integrations
     >(null);
 
 
+  readonly draftRepositories =
+    signal<IntegrationRepositoryOption[]>([]);
+
+
+  readonly savedRepositories =
+    signal<IntegrationRepositoryOption[]>([]);
+
+
+  readonly isDiscoveringRepositories =
+    signal(false);
+
+
+  readonly repositoryDiscoveryError =
+    signal<string | null>(null);
+
+
   readonly selectedCategory =
     signal<
       IntegrationCategory | null
@@ -196,24 +213,6 @@ export class Integrations
 
             Validators.pattern(
               /^(https?|nfs):\/\/.+/i,
-            ),
-          ],
-        ],
-
-        registryRepository: [
-          '',
-
-          [
-            Validators.maxLength(200),
-          ],
-        ],
-
-        registryUrl: [
-          '',
-
-          [
-            Validators.pattern(
-              /^https?:\/\/.+/i,
             ),
           ],
         ],
@@ -477,6 +476,10 @@ export class Integrations
     this.savedTestResult.set(
       null,
     );
+
+    this.savedRepositories.set([]);
+    this.repositoryDiscoveryError.set(null);
+    this.discoverSavedRepositories(connection);
   }
 
 
@@ -500,8 +503,6 @@ export class Integrations
       providerType: '',
       name: '',
       baseUrl: '',
-      registryRepository: '',
-      registryUrl: '',
       description: '',
       authType: 'none',
       username: '',
@@ -513,6 +514,8 @@ export class Integrations
     });
 
     this.clearEditorMessages();
+    this.draftRepositories.set([]);
+    this.repositoryDiscoveryError.set(null);
 
     this.editorOpen.set(true);
   }
@@ -543,10 +546,6 @@ export class Integrations
       connection.baseUrl,
     );
 
-    this.configureProviderSpecificValidators(
-      connection.providerType,
-    );
-
     this.connectionForm.reset({
       category:
         definition.category,
@@ -559,14 +558,6 @@ export class Integrations
 
       baseUrl:
         connection.baseUrl,
-
-      registryRepository:
-        connection.registryRepository
-        ?? '',
-
-      registryUrl:
-        connection.registryUrl
-        ?? '',
 
       description:
         connection.description
@@ -598,8 +589,14 @@ export class Integrations
     });
 
     this.clearEditorMessages();
+    this.draftRepositories.set([]);
+    this.repositoryDiscoveryError.set(null);
 
     this.editorOpen.set(true);
+
+    if (connection.providerType === 'nexus' || connection.providerType === 'gitlab') {
+      this.discoverSavedRepositories(connection, true);
+    }
   }
 
 
@@ -636,16 +633,10 @@ export class Integrations
 
     this.currentBaseUrl.set('');
 
-    this.configureProviderSpecificValidators(
-      null,
-    );
-
     this.connectionForm.patchValue({
       providerType: '',
       name: '',
       baseUrl: '',
-      registryRepository: '',
-      registryUrl: '',
       authType: 'none',
       username: '',
       credential: '',
@@ -653,6 +644,8 @@ export class Integrations
     });
 
     this.draftTestResult.set(null);
+    this.draftRepositories.set([]);
+    this.repositoryDiscoveryError.set(null);
   }
 
 
@@ -683,15 +676,9 @@ export class Integrations
 
     this.currentBaseUrl.set('');
 
-    this.configureProviderSpecificValidators(
-      providerType,
-    );
-
     this.connectionForm.patchValue({
       name: '',
       baseUrl: '',
-      registryRepository: '',
-      registryUrl: '',
 
       authType:
         definition.defaultAuthType,
@@ -702,6 +689,8 @@ export class Integrations
     });
 
     this.draftTestResult.set(null);
+    this.draftRepositories.set([]);
+    this.repositoryDiscoveryError.set(null);
   }
 
 
@@ -866,6 +855,10 @@ export class Integrations
           this.draftTestResult.set(
             result,
           );
+
+          if (result.server_reachable) {
+            this.discoverDraftRepositories(configuration);
+          }
         },
 
         error: (
@@ -919,6 +912,8 @@ export class Integrations
           this.savedTestResult.set(
             result.test,
           );
+
+          this.discoverSavedRepositories(result.connection);
         },
 
         error: (
@@ -927,6 +922,60 @@ export class Integrations
           this.errorMessage.set(
             this.resolveError(error),
           );
+        },
+      });
+  }
+
+
+  private discoverDraftRepositories(
+    configuration: IntegrationConfiguration,
+  ): void {
+    if (!['nexus', 'gitlab'].includes(configuration.providerType)) {
+      this.draftRepositories.set([]);
+      return;
+    }
+
+    this.isDiscoveringRepositories.set(true);
+    this.repositoryDiscoveryError.set(null);
+
+    this.integrationsService
+      .discoverDraftRepositories(configuration)
+      .pipe(finalize(() => this.isDiscoveringRepositories.set(false)))
+      .subscribe({
+        next: repositories => this.draftRepositories.set(repositories),
+        error: (error: HttpErrorResponse) => {
+          this.draftRepositories.set([]);
+          this.repositoryDiscoveryError.set(this.resolveError(error));
+        },
+      });
+  }
+
+
+  private discoverSavedRepositories(
+    connection: IntegrationConnection,
+    copyToDraft = false,
+  ): void {
+    if (!['nexus', 'gitlab'].includes(connection.providerType)) {
+      this.savedRepositories.set([]);
+      if (copyToDraft) this.draftRepositories.set([]);
+      return;
+    }
+
+    this.isDiscoveringRepositories.set(true);
+    this.repositoryDiscoveryError.set(null);
+
+    this.integrationsService
+      .discoverSavedRepositories(connection.id)
+      .pipe(finalize(() => this.isDiscoveringRepositories.set(false)))
+      .subscribe({
+        next: repositories => {
+          this.savedRepositories.set(repositories);
+          if (copyToDraft) this.draftRepositories.set(repositories);
+        },
+        error: (error: HttpErrorResponse) => {
+          this.savedRepositories.set([]);
+          if (copyToDraft) this.draftRepositories.set([]);
+          this.repositoryDiscoveryError.set(this.resolveError(error));
         },
       });
   }
@@ -1153,54 +1202,6 @@ export class Integrations
   }
 
 
-  private configureProviderSpecificValidators(
-    providerType: ProviderType | null,
-  ): void {
-    const registryRepository =
-      this.connectionForm.controls
-        .registryRepository;
-
-    const registryUrl =
-      this.connectionForm.controls
-        .registryUrl;
-
-    if (providerType === 'nexus') {
-      registryRepository.setValidators([
-        Validators.required,
-        Validators.maxLength(200),
-      ]);
-
-      registryUrl.setValidators([
-        Validators.required,
-        Validators.pattern(
-          /^https?:\/\/.+/i,
-        ),
-      ]);
-    }
-    else {
-      registryRepository.setValidators([
-        Validators.maxLength(200),
-      ]);
-
-      registryUrl.setValidators([
-        Validators.pattern(
-          /^https?:\/\/.+/i,
-        ),
-      ]);
-    }
-
-    registryRepository
-      .updateValueAndValidity({
-        emitEvent: false,
-      });
-
-    registryUrl
-      .updateValueAndValidity({
-        emitEvent: false,
-      });
-  }
-
-
   private buildConfiguration():
     IntegrationConfiguration {
     const values =
@@ -1216,14 +1217,6 @@ export class Integrations
 
       baseUrl:
         values.baseUrl.trim(),
-
-      registryRepository:
-        values.registryRepository.trim()
-        || null,
-
-      registryUrl:
-        values.registryUrl.trim()
-        || null,
 
       description:
         values.description.trim()

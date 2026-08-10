@@ -83,8 +83,8 @@ DEFAULT_STEPS: tuple[tuple[str, str, str, str], ...] = (
     (
         "gitops",
         "gitops",
-        "Publier dans GitOps",
-        "Versionner les charts Helm et les références d’images.",
+        "Publier la configuration",
+        "Publier les charts vers la source Argo CD sélectionnée (Git ou Helm).",
     ),
     (
         "argocd",
@@ -515,8 +515,6 @@ def list_environment_connections(environment_id: int) -> list[dict[str, Any]]:
                     service.name,
                     service.provider_type,
                     service.base_url,
-                    service.registry_url,
-                    service.registry_repository,
                     service.environment,
                     service.description,
                     service.enabled,

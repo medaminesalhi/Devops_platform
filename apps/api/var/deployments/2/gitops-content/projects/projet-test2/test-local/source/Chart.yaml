@@ -1,0 +1,9 @@
+apiVersion: v2
+name: source
+description: Chart Helm généré et géré par SApixi pour source.
+type: application
+version: 0.1.2
+appVersion: commit-fb93e5c6
+annotations:
+  sapixi.io/generated: 'true'
+  sapixi.io/component-id: '8'

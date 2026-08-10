@@ -20,6 +20,8 @@ export type ProposalStatus = 'preparing' | 'needs_input' | 'ready' | 'confirmed'
 export type ExposureMode = 'internal' | 'public';
 export type PersistenceChoice = 'none' | 'suggested' | 'required';
 export type MigrationChoice = 'automatic' | 'enabled' | 'disabled';
+export type DeliveryMode = 'git' | 'helm';
+export type GitRefreshMode = 'polling' | 'webhook';
 
 export interface WorkflowProjectSummary {
   id: number;
@@ -215,8 +217,25 @@ export interface DeploymentContract {
     namespace: string;
     domain: string | null;
     kubernetes: { server: string };
-    registry: { host: string; repositoryPrefix: string; imagePullSecretName: string };
-    gitops: { repositoryUrl: string; targetRevision: string; basePath: string };
+    registry: {
+      connectionId: number;
+      repositoryName: string;
+      repositoryUrl: string | null;
+      endpointUrl: string;
+      host: string;
+      repositoryPrefix: string;
+      imagePullSecretName: string;
+    };
+    delivery: {
+      mode: DeliveryMode;
+      connectionId: number;
+      repositoryId?: number | string | null;
+      repositoryName: string;
+      repositoryUrl: string;
+      targetRevision: string;
+      basePath: string;
+      refreshMode: GitRefreshMode;
+    };
     argocd: {
       serverUrl: string;
       namespace: string;
@@ -259,6 +278,18 @@ export interface SavedDeploymentContract {
   confirmedAt: string | null;
 }
 
+export interface DeploymentProposalAdvancedDecisions {
+  startCommand: string | null;
+  port: number | null;
+  serviceType: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
+  readinessPath: string;
+  livenessPath: string;
+  cpuRequest: string;
+  cpuLimit: string;
+  memoryRequest: string;
+  memoryLimit: string;
+}
+
 export interface DeploymentProposalDecisions {
   namespace: string;
   exposureMode: ExposureMode;
@@ -266,6 +297,39 @@ export interface DeploymentProposalDecisions {
   replicas: number;
   persistence: PersistenceChoice;
   migration: MigrationChoice;
+
+  // Choix d'infrastructure faits en phase 3.
+  imageRepositoryName: string;
+  deliveryMode: DeliveryMode;
+  gitRepositoryId: number | null;
+  gitBranch: string;
+  gitRefreshMode: GitRefreshMode;
+  helmRepositoryName: string | null;
+
+  advanced: DeploymentProposalAdvancedDecisions;
+}
+
+export interface DeploymentTargetRepositoryOption {
+  provider: 'nexus' | 'gitlab';
+  id: string;
+  name: string;
+  label: string;
+  format: string;
+  type: string;
+  url: string | null;
+  endpointUrl: string | null;
+  defaultBranch: string | null;
+  projectId: number | null;
+  writable: boolean;
+  metadata: Record<string, unknown>;
+}
+
+export interface DeploymentTargetOptions {
+  imageRepositories: DeploymentTargetRepositoryOption[];
+  helmRepositories: DeploymentTargetRepositoryOption[];
+  gitRepositories: DeploymentTargetRepositoryOption[];
+  nexusConnection: { id: number; name: string; status: string } | null;
+  gitConnection: { id: number; name: string; status: string } | null;
 }
 
 export interface DeploymentProposalQuestion {
@@ -446,6 +510,15 @@ export class WorkflowService {
       .get<ApiResponse<WorkflowOverview>>(`/api/projects/${projectId}/workflow`, {
         headers: this.headers(),
       })
+      .pipe(map(response => response.data));
+  }
+
+  getDeploymentTargetOptions(projectId: number): Observable<DeploymentTargetOptions> {
+    return this.http
+      .get<ApiResponse<DeploymentTargetOptions>>(
+        `/api/projects/${projectId}/deployment-target-options`,
+        { headers: this.headers() },
+      )
       .pipe(map(response => response.data));
   }
 

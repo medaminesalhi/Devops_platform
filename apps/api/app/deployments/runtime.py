@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import time
 from dataclasses import dataclass
@@ -428,12 +429,14 @@ class DockerProvider:
         logger: DeploymentLogger,
         runner: CommandRunner,
         registry_connection: dict[str, Any],
+        contract: dict[str, Any],
     ) -> None:
         self.deployment = deployment
         self.workspace = workspace
         self.logger = logger
         self.runner = runner
         self.registry_connection = registry_connection
+        self.contract = contract
 
     def check_docker(self) -> None:
         try:
@@ -567,12 +570,13 @@ class DockerProvider:
         return {"images": built}
 
     def _registry_host(self) -> str:
-        registry_url = str(
-            self.registry_connection.get("registry_url")
-            or self.registry_connection.get("base_url")
-            or ""
-        ).strip()
-        parsed = urlparse(registry_url)
+        registry_target = ((self.contract.get("target") or {}).get("registry") or {})
+        configured_host = str(registry_target.get("host") or "").strip().rstrip("/")
+        if configured_host:
+            return configured_host
+        endpoint_url = str(registry_target.get("endpointUrl") or "").strip()
+        source = endpoint_url or str(self.registry_connection.get("base_url") or "")
+        parsed = urlparse(source)
         host = parsed.netloc or parsed.path
         return host.strip().rstrip("/")
 
@@ -615,31 +619,17 @@ class DockerProvider:
             )
         except DeploymentExecutionError as error:
             message = error.message or ""
-
-            if re.search(
-                r"HTTP response to HTTPS client|server gave HTTP response",
-                message,
-                re.I,
-            ):
+            if re.search(r"HTTP response to HTTPS client", message, re.I):
                 raise DeploymentExecutionError(
                     "REGISTRY_PROTOCOL_MISMATCH",
-                    (
-                        "Le registre Nexus répond en HTTP alors que "
-                        "Docker tente une connexion HTTPS. Déclarez "
-                        "ce registry HTTP dans les insecure-registries "
-                        "du moteur Docker ou activez HTTPS côté Nexus."
-                    ),
+                    "Le registre Nexus répond en HTTP alors que Docker tente une connexion HTTPS. "
+                    "Déclarez ce registry dans insecure-registries ou activez HTTPS côté Nexus.",
                     stage="registry",
                     title="Protocole du registre Nexus incompatible",
                     retryable=True,
                     integration_name=self.registry_connection.get("name"),
                 ) from error
-
-            if re.search(
-                r"unauthorized|authentication required|denied|incorrect username|incorrect password",
-                message,
-                re.I,
-            ):
+            if re.search(r"unauthorized|authentication required|denied|401|403", message, re.I):
                 raise DeploymentExecutionError(
                     "REGISTRY_AUTHENTICATION_FAILED",
                     "Nexus a refusé le credential configuré.",
@@ -648,7 +638,6 @@ class DockerProvider:
                     retryable=True,
                     integration_name=self.registry_connection.get("name"),
                 ) from error
-
             raise DeploymentExecutionError(
                 "REGISTRY_CONNECTION_FAILED",
                 message or "Connexion au registre Nexus impossible.",
@@ -818,6 +807,63 @@ class GitAuthentication:
         return authenticated_url, self.environment
 
 
+def _update_generated_values(
+    *,
+    workspace: DeploymentWorkspace,
+    deployment: dict[str, Any],
+) -> None:
+    components = repository.list_deployment_components(int(deployment["id"]))
+    for file_path in workspace.gitops_content.rglob("values*.yaml"):
+        try:
+            data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        relative_parts = {
+            part.lower()
+            for part in file_path.relative_to(workspace.gitops_content).parts
+        }
+        component = next(
+            (
+                item
+                for item in components
+                if str(item["component_key"]).lower() in relative_parts
+            ),
+            None,
+        )
+        if component is None and len(components) == 1:
+            component = components[0]
+        if component is None:
+            continue
+        image = data.get("image")
+        if not isinstance(image, dict):
+            image = {}
+            data["image"] = image
+        image["repository"] = component["image_repository"]
+        image["tag"] = component["image_tag"]
+        file_path.write_text(
+            yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+
+
+def _replace_helm_version_placeholders(
+    workspace: DeploymentWorkspace,
+    version: str,
+) -> None:
+    for path in workspace.gitops_content.rglob("*.y*ml"):
+        try:
+            content = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if "__SAPIXI_HELM_VERSION__" in content:
+            path.write_text(
+                content.replace("__SAPIXI_HELM_VERSION__", version),
+                encoding="utf-8",
+            )
+
+
 class GitOpsProvider:
     def __init__(
         self,
@@ -837,14 +883,9 @@ class GitOpsProvider:
         self.contract = contract
 
     def _gitops_target(self) -> tuple[str, str]:
-        target = self.contract.get("target") or {}
-        gitops = target.get("gitops") or {}
-        repository_url = str(
-            gitops.get("repositoryUrl")
-            or self.gitops_connection.get("base_url")
-            or ""
-        ).strip()
-        branch = str(gitops.get("targetRevision") or "main").strip() or "main"
+        delivery = ((self.contract.get("target") or {}).get("delivery") or {})
+        repository_url = str(delivery.get("repositoryUrl") or "").strip()
+        branch = str(delivery.get("targetRevision") or "main").strip() or "main"
         if not repository_url:
             raise DeploymentExecutionError(
                 "GITOPS_REPOSITORY_MISSING",
@@ -854,42 +895,85 @@ class GitOpsProvider:
             )
         return repository_url, branch
 
-    def _update_values_files(self) -> None:
-        components = repository.list_deployment_components(int(self.deployment["id"]))
-        for file_path in self.workspace.gitops_content.rglob("values*.yaml"):
-            try:
-                data = yaml.safe_load(file_path.read_text(encoding="utf-8"))
-            except Exception:
-                continue
-            if not isinstance(data, dict):
-                continue
-            relative_parts = {part.lower() for part in file_path.relative_to(self.workspace.gitops_content).parts}
-            component = next(
-                (
-                    item
-                    for item in components
-                    if str(item["component_key"]).lower() in relative_parts
-                ),
-                None,
+    def _configure_webhook_if_requested(self) -> None:
+        delivery = ((self.contract.get("target") or {}).get("delivery") or {})
+        if str(delivery.get("refreshMode") or "polling") != "webhook":
+            return
+        project_id = delivery.get("repositoryId")
+        if not project_id:
+            self.logger.write(
+                "gitops",
+                "warning",
+                "Webhook non configuré : identifiant GitLab absent. Argo CD utilisera son polling.",
+                stage="gitops",
             )
-            if component is None and len(components) == 1:
-                component = components[0]
-            if component is None:
-                continue
-            image = data.get("image")
-            if not isinstance(image, dict):
-                image = {}
-                data["image"] = image
-            image["repository"] = component["image_repository"]
-            image["tag"] = component["image_tag"]
-            file_path.write_text(
-                yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
-                encoding="utf-8",
+            return
+        argocd_url = str(
+            ((self.contract.get("target") or {}).get("argocd") or {}).get("serverUrl")
+            or ""
+        ).rstrip("/")
+        secret = decrypt_credential(self.gitops_connection.get("secret_ciphertext"))
+        if not argocd_url or not secret:
+            self.logger.write(
+                "gitops",
+                "warning",
+                "Webhook non configuré : URL Argo CD ou token GitLab absent. Le polling reste actif.",
+                stage="gitops",
+            )
+            return
+
+        base_url = str(self.gitops_connection.get("base_url") or "").rstrip("/")
+        webhook_url = f"{argocd_url}/api/webhook"
+        headers = {"PRIVATE-TOKEN": secret, "Accept": "application/json"}
+        verify = bool(self.gitops_connection.get("verify_ssl", True))
+        try:
+            hooks = requests.get(
+                f"{base_url}/api/v4/projects/{quote(str(project_id), safe='')}/hooks",
+                headers=headers,
+                timeout=30,
+                verify=verify,
+            )
+            hook_items: list[dict[str, Any]] = []
+            if hooks.status_code == 200:
+                candidate = hooks.json()
+                if isinstance(candidate, list):
+                    hook_items = [item for item in candidate if isinstance(item, dict)]
+            if any(
+                str(item.get("url") or "").rstrip("/") == webhook_url.rstrip("/")
+                for item in hook_items
+            ):
+                return
+            response = requests.post(
+                f"{base_url}/api/v4/projects/{quote(str(project_id), safe='')}/hooks",
+                headers=headers,
+                json={
+                    "url": webhook_url,
+                    "push_events": True,
+                    "enable_ssl_verification": True,
+                },
+                timeout=30,
+                verify=verify,
+            )
+            if response.status_code not in {200, 201}:
+                raise RuntimeError(f"HTTP {response.status_code}")
+            self.logger.write(
+                "gitops",
+                "success",
+                "Webhook GitLab vers Argo CD configuré.",
+                stage="gitops",
+            )
+        except Exception as error:
+            # Un webhook accélère le refresh mais n'est pas requis : Argo CD poll le repo.
+            self.logger.write(
+                "gitops",
+                "warning",
+                f"Webhook GitLab non configuré ({error}). Argo CD utilisera son polling.",
+                stage="gitops",
             )
 
     def publish(self) -> dict[str, Any]:
         repository_url, branch = self._gitops_target()
-        self._update_values_files()
+        _update_generated_values(workspace=self.workspace, deployment=self.deployment)
         self.workspace.clean_gitops_repository()
 
         auth = GitAuthentication(
@@ -1008,6 +1092,7 @@ class GitOpsProvider:
                     integration_name=self.gitops_connection.get("name"),
                 ) from error
 
+        self._configure_webhook_if_requested()
         commit = self.runner.run(
             ["git", "rev-parse", "HEAD"],
             cwd=self.workspace.gitops_repository,
@@ -1021,7 +1106,154 @@ class GitOpsProvider:
             f"Commit GitOps publié : {commit[:12]}",
             stage="gitops",
         )
-        return {"gitopsCommit": commit, "branch": branch}
+        return {"gitopsCommit": commit, "branch": branch, "mode": "git"}
+
+
+class HelmRepositoryProvider:
+    def __init__(
+        self,
+        *,
+        deployment: dict[str, Any],
+        workspace: DeploymentWorkspace,
+        logger: DeploymentLogger,
+        registry_connection: dict[str, Any],
+        contract: dict[str, Any],
+    ) -> None:
+        self.deployment = deployment
+        self.workspace = workspace
+        self.logger = logger
+        self.registry_connection = registry_connection
+        self.contract = contract
+
+    def _delivery(self) -> dict[str, Any]:
+        return ((self.contract.get("target") or {}).get("delivery") or {})
+
+    def _package_version(self) -> str:
+        return f"0.1.{int(self.deployment['id'])}"
+
+    def _package_charts(self, version: str) -> list[Path]:
+        packages_dir = self.workspace.root / "helm-packages"
+        if packages_dir.exists():
+            shutil.rmtree(packages_dir)
+        packages_dir.mkdir(parents=True, exist_ok=True)
+
+        packages: list[Path] = []
+        for chart_file in self.workspace.gitops_content.rglob("Chart.yaml"):
+            chart_root = chart_file.parent
+            try:
+                chart = yaml.safe_load(chart_file.read_text(encoding="utf-8"))
+            except Exception as error:
+                raise DeploymentExecutionError(
+                    "HELM_CHART_INVALID",
+                    f"Chart.yaml invalide : {chart_file}",
+                    stage="gitops",
+                    title="Chart Helm invalide",
+                    requires_new_generation=True,
+                ) from error
+            if not isinstance(chart, dict):
+                continue
+            chart_name = slug(str(chart.get("name") or chart_root.name))
+            chart["name"] = chart_name
+            chart["version"] = version
+            chart["appVersion"] = str(self.deployment.get("version") or version)[:64]
+            chart_file.write_text(
+                yaml.safe_dump(chart, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            package_path = packages_dir / f"{chart_name}-{version}.tgz"
+            with tarfile.open(package_path, "w:gz") as archive:
+                for source in sorted(chart_root.rglob("*")):
+                    if not source.is_file():
+                        continue
+                    relative = source.relative_to(chart_root)
+                    archive.add(source, arcname=(Path(chart_name) / relative).as_posix())
+            packages.append(package_path)
+        if not packages:
+            raise DeploymentExecutionError(
+                "HELM_CHART_MISSING",
+                "Aucun Chart.yaml n'est disponible pour la publication Nexus Helm.",
+                stage="gitops",
+                title="Chart Helm absent",
+                requires_new_generation=True,
+            )
+        return packages
+
+    def publish(self) -> dict[str, Any]:
+        delivery = self._delivery()
+        repository_name = str(delivery.get("repositoryName") or "").strip()
+        if not repository_name:
+            raise DeploymentExecutionError(
+                "HELM_REPOSITORY_MISSING",
+                "Le repository Helm Nexus est absent du contrat.",
+                stage="gitops",
+                title="Repository Helm absent",
+                requires_new_generation=True,
+            )
+
+        _update_generated_values(workspace=self.workspace, deployment=self.deployment)
+        version = self._package_version()
+        _replace_helm_version_placeholders(self.workspace, version)
+        packages = self._package_charts(version)
+
+        base_url = str(self.registry_connection.get("base_url") or "").rstrip("/")
+        username = str(self.registry_connection.get("username") or "").strip()
+        secret = decrypt_credential(self.registry_connection.get("secret_ciphertext"))
+        auth = (username, secret) if username and secret else None
+        verify = bool(self.registry_connection.get("verify_ssl", True))
+
+        for package_path in packages:
+            try:
+                with package_path.open("rb") as stream:
+                    response = requests.post(
+                        f"{base_url}/service/rest/v1/components",
+                        params={"repository": repository_name},
+                        files={
+                            "helm.asset": (
+                                package_path.name,
+                                stream,
+                                "application/gzip",
+                            )
+                        },
+                        auth=auth,
+                        timeout=120,
+                        verify=verify,
+                    )
+            except requests.RequestException as error:
+                raise DeploymentExecutionError(
+                    "HELM_REPOSITORY_UNAVAILABLE",
+                    f"Nexus Helm est inaccessible : {error}",
+                    stage="gitops",
+                    title="Nexus Helm inaccessible",
+                    retryable=True,
+                    integration_name=self.registry_connection.get("name"),
+                ) from error
+            if response.status_code not in {200, 201, 204}:
+                code = (
+                    "HELM_REPOSITORY_AUTHENTICATION_FAILED"
+                    if response.status_code in {401, 403}
+                    else "HELM_UPLOAD_FAILED"
+                )
+                raise DeploymentExecutionError(
+                    code,
+                    sanitize_log(response.text or f"HTTP {response.status_code}"),
+                    stage="gitops",
+                    title="Échec de la publication Helm",
+                    retryable=True,
+                    integration_name=self.registry_connection.get("name"),
+                )
+            self.logger.write(
+                "gitops",
+                "success",
+                f"Chart Helm publié : {package_path.name} dans {repository_name}",
+                stage="gitops",
+            )
+
+        return {
+            "mode": "helm",
+            "helmVersion": version,
+            "repositoryName": repository_name,
+            "packageCount": len(packages),
+        }
 
 
 class ArgoCdProvider:
@@ -1032,11 +1264,15 @@ class ArgoCdProvider:
         workspace: DeploymentWorkspace,
         logger: DeploymentLogger,
         connection: dict[str, Any],
+        source_connection: dict[str, Any],
+        contract: dict[str, Any],
     ) -> None:
         self.deployment = deployment
         self.workspace = workspace
         self.logger = logger
         self.connection = connection
+        self.source_connection = source_connection
+        self.contract = contract
         self.base_url = str(connection.get("base_url") or "").rstrip("/")
         self.verify_ssl = bool(connection.get("verify_ssl", True))
         self.secret = decrypt_credential(connection.get("secret_ciphertext"))
@@ -1097,6 +1333,62 @@ class ArgoCdProvider:
             )
         return response
 
+    def _ensure_source_repository(self) -> None:
+        delivery = ((self.contract.get("target") or {}).get("delivery") or {})
+        repository_url = str(delivery.get("repositoryUrl") or "").strip()
+        if not repository_url:
+            raise DeploymentExecutionError(
+                "ARGOCD_SOURCE_REPOSITORY_MISSING",
+                "La source Argo CD ne contient aucune URL de repository.",
+                stage="argocd",
+                title="Source Argo CD absente",
+                requires_new_generation=True,
+            )
+
+        response = self._request("GET", "/api/v1/repositories", expected=(200,))
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+        items = payload.get("items") if isinstance(payload, dict) else []
+        if isinstance(items, list) and any(
+            str(item.get("repo") or item.get("url") or "").rstrip("/")
+            == repository_url.rstrip("/")
+            for item in items
+            if isinstance(item, dict)
+        ):
+            return
+
+        source_secret = decrypt_credential(self.source_connection.get("secret_ciphertext"))
+        username = str(self.source_connection.get("username") or "").strip()
+        mode = str(delivery.get("mode") or "git")
+        body: dict[str, Any] = {
+            "repo": repository_url,
+            "type": "helm" if mode == "helm" else "git",
+            "insecure": not bool(self.source_connection.get("verify_ssl", True)),
+        }
+        if username:
+            body["username"] = username
+        elif mode == "git" and source_secret:
+            body["username"] = "oauth2"
+        if source_secret:
+            body["password"] = source_secret
+        if mode == "helm":
+            body["name"] = str(delivery.get("repositoryName") or "sapixi-helm")
+
+        self._request(
+            "POST",
+            "/api/v1/repositories",
+            json_body=body,
+            expected=(200, 201, 409),
+        )
+        self.logger.write(
+            "argocd",
+            "success",
+            f"Source Argo CD enregistrée : {repository_url}",
+            stage="argocd",
+        )
+
     def _manifests(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         projects: list[dict[str, Any]] = []
         applications: list[dict[str, Any]] = []
@@ -1116,6 +1408,7 @@ class ArgoCdProvider:
         return projects, applications
 
     def apply_and_sync(self) -> dict[str, Any]:
+        self._ensure_source_repository()
         projects, applications = self._manifests()
         if not applications:
             raise DeploymentExecutionError(

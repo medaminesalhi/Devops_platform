@@ -1,0 +1,50 @@
+{{- if .Values.migration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "sapixi.fullname" . }}-migration-{{ .Release.Revision }}
+  labels:
+    {{- include "sapixi.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  backoffLimit: {{ .Values.migration.backoffLimit }}
+  template:
+    metadata:
+      labels:
+        {{- include "sapixi.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migration
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command:
+            - sh
+            - -c
+            - {{ .Values.migration.command | quote }}
+          {{- if or .Values.config .Values.secrets.existingSecretName .Values.secrets.create }}
+          envFrom:
+            {{- if .Values.config }}
+            - configMapRef:
+                name: {{ include "sapixi.fullname" . }}-config
+            {{- end }}
+            {{- if .Values.secrets.existingSecretName }}
+            - secretRef:
+                name: {{ .Values.secrets.existingSecretName }}
+            {{- else if .Values.secrets.create }}
+            - secretRef:
+                name: {{ include "sapixi.fullname" . }}-secret
+            {{- end }}
+          {{- end }}
+{{- end }}

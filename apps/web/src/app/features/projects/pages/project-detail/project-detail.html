@@ -188,20 +188,224 @@
           }
 
           <section class="panel decision-card">
-            <header><div><p class="eyebrow">Décisions nécessaires</p><h3>Quelques choix avant la proposition</h3><p>Les paramètres avancés restent masqués par défaut.</p></div><button class="button button--ghost" type="button" (click)="showAdvancedProposal.set(!showAdvancedProposal())">{{ showAdvancedProposal() ? 'Masquer les détails' : 'Paramètres avancés' }}</button></header>
+            <header>
+              <div>
+                <p class="eyebrow">Décisions nécessaires</p>
+                <h3>Quelques choix avant la proposition</h3>
+                <p>Choisissez où publier l’image et quelle source Argo CD doit suivre. Les détails techniques restent optionnels.</p>
+              </div>
+              <button
+                class="button button--ghost"
+                type="button"
+                (click)="showAdvancedProposal.set(!showAdvancedProposal())"
+              >
+                {{ showAdvancedProposal() ? 'Masquer les paramètres avancés' : 'Paramètres avancés' }}
+              </button>
+            </header>
+
             <div class="decision-grid">
-              <label class="field"><span>Namespace proposé</span><input type="text" [ngModel]="proposalDecisions().namespace" (ngModelChange)="updateProposalDecision('namespace', $event)" /></label>
-              <label class="field"><span>Accès de l’application</span><select [ngModel]="proposalDecisions().exposureMode" (ngModelChange)="updateProposalDecision('exposureMode', $event)"><option value="internal">Interne au cluster</option><option value="public">Accessible par une URL</option></select></label>
+              <label class="field">
+                <span>Namespace proposé</span>
+                <input type="text" [ngModel]="proposalDecisions().namespace" (ngModelChange)="updateProposalDecision('namespace', $event)" />
+              </label>
+
+              <label class="field">
+                <span>Accès de l’application</span>
+                <select [ngModel]="proposalDecisions().exposureMode" (ngModelChange)="updateProposalDecision('exposureMode', $event)">
+                  <option value="internal">Interne au cluster</option>
+                  <option value="public">Accessible par une URL</option>
+                </select>
+              </label>
+
               @if (proposalDecisions().exposureMode === 'public') {
-                <label class="field"><span>Domaine</span><input type="text" [ngModel]="proposalDecisions().domain" (ngModelChange)="updateProposalDecision('domain', $event)" placeholder="application.lab.local" /></label>
+                <label class="field">
+                  <span>Domaine</span>
+                  <input type="text" [ngModel]="proposalDecisions().domain" (ngModelChange)="updateProposalDecision('domain', $event)" placeholder="application.lab.local" />
+                </label>
               }
-              <label class="field"><span>Nombre d’instances</span><input type="number" min="1" max="20" [ngModel]="proposalDecisions().replicas" (ngModelChange)="updateProposalDecision('replicas', $event)" /></label>
-              <label class="field"><span>Stockage persistant</span><select [ngModel]="proposalDecisions().persistence" (ngModelChange)="updateProposalDecision('persistence', $event)"><option value="suggested">Utiliser la proposition SApixi</option><option value="none">Aucun volume</option><option value="required">Volume requis</option></select></label>
-              <label class="field"><span>Migration</span><select [ngModel]="proposalDecisions().migration" (ngModelChange)="updateProposalDecision('migration', $event)"><option value="automatic">Détecter et proposer</option><option value="enabled">Exécuter une migration</option><option value="disabled">Aucune migration</option></select></label>
+
+              <label class="field">
+                <span>Nombre d’instances</span>
+                <input type="number" min="1" max="20" [ngModel]="proposalDecisions().replicas" (ngModelChange)="updateProposalDecision('replicas', $event)" />
+              </label>
+
+              <label class="field">
+                <span>Stockage persistant</span>
+                <select [ngModel]="proposalDecisions().persistence" (ngModelChange)="updateProposalDecision('persistence', $event)">
+                  <option value="suggested">Utiliser la proposition SApixi</option>
+                  <option value="none">Aucun volume</option>
+                  <option value="required">Volume requis</option>
+                </select>
+              </label>
+
+              <label class="field">
+                <span>Migration</span>
+                <select [ngModel]="proposalDecisions().migration" (ngModelChange)="updateProposalDecision('migration', $event)">
+                  <option value="automatic">Détecter et proposer</option>
+                  <option value="enabled">Exécuter une migration</option>
+                  <option value="disabled">Aucune migration</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="deployment-choice-block">
+              <div class="choice-heading">
+                <div>
+                  <p class="eyebrow">Image applicative</p>
+                  <h4>Repository Docker Nexus</h4>
+                </div>
+                @if (deploymentTargetOptions()?.nexusConnection; as nexusConnection) {
+                  <span class="source-chip">{{ nexusConnection.name }} · {{ nexusConnection.status }}</span>
+                }
+              </div>
+
+              <label class="field">
+                <span>Repository qui recevra les images</span>
+                <select
+                  [ngModel]="proposalDecisions().imageRepositoryName"
+                  (ngModelChange)="updateProposalDecision('imageRepositoryName', $event)"
+                >
+                  <option value="">Sélectionner un repository Docker</option>
+                  @for (repository of deploymentTargetOptions()?.imageRepositories ?? []; track repository.id) {
+                    <option [value]="repository.name">
+                      {{ repository.name }} · {{ repository.endpointUrl ?? repository.url }}
+                    </option>
+                  }
+                </select>
+                <small>La liste vient directement de Nexus. La page Intégrations ne choisit aucun repository.</small>
+              </label>
+            </div>
+
+            <div class="deployment-choice-block">
+              <div class="choice-heading">
+                <div>
+                  <p class="eyebrow">Source Argo CD</p>
+                  <h4>Où publier le chart Helm généré ?</h4>
+                </div>
+              </div>
+
+              <div class="delivery-mode-selector">
+                <button
+                  type="button"
+                  [class.active]="proposalDecisions().deliveryMode === 'git'"
+                  [disabled]="(deploymentTargetOptions()?.gitRepositories?.length ?? 0) === 0"
+                  (click)="selectDeliveryMode('git')"
+                >
+                  <strong>Repository GitLab GitOps</strong>
+                  <small>SApixi commit et push les charts. Argo CD lit le dossier Git.</small>
+                </button>
+
+                <button
+                  type="button"
+                  [class.active]="proposalDecisions().deliveryMode === 'helm'"
+                  [disabled]="(deploymentTargetOptions()?.helmRepositories?.length ?? 0) === 0"
+                  (click)="selectDeliveryMode('helm')"
+                >
+                  <strong>Repository Helm Nexus</strong>
+                  <small>SApixi package le chart et l’upload dans Nexus. Argo CD lit le repository Helm.</small>
+                </button>
+              </div>
+
+              @if (proposalDecisions().deliveryMode === 'git') {
+                <div class="decision-grid delivery-fields">
+                  <label class="field field--wide">
+                    <span>Repository GitOps GitLab</span>
+                    <select [ngModel]="proposalDecisions().gitRepositoryId" (ngModelChange)="selectGitRepository($event)">
+                      <option [ngValue]="null">Sélectionner un repository GitLab</option>
+                      @for (repository of deploymentTargetOptions()?.gitRepositories ?? []; track repository.id) {
+                        <option [ngValue]="repository.projectId ?? repository.id">{{ repository.name }}</option>
+                      }
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span>Branche</span>
+                    <input type="text" [ngModel]="proposalDecisions().gitBranch" (ngModelChange)="updateProposalDecision('gitBranch', $event)" placeholder="main" />
+                  </label>
+
+                  <label class="field">
+                    <span>Détection des changements</span>
+                    <select [ngModel]="proposalDecisions().gitRefreshMode" (ngModelChange)="updateProposalDecision('gitRefreshMode', $event)">
+                      <option value="polling">Polling Argo CD</option>
+                      <option value="webhook">Webhook GitLab vers Argo CD</option>
+                    </select>
+                    <small>Le webhook accélère la détection. Le polling reste fonctionnel sans webhook.</small>
+                  </label>
+                </div>
+              } @else {
+                <label class="field delivery-fields">
+                  <span>Repository Helm Nexus</span>
+                  <select [ngModel]="proposalDecisions().helmRepositoryName" (ngModelChange)="updateProposalDecision('helmRepositoryName', $event)">
+                    <option [ngValue]="null">Sélectionner un repository Helm</option>
+                    @for (repository of deploymentTargetOptions()?.helmRepositories ?? []; track repository.id) {
+                      <option [value]="repository.name">{{ repository.name }} · {{ repository.url }}</option>
+                    }
+                  </select>
+                </label>
+              }
             </div>
 
             @if (showAdvancedProposal()) {
-              <div class="advanced-note"><strong>Mode avancé</strong><p>Les commandes, ports, probes et ressources sont affichés après génération de la proposition. Ils restent modifiables avant confirmation.</p></div>
+              <div class="advanced-settings">
+                <div class="choice-heading">
+                  <div>
+                    <p class="eyebrow">Paramètres avancés</p>
+                    <h4>Overrides techniques de la proposition</h4>
+                    <p>Ces valeurs servent de base à tous les composants et restent vérifiables avant confirmation.</p>
+                  </div>
+                </div>
+
+                <div class="decision-grid">
+                  <label class="field field--wide">
+                    <span>Commande de démarrage (optionnelle)</span>
+                    <input type="text" [ngModel]="proposalDecisions().advanced.startCommand" (ngModelChange)="updateProposalAdvancedDecision('startCommand', $event || null)" placeholder="Laisser vide pour utiliser la détection" />
+                  </label>
+
+                  <label class="field">
+                    <span>Port applicatif (optionnel)</span>
+                    <input type="number" min="1" max="65535" [ngModel]="proposalDecisions().advanced.port" (ngModelChange)="updateProposalAdvancedDecision('port', $event ? +$event : null)" placeholder="Détecté automatiquement" />
+                  </label>
+
+                  <label class="field">
+                    <span>Type de Service</span>
+                    <select [ngModel]="proposalDecisions().advanced.serviceType" (ngModelChange)="updateProposalAdvancedDecision('serviceType', $event)">
+                      <option value="ClusterIP">ClusterIP</option>
+                      <option value="NodePort">NodePort</option>
+                      <option value="LoadBalancer">LoadBalancer</option>
+                    </select>
+                  </label>
+
+                  <label class="field">
+                    <span>Readiness probe</span>
+                    <input type="text" [ngModel]="proposalDecisions().advanced.readinessPath" (ngModelChange)="updateProposalAdvancedDecision('readinessPath', $event)" placeholder="/health" />
+                  </label>
+
+                  <label class="field">
+                    <span>Liveness probe</span>
+                    <input type="text" [ngModel]="proposalDecisions().advanced.livenessPath" (ngModelChange)="updateProposalAdvancedDecision('livenessPath', $event)" placeholder="/health" />
+                  </label>
+
+                  <label class="field">
+                    <span>CPU request</span>
+                    <input type="text" [ngModel]="proposalDecisions().advanced.cpuRequest" (ngModelChange)="updateProposalAdvancedDecision('cpuRequest', $event)" placeholder="100m" />
+                  </label>
+
+                  <label class="field">
+                    <span>CPU limit</span>
+                    <input type="text" [ngModel]="proposalDecisions().advanced.cpuLimit" (ngModelChange)="updateProposalAdvancedDecision('cpuLimit', $event)" placeholder="500m" />
+                  </label>
+
+                  <label class="field">
+                    <span>Mémoire request</span>
+                    <input type="text" [ngModel]="proposalDecisions().advanced.memoryRequest" (ngModelChange)="updateProposalAdvancedDecision('memoryRequest', $event)" placeholder="128Mi" />
+                  </label>
+
+                  <label class="field">
+                    <span>Mémoire limit</span>
+                    <input type="text" [ngModel]="proposalDecisions().advanced.memoryLimit" (ngModelChange)="updateProposalAdvancedDecision('memoryLimit', $event)" placeholder="512Mi" />
+                  </label>
+                </div>
+              </div>
             }
           </section>
 

@@ -220,3 +220,109 @@ dd { overflow: hidden; margin: 4px 0 0; font-size: 12px; font-weight: 750; text-
   .event-list article { grid-template-columns: 62px 1fr; }
   .event-list article p { grid-column: 1 / -1; }
 }
+/* =========================================================
+   PHASE 3 — CIBLES DE PUBLICATION ET PARAMÈTRES AVANCÉS
+   ========================================================= */
+
+.deployment-choice-block,
+.advanced-settings {
+  margin-top: 16px;
+  padding: 15px;
+  border: 1px solid #dce7e9;
+  border-radius: 11px;
+  background: #f8fbfb;
+}
+
+.choice-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.choice-heading h4 {
+  margin: 2px 0 0;
+  color: #173c45;
+  font-size: 14px;
+}
+
+.choice-heading p:not(.eyebrow) {
+  margin: 4px 0 0;
+  color: #789097;
+  font-size: 11px;
+}
+
+.source-chip {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #e9f5d9;
+  color: #56831f;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.delivery-mode-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.delivery-mode-selector button {
+  display: grid;
+  gap: 5px;
+  min-height: 82px;
+  padding: 13px 14px;
+  border: 1px solid #d2e0e3;
+  border-radius: 10px;
+  background: #fff;
+  color: #355761;
+  text-align: left;
+  cursor: pointer;
+}
+
+.delivery-mode-selector button.active {
+  border-color: #0d6c76;
+  box-shadow: 0 0 0 2px rgba(13, 108, 118, 0.08);
+  background: #edf8f8;
+  color: #0c4e57;
+}
+
+.delivery-mode-selector button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.delivery-mode-selector strong {
+  font-size: 12px;
+}
+
+.delivery-mode-selector small {
+  color: #80969d;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.delivery-fields {
+  margin-top: 12px;
+}
+
+.field--wide {
+  grid-column: 1 / -1;
+}
+
+.advanced-settings {
+  border-color: #cfe1e4;
+  background: #eef6f7;
+}
+
+@media (max-width: 760px) {
+  .delivery-mode-selector {
+    grid-template-columns: 1fr;
+  }
+
+  .choice-heading {
+    display: grid;
+  }
+}

@@ -35,7 +35,9 @@ import {
 import {
   ArtifactReviewDecision,
   DeploymentProposal,
+  DeploymentProposalAdvancedDecisions,
   DeploymentProposalDecisions,
+  DeploymentTargetOptions,
   WorkflowArtifact,
   WorkflowGeneration,
   WorkflowGenerationEvent,
@@ -102,6 +104,8 @@ export class ProjectDetail implements OnInit, OnDestroy {
   readonly selectedAiConnectionId = signal<number | null>(null);
   readonly aiModels = signal<string[]>([]);
   readonly selectedAiModel = signal('');
+  readonly deploymentTargetOptions = signal<DeploymentTargetOptions | null>(null);
+
   readonly proposalDecisions = signal<DeploymentProposalDecisions>({
     namespace: '',
     exposureMode: 'internal',
@@ -109,6 +113,23 @@ export class ProjectDetail implements OnInit, OnDestroy {
     replicas: 1,
     persistence: 'suggested',
     migration: 'automatic',
+    imageRepositoryName: '',
+    deliveryMode: 'git',
+    gitRepositoryId: null,
+    gitBranch: 'main',
+    gitRefreshMode: 'polling',
+    helmRepositoryName: null,
+    advanced: {
+      startCommand: null,
+      port: null,
+      serviceType: 'ClusterIP',
+      readinessPath: '/health',
+      livenessPath: '/health',
+      cpuRequest: '100m',
+      cpuLimit: '500m',
+      memoryRequest: '128Mi',
+      memoryLimit: '512Mi',
+    },
   });
   readonly proposalAnswers = signal<Partial<Record<string, string>>>({});
   readonly showAdvancedProposal = signal(false);
@@ -315,6 +336,32 @@ export class ProjectDetail implements OnInit, OnDestroy {
     value: DeploymentProposalDecisions[K],
   ): void {
     this.proposalDecisions.update(current => ({ ...current, [key]: value }));
+  }
+
+  updateProposalAdvancedDecision<K extends keyof DeploymentProposalAdvancedDecisions>(
+    key: K,
+    value: DeploymentProposalAdvancedDecisions[K],
+  ): void {
+    this.proposalDecisions.update(current => ({
+      ...current,
+      advanced: { ...current.advanced, [key]: value },
+    }));
+  }
+
+  selectDeliveryMode(value: 'git' | 'helm'): void {
+    this.updateProposalDecision('deliveryMode', value);
+  }
+
+  selectGitRepository(value: number | string | null): void {
+    const projectId = Number(value);
+    const selected = this.deploymentTargetOptions()?.gitRepositories.find(
+      item => Number(item.projectId ?? item.id) === projectId,
+    );
+    this.proposalDecisions.update(current => ({
+      ...current,
+      gitRepositoryId: Number.isInteger(projectId) && projectId > 0 ? projectId : null,
+      gitBranch: selected?.defaultBranch ?? current.gitBranch ?? 'main',
+    }));
   }
 
   selectAiConnection(value: number | string | null): void {
@@ -632,6 +679,15 @@ export class ProjectDetail implements OnInit, OnDestroy {
       analysis: this.analysisService.getLatestAnalysis(projectId).pipe(catchError(() => of(null))),
       workflow: this.workflowService.getOverview(projectId).pipe(catchError(() => of(null))),
       proposal: this.workflowService.getLatestProposal(projectId).pipe(catchError(() => of(null))),
+      targetOptions: this.workflowService.getDeploymentTargetOptions(projectId).pipe(
+        catchError(() => of({
+          imageRepositories: [],
+          helmRepositories: [],
+          gitRepositories: [],
+          nexusConnection: null,
+          gitConnection: null,
+        } as DeploymentTargetOptions)),
+      ),
     })
       .pipe(finalize(() => {
         this.isLoading.set(false);
@@ -643,6 +699,7 @@ export class ProjectDetail implements OnInit, OnDestroy {
           this.analysis.set(context.analysis);
           this.workflow.set(context.workflow);
           this.proposal.set(context.proposal ?? context.workflow?.latestProposal ?? null);
+          this.deploymentTargetOptions.set(context.targetOptions);
           this.generation.set(context.workflow?.latestGeneration ?? null);
           this.initializeSelections();
           this.resumeWorkers();
@@ -661,13 +718,40 @@ export class ProjectDetail implements OnInit, OnDestroy {
   private initializeSelections(): void {
     const environment = this.selectedEnvironment();
     const currentProposal = this.proposal();
-    this.proposalDecisions.set(currentProposal?.decisions ?? {
-      namespace: environment?.namespace ?? this.project()?.defaultEnvironment?.namespace ?? '',
-      exposureMode: environment?.domain ? 'public' : 'internal',
-      domain: environment?.domain ?? null,
-      replicas: 1,
-      persistence: 'suggested',
-      migration: 'automatic',
+    const options = this.deploymentTargetOptions();
+
+    const defaultAdvanced: DeploymentProposalAdvancedDecisions = {
+      startCommand: null,
+      port: null,
+      serviceType: 'ClusterIP',
+      readinessPath: '/health',
+      livenessPath: '/health',
+      cpuRequest: '100m',
+      cpuLimit: '500m',
+      memoryRequest: '128Mi',
+      memoryLimit: '512Mi',
+    };
+
+    const firstDocker = options?.imageRepositories[0] ?? null;
+    const firstGit = options?.gitRepositories[0] ?? null;
+    const firstHelm = options?.helmRepositories[0] ?? null;
+    const defaultDeliveryMode = firstGit ? 'git' : 'helm';
+    const stored = currentProposal?.decisions;
+
+    this.proposalDecisions.set({
+      namespace: stored?.namespace ?? environment?.namespace ?? this.project()?.defaultEnvironment?.namespace ?? '',
+      exposureMode: stored?.exposureMode ?? (environment?.domain ? 'public' : 'internal'),
+      domain: stored?.domain ?? environment?.domain ?? null,
+      replicas: stored?.replicas ?? 1,
+      persistence: stored?.persistence ?? 'suggested',
+      migration: stored?.migration ?? 'automatic',
+      imageRepositoryName: stored?.imageRepositoryName ?? firstDocker?.name ?? '',
+      deliveryMode: stored?.deliveryMode ?? defaultDeliveryMode,
+      gitRepositoryId: stored?.gitRepositoryId ?? (firstGit ? Number(firstGit.projectId ?? firstGit.id) : null),
+      gitBranch: stored?.gitBranch ?? firstGit?.defaultBranch ?? 'main',
+      gitRefreshMode: stored?.gitRefreshMode ?? 'polling',
+      helmRepositoryName: stored?.helmRepositoryName ?? firstHelm?.name ?? null,
+      advanced: { ...defaultAdvanced, ...(stored?.advanced ?? {}) },
     });
 
     const preferredAi = this.workflow()?.aiConnections.find(item => item.status === 'online')
@@ -678,6 +762,7 @@ export class ProjectDetail implements OnInit, OnDestroy {
       this.selectAiConnection(preferredAi.id);
     }
   }
+
 
   private firstIncompletePhase(): ProjectPhaseKey {
     if (this.project()?.status !== 'active') return 'configuration';

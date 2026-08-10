@@ -54,7 +54,7 @@
         <p>{{ current.currentStageLabel }}</p>
       </article>
       <article class="overview-card"><span>Commit source</span><strong>{{ current.sourceCommit.slice(0, 12) }}</strong><small>Génération #{{ current.generationId }}</small></article>
-      <article class="overview-card"><span>GitOps</span><strong>{{ current.gitopsCommit ?? 'En attente' }}</strong><small>{{ current.syncMode === 'confirm_before_sync' ? 'Synchronisation contrôlée' : current.syncMode === 'automatic' ? 'Synchronisation automatique' : 'Préparation uniquement' }}</small></article>
+      <article class="overview-card"><span>Source Argo CD</span><strong>{{ current.gitopsCommit ?? 'En attente' }}</strong><small>{{ current.syncMode === 'confirm_before_sync' ? 'Synchronisation contrôlée' : current.syncMode === 'automatic' ? 'Synchronisation automatique' : 'Préparation uniquement' }}</small></article>
       <article class="overview-card"><span>Déclenché par</span><strong>{{ current.createdByName }}</strong><small>{{ current.createdAt | date:'dd/MM/yyyy HH:mm' }}</small></article>
     </section>
 
@@ -81,7 +81,7 @@
     @if (current.status === 'waiting_confirmation') {
       <section class="confirmation-banner">
         <span>◷</span>
-        <div><strong>Le pipeline attend votre confirmation</strong><p>Les images sont publiées et GitOps est prêt. Vérifiez les changements puis autorisez la synchronisation Argo CD.</p></div>
+        <div><strong>Le pipeline attend votre confirmation</strong><p>Les images et la configuration de déploiement sont publiées. Vérifiez les changements puis autorisez la synchronisation Argo CD.</p></div>
         <button class="button button--warning" type="button" [disabled]="isWorking()" (click)="confirmSync()">Confirmer la synchronisation</button>
       </section>
     }

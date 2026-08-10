@@ -462,37 +462,6 @@
           </div>
 
 
-          @if (connection.providerType === 'nexus') {
-            <div>
-              <dt>
-                Repository Docker
-              </dt>
-
-              <dd>
-                {{
-                  connection.registryRepository
-                  || 'Non configuré'
-                }}
-              </dd>
-            </div>
-
-            <div>
-              <dt>
-                Registry Docker
-              </dt>
-
-              <dd>
-                <code>
-                  {{
-                    connection.registryUrl
-                    || 'Non configuré'
-                  }}
-                </code>
-              </dd>
-            </div>
-          }
-
-
           <div>
             <dt>
               Endpoint contrôlé
@@ -635,6 +604,41 @@
           </div>
         }
 
+
+        @if (connection.providerType === 'nexus' || connection.providerType === 'gitlab') {
+          <section class="detected-repositories compact-repositories">
+            <div class="repository-heading">
+              <div>
+                <span class="eyebrow">Détection automatique</span>
+                <strong>Repositories disponibles</strong>
+              </div>
+              @if (isDiscoveringRepositories()) {<small>Actualisation…</small>}
+            </div>
+
+            @if (repositoryDiscoveryError()) {
+              <p class="repository-error">{{ repositoryDiscoveryError() }}</p>
+            } @else {
+              @for (repository of savedRepositories(); track repository.provider + ':' + repository.id) {
+                <article class="repository-row">
+                  <span class="repository-format">{{ repository.format }}</span>
+                  <div>
+                    <strong>{{ repository.name }}</strong>
+                    <small>{{ repository.type }} · {{ repository.endpointUrl ?? repository.url ?? 'Endpoint non publié' }}</small>
+                  </div>
+                  @if (repository.metadata['endpointReachable'] === false) {
+                    <span class="repository-state repository-state--error">inaccessible</span>
+                  } @else if (repository.metadata['endpointReachable'] === true) {
+                    <span class="repository-state">joignable</span>
+                  } @else if (repository.writable) {
+                    <span class="repository-state">écriture</span>
+                  }
+                </article>
+              } @empty {
+                <p class="repository-empty">Aucun repository détecté.</p>
+              }
+            }
+          </section>
+        }
 
         <div class="details-actions">
           <button
@@ -1065,109 +1069,6 @@
             </div>
 
 
-            @if (provider.type === 'nexus') {
-              <div class="form-grid two-columns">
-                <label class="form-field">
-                  <span>
-                    Repository Docker Nexus
-                  </span>
-
-                  <input
-                    type="text"
-                    formControlName="registryRepository"
-                    placeholder="Exemple : nexus-docker"
-                  />
-
-                  <small>
-                    Nom du repository Docker hosted
-                    configuré dans Nexus.
-                  </small>
-
-                  @if (
-                    connectionForm.controls
-                      .registryRepository.touched
-
-                    && connectionForm.controls
-                      .registryRepository.invalid
-                  ) {
-                    <small class="field-error">
-                      Le repository Docker est obligatoire.
-                    </small>
-                  }
-                </label>
-
-
-                <label class="form-field">
-                  <span>
-                    URL du registre Docker
-                  </span>
-
-                  <input
-                    type="text"
-                    formControlName="registryUrl"
-                    placeholder="http://<host>:8084"
-                  />
-
-                  <small>
-                    Endpoint utilisé par docker login,
-                    docker push et Kubernetes.
-                  </small>
-
-                  @if (
-                    connectionForm.controls
-                      .registryUrl.touched
-
-                    && connectionForm.controls
-                      .registryUrl.invalid
-                  ) {
-                    <small class="field-error">
-                      Saisissez une URL commençant par
-                      http:// ou https://.
-                    </small>
-                  }
-                </label>
-              </div>
-
-              <div class="url-preview">
-                <div>
-                  <span>API Nexus</span>
-                  <strong>{{ connectionForm.controls.baseUrl.value }}</strong>
-                </div>
-
-                <div>
-                  <span>Repository Docker</span>
-                  <strong>
-                    {{
-                      connectionForm.controls.registryRepository.value
-                      || 'Non défini'
-                    }}
-                  </strong>
-                </div>
-
-                <div>
-                  <span>Registry Docker</span>
-                  <strong>
-                    {{
-                      connectionForm.controls.registryUrl.value
-                      || 'Non défini'
-                    }}
-                  </strong>
-                </div>
-
-                <div class="preview-url">
-                  <span>Test Registry V2</span>
-                  <code>
-                    {{
-                      connectionForm.controls.registryUrl.value
-                        ? connectionForm.controls.registryUrl.value + '/v2/'
-                        : 'Non défini'
-                    }}
-                  </code>
-                </div>
-              </div>
-            }
-
-
             @if (currentBaseUrl()) {
               <div class="url-preview">
                 <div>
@@ -1519,6 +1420,43 @@
               }
             </div>
           }
+        }
+
+        @if (currentProvider()?.type === 'nexus' || currentProvider()?.type === 'gitlab') {
+          <div class="detected-repositories editor-repositories">
+            <div class="repository-heading">
+              <div>
+                <span class="eyebrow">Repositories détectés</span>
+                <strong>Aucun choix n’est fait ici</strong>
+                <small>La sélection du repository de déploiement se fera dans la phase 3 du projet.</small>
+              </div>
+            </div>
+
+            @if (isDiscoveringRepositories()) {
+              <p class="repository-empty">Découverte en cours…</p>
+            } @else if (repositoryDiscoveryError()) {
+              <p class="repository-error">{{ repositoryDiscoveryError() }}</p>
+            } @else {
+              <div class="repository-grid">
+                @for (repository of draftRepositories(); track repository.provider + ':' + repository.id) {
+                  <article class="repository-row">
+                    <span class="repository-format">{{ repository.format }}</span>
+                    <div>
+                      <strong>{{ repository.name }}</strong>
+                      <small>{{ repository.type }} · {{ repository.endpointUrl ?? repository.url ?? 'Endpoint non publié' }}</small>
+                    </div>
+                    @if (repository.metadata['endpointReachable'] === false) {
+                      <span class="repository-state repository-state--error">inaccessible</span>
+                    } @else if (repository.metadata['endpointReachable'] === true) {
+                      <span class="repository-state">joignable</span>
+                    }
+                  </article>
+                } @empty {
+                  <p class="repository-empty">Testez la connexion pour découvrir les repositories.</p>
+                }
+              </div>
+            }
+          </div>
         }
 
 

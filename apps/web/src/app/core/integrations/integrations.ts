@@ -52,8 +52,6 @@ export interface IntegrationConnection {
   providerType: ProviderType;
 
   baseUrl: string;
-  registryUrl: string | null;
-  registryRepository: string | null;
   environment: string;
   description: string | null;
 
@@ -88,8 +86,6 @@ export interface IntegrationConfiguration {
   providerType: ProviderType;
 
   baseUrl: string;
-  registryUrl: string | null;
-  registryRepository: string | null;
   description: string | null;
 
   authType: AuthenticationType;
@@ -103,6 +99,23 @@ export interface IntegrationConfiguration {
   failureThreshold: number;
 }
 
+
+
+
+export interface IntegrationRepositoryOption {
+  provider: 'nexus' | 'gitlab';
+  id: string;
+  name: string;
+  label: string;
+  format: string;
+  type: string;
+  url: string | null;
+  endpointUrl: string | null;
+  defaultBranch: string | null;
+  projectId: number | null;
+  writable: boolean;
+  metadata: Record<string, unknown>;
+}
 
 export interface IntegrationTestResult {
   status: ConnectionStatus;
@@ -168,6 +181,15 @@ interface SavedTestResponse {
   };
 }
 
+
+
+
+interface RepositoryDiscoveryResponse {
+  success: boolean;
+  data: {
+    repositories: IntegrationRepositoryOption[];
+  };
+}
 
 interface DeleteConnectionResponse {
   success: boolean;
@@ -344,6 +366,36 @@ export class IntegrationsService {
           ) =>
             response.data,
         ),
+      );
+  }
+
+
+
+  discoverDraftRepositories(
+    configuration: IntegrationConfiguration,
+  ): Observable<IntegrationRepositoryOption[]> {
+    return this.http
+      .post<RepositoryDiscoveryResponse>(
+        '/api/integrations/repositories/discover',
+        configuration,
+        { headers: this.createHeaders() },
+      )
+      .pipe(
+        map(response => response.data.repositories),
+      );
+  }
+
+
+  discoverSavedRepositories(
+    connectionId: number,
+  ): Observable<IntegrationRepositoryOption[]> {
+    return this.http
+      .get<RepositoryDiscoveryResponse>(
+        `/api/integrations/${connectionId}/repositories`,
+        { headers: this.createHeaders() },
+      )
+      .pipe(
+        map(response => response.data.repositories),
       );
   }
 

@@ -1962,3 +1962,215 @@ input:checked
   }
 }
 
+
+/* =========================================================
+   ÉDITEUR COMPACT + REPOSITORIES DÉTECTÉS
+   ========================================================= */
+
+.integrations-page .editor-backdrop {
+  align-items: center;
+}
+
+.integrations-page .editor-panel {
+  width: min(720px, 94vw);
+  height: min(92dvh, 860px);
+  margin-block: 4dvh;
+  border-radius: 16px 0 0 16px;
+}
+
+.integrations-page .editor-header {
+  gap: 14px;
+  padding: 15px 20px;
+}
+
+.integrations-page .editor-header h2 {
+  margin-top: 2px;
+  font-size: 20px;
+}
+
+.integrations-page .editor-header p {
+  margin-top: 3px;
+  font-size: 11px;
+}
+
+.integrations-page .form-section,
+.integrations-page .provider-guide {
+  margin: 12px 20px 0;
+}
+
+.integrations-page .form-section {
+  padding: 14px;
+  border-radius: 11px;
+}
+
+.integrations-page .section-title {
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.integrations-page .section-title > span {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+}
+
+.integrations-page .section-title h3,
+.integrations-page .provider-guide h3 {
+  font-size: 14px;
+}
+
+.integrations-page .section-title p,
+.integrations-page .provider-guide p {
+  font-size: 11px;
+}
+
+.integrations-page .form-grid {
+  gap: 11px;
+}
+
+.integrations-page .form-field {
+  gap: 5px;
+  font-size: 11px;
+}
+
+.integrations-page .form-field input,
+.integrations-page .form-field select {
+  min-height: 38px;
+  padding-inline: 10px;
+}
+
+.integrations-page .form-field textarea {
+  min-height: 64px;
+  padding: 9px 10px;
+}
+
+.integrations-page .provider-guide {
+  max-height: 150px;
+  overflow: auto;
+  padding: 12px 14px;
+  border-radius: 11px;
+}
+
+.integrations-page .guide-heading {
+  gap: 10px;
+}
+
+.integrations-page .guide-content {
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.integrations-page .guide-content > div {
+  padding: 9px;
+}
+
+.integrations-page .guide-content ul,
+.integrations-page .port-list {
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 10px;
+}
+
+.integrations-page .editor-footer {
+  padding: 12px 20px;
+}
+
+.detected-repositories {
+  border: 1px solid #dce7e9;
+  border-radius: 11px;
+  background: #f8fbfb;
+}
+
+.compact-repositories {
+  margin: 0 1.05rem 1rem;
+  padding: 0.75rem;
+}
+
+.editor-repositories {
+  margin: 12px 20px 0;
+  padding: 12px 14px;
+}
+
+.repository-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.repository-heading strong,
+.repository-heading small {
+  display: block;
+}
+
+.repository-heading strong {
+  margin-top: 2px;
+  color: #244b54;
+  font-size: 12px;
+}
+
+.repository-heading small,
+.repository-row small,
+.repository-empty,
+.repository-error {
+  color: #7b9198;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.repository-grid {
+  display: grid;
+  gap: 6px;
+}
+
+.repository-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 9px;
+  border: 1px solid #e0eaec;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.repository-row strong {
+  display: block;
+  color: #254b54;
+  font-size: 11px;
+}
+
+.repository-format,
+.repository-state {
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: #ebf5dc;
+  color: #5b8524;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.repository-error {
+  color: #b83d46;
+}
+
+@media (max-width: 720px) {
+  .integrations-page .editor-panel {
+    width: 100vw;
+    height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+  }
+
+  .integrations-page .guide-content,
+  .integrations-page .two-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.repository-state--error {
+  background: #fde9ea;
+  color: #b83d46;
+}

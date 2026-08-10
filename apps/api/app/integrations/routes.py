@@ -14,6 +14,11 @@ from app.auth.decorators import (
     require_auth,
 )
 
+from app.integrations.discovery import (
+    RepositoryDiscoveryError,
+    discover_repositories,
+)
+
 from app.integrations.repository import (
     create_connection,
     delete_connection,
@@ -167,12 +172,6 @@ def connection_to_json(
 
         "baseUrl":
             connection["base_url"],
-
-        "registryUrl":
-            connection.get("registry_url"),
-
-        "registryRepository":
-            connection.get("registry_repository"),
 
         "environment":
             connection["environment"],
@@ -368,28 +367,6 @@ def read_payload(
         )
     )
 
-    registry_url = normalize_url(
-        payload.get(
-            "registryUrl",
-            (
-                existing.get("registry_url")
-                if existing
-                else ""
-            ),
-        )
-    )
-
-    registry_repository = normalize_string(
-        payload.get(
-            "registryRepository",
-            (
-                existing.get("registry_repository")
-                if existing
-                else ""
-            ),
-        )
-    )
-
     raw_description = payload.get(
         "description",
         (
@@ -434,16 +411,6 @@ def read_payload(
 
         "base_url":
             base_url,
-
-        "registry_url": (
-            registry_url
-            or None
-        ),
-
-        "registry_repository": (
-            registry_repository
-            or None
-        ),
 
         "environment": (
             existing["environment"]
@@ -573,41 +540,6 @@ def validate_configuration(
             "L'adresse doit commencer "
             "par http:// ou https://."
         )
-
-    if provider_type == "nexus":
-        registry_url = str(
-            configuration.get("registry_url")
-            or ""
-        ).strip()
-
-        registry_repository = str(
-            configuration.get(
-                "registry_repository"
-            )
-            or ""
-        ).strip()
-
-        if not registry_url:
-            return (
-                "L'URL du registre Docker "
-                "Nexus est obligatoire."
-            )
-
-        if not validate_provider_url(
-            "nexus",
-            registry_url,
-        ):
-            return (
-                "L'URL du registre Docker "
-                "doit commencer par "
-                "http:// ou https://."
-            )
-
-        if not registry_repository:
-            return (
-                "Le repository Docker Nexus "
-                "est obligatoire."
-            )
 
     auth_type = (
         configuration["auth_type"]
@@ -899,14 +831,6 @@ def create_new_connection():
                     "base_url"
                 ],
 
-                registry_url=configuration[
-                    "registry_url"
-                ],
-
-                registry_repository=configuration[
-                    "registry_repository"
-                ],
-
                 environment=
                     configuration[
                         "environment"
@@ -1066,16 +990,6 @@ def modify_connection(
                 base_url=
                     configuration[
                         "base_url"
-                    ],
-
-                registry_url=
-                    configuration[
-                        "registry_url"
-                    ],
-
-                registry_repository=
-                    configuration[
-                        "registry_repository"
                     ],
 
                 environment=
@@ -1316,16 +1230,6 @@ def test_draft_connection():
                 "base_url"
             ],
 
-        "registry_url":
-            configuration.get(
-                "registry_url"
-            ),
-
-        "registry_repository":
-            configuration.get(
-                "registry_repository"
-            ),
-
         "verify_ssl":
             configuration[
                 "verify_ssl"
@@ -1410,3 +1314,70 @@ def test_existing_connection(
             },
         }
     )
+
+@integrations_blueprint.post("/repositories/discover")
+@require_auth
+def discover_draft_repositories_route():
+    if not can_manage_integrations():
+        return error_response(
+            "INSUFFICIENT_PERMISSIONS",
+            "Vous ne pouvez pas découvrir les repositories de cette intégration.",
+            403,
+        )
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return error_response("INVALID_JSON", "Le corps JSON est invalide.", 400)
+
+    try:
+        configuration = read_payload(payload)
+    except (TypeError, ValueError):
+        return error_response(
+            "INVALID_CONFIGURATION",
+            "La configuration contient une valeur invalide.",
+            400,
+        )
+
+    validation_error = validate_configuration(configuration)
+    if validation_error:
+        return error_response("INVALID_CONFIGURATION", validation_error, 400)
+
+    if configuration["provider_type"] not in {"nexus", "gitlab"}:
+        return jsonify({"success": True, "data": {"repositories": []}})
+
+    temporary_connection = {
+        "provider_type": configuration["provider_type"],
+        "base_url": configuration["base_url"],
+        "verify_ssl": configuration["verify_ssl"],
+        "auth_type": configuration["auth_type"],
+        "username": configuration["username"],
+    }
+
+    try:
+        repositories = discover_repositories(
+            temporary_connection,
+            configuration.get("credential"),
+        )
+    except RepositoryDiscoveryError as error:
+        return error_response("REPOSITORY_DISCOVERY_FAILED", error.message, 502)
+
+    return jsonify({"success": True, "data": {"repositories": repositories}})
+
+
+@integrations_blueprint.get("/<int:connection_id>/repositories")
+@require_auth
+def discover_saved_repositories_route(connection_id: int):
+    connection = find_connection(connection_id)
+    if connection is None:
+        return error_response("CONNECTION_NOT_FOUND", "Connexion introuvable.", 404)
+
+    if connection["provider_type"] not in {"nexus", "gitlab"}:
+        return jsonify({"success": True, "data": {"repositories": []}})
+
+    credential = decrypt_credential(connection.get("secret_ciphertext"))
+    try:
+        repositories = discover_repositories(connection, credential)
+    except RepositoryDiscoveryError as error:
+        return error_response("REPOSITORY_DISCOVERY_FAILED", error.message, 502)
+
+    return jsonify({"success": True, "data": {"repositories": repositories}})

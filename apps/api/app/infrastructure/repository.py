@@ -47,7 +47,6 @@ REQUIRED_SERVICE_ROLES = {
     "kubernetes",
     "argocd",
     "container_registry",
-    "gitops_repository",
 }
 
 

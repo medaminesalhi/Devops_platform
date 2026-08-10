@@ -1,0 +1,83 @@
+nameOverride: source
+fullnameOverride: projet-test2-source
+replicaCount: 1
+image:
+  repository: 100.96.79.120:8083/projet-test2/source
+  tag: commit-fb93e5c6
+  pullPolicy: IfNotPresent
+imagePullSecrets:
+- name: registry-credentials
+podAnnotations:
+  sapixi.io/project: projet-test2
+  sapixi.io/component: source
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  runAsUser: 10001
+  capabilities:
+    drop:
+    - ALL
+service:
+  enabled: true
+  type: ClusterIP
+  port: 5000
+  targetPort: 5000
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  host: pixismart-test.local
+  path: /
+  pathType: Prefix
+  tls: []
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+probes:
+  startup:
+    path: /health
+    enabled: true
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 6
+    initialDelaySeconds: 10
+  liveness:
+    path: /health
+    enabled: true
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 6
+    initialDelaySeconds: 10
+  readiness:
+    path: /health
+    enabled: true
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 6
+    initialDelaySeconds: 10
+config:
+  PORT: ''
+secrets:
+  create: false
+  existingSecretName: ''
+  values: {}
+persistence: []
+migration:
+  enabled: false
+  command: flask db upgrade
+  backoffLimit: 1
+nodeSelector: {}
+tolerations: []
+affinity: {}

@@ -11,6 +11,7 @@ from flask import current_app, g, jsonify, request
 
 from app.auth.decorators import require_auth
 from app.database import get_database_connection
+from app.integrations.discovery import RepositoryDiscoveryError, discover_repositories
 from app.integrations.security import decrypt_credential
 from app.projects.routes import error_response, projects_blueprint
 
@@ -20,12 +21,16 @@ PROPOSAL_STATUSES = {"preparing", "needs_input", "ready", "confirmed", "failed"}
 EXPOSURE_MODES = {"internal", "public"}
 PERSISTENCE_CHOICES = {"none", "suggested", "required"}
 MIGRATION_CHOICES = {"automatic", "enabled", "disabled"}
+DELIVERY_MODES = {"git", "helm"}
+GIT_REFRESH_MODES = {"polling", "webhook"}
+SERVICE_TYPES = {"ClusterIP", "NodePort", "LoadBalancer"}
 
+# GitLab GitOps n'est plus obligatoire : un environnement peut utiliser
+# un repository Helm Nexus comme source Argo CD.
 REQUIRED_ENVIRONMENT_ROLES = {
     "kubernetes",
     "argocd",
     "container_registry",
-    "gitops_repository",
 }
 
 SENSITIVE_ENV_MARKERS = (
@@ -132,14 +137,94 @@ def _normalize_namespace(value: Any, fallback: str) -> str:
     return namespace
 
 
+def _service_credential(service: dict[str, Any] | None) -> str | None:
+    if service is None:
+        return None
+    ciphertext = service.get("secret_ciphertext")
+    return decrypt_credential(ciphertext) if ciphertext else None
+
+
+def _repository_options(context: ProposalContext) -> dict[str, list[dict[str, Any]]]:
+    nexus = next(
+        (item for item in context.services if item.get("service_role") == "container_registry"),
+        None,
+    )
+    gitlab = next(
+        (item for item in context.services if item.get("service_role") == "gitops_repository"),
+        None,
+    )
+
+    docker: list[dict[str, Any]] = []
+    helm: list[dict[str, Any]] = []
+    git: list[dict[str, Any]] = []
+
+    if nexus is not None:
+        try:
+            discovered = discover_repositories(nexus, _service_credential(nexus))
+        except RepositoryDiscoveryError as error:
+            raise ProposalError(
+                "NEXUS_REPOSITORY_DISCOVERY_FAILED",
+                f"Impossible de découvrir les repositories Nexus : {error.message}",
+                502,
+            ) from error
+        docker = [
+            item for item in discovered
+            if item.get("format") == "docker" and item.get("type") == "hosted"
+        ]
+        helm = [
+            item for item in discovered
+            if item.get("format") == "helm" and item.get("type") == "hosted"
+        ]
+
+    if gitlab is not None:
+        try:
+            git = discover_repositories(gitlab, _service_credential(gitlab))
+        except RepositoryDiscoveryError as error:
+            # Le mode Helm doit rester utilisable si GitLab est indisponible.
+            current_app.logger.warning("GitLab repository discovery failed: %s", error.message)
+            git = []
+
+    return {"docker": docker, "helm": helm, "git": git}
+
+
+def _find_repository(
+    repositories: list[dict[str, Any]],
+    *,
+    name: str | None = None,
+    repository_id: str | int | None = None,
+) -> dict[str, Any] | None:
+    for item in repositories:
+        if name and str(item.get("name") or "") == name:
+            return item
+        if repository_id is not None and str(item.get("id") or "") == str(repository_id):
+            return item
+    return None
+
+
+def _normalize_probe_path(value: Any, fallback: str) -> str:
+    path = _safe_text(value, fallback, 255) or fallback
+    if not path.startswith("/"):
+        raise ProposalError("INVALID_PROBE_PATH", "Une sonde HTTP doit commencer par /.")
+    return path
+
+
 def _validate_decisions(
     value: Any,
-    environment: dict[str, Any],
+    context: ProposalContext,
 ) -> dict[str, Any]:
     raw = value if isinstance(value, dict) else {}
+    environment = context.environment
+    repositories = _repository_options(context)
+
     exposure_mode = _safe_text(raw.get("exposureMode"), "internal", 20)
     persistence = _safe_text(raw.get("persistence"), "suggested", 20)
     migration = _safe_text(raw.get("migration"), "automatic", 20)
+    delivery_mode = _safe_text(
+        raw.get("deliveryMode"),
+        "git" if repositories["git"] else "helm",
+        20,
+    )
+    git_refresh_mode = _safe_text(raw.get("gitRefreshMode"), "polling", 20)
 
     if exposure_mode not in EXPOSURE_MODES:
         raise ProposalError("INVALID_EXPOSURE_MODE", "Le mode d'exposition est invalide.")
@@ -147,10 +232,87 @@ def _validate_decisions(
         raise ProposalError("INVALID_PERSISTENCE", "Le choix de stockage est invalide.")
     if migration not in MIGRATION_CHOICES:
         raise ProposalError("INVALID_MIGRATION", "Le choix de migration est invalide.")
+    if delivery_mode not in DELIVERY_MODES:
+        raise ProposalError("INVALID_DELIVERY_MODE", "La source Argo CD sélectionnée est invalide.")
+    if git_refresh_mode not in GIT_REFRESH_MODES:
+        raise ProposalError("INVALID_GIT_REFRESH_MODE", "Le mode de rafraîchissement Git est invalide.")
+
+    docker_name = _safe_text(raw.get("imageRepositoryName"), maximum=200)
+    docker_repository = _find_repository(repositories["docker"], name=docker_name)
+    if docker_repository is None and not docker_name and repositories["docker"]:
+        docker_repository = repositories["docker"][0]
+        docker_name = str(docker_repository.get("name") or "")
+    if docker_repository is None:
+        raise ProposalError(
+            "DOCKER_REPOSITORY_REQUIRED",
+            "Sélectionnez un repository Docker hosted détecté dans Nexus.",
+            409,
+        )
+    if not docker_repository.get("endpointUrl"):
+        raise ProposalError(
+            "DOCKER_REPOSITORY_ENDPOINT_MISSING",
+            f"Le repository Docker {docker_name} ne possède pas d'endpoint Docker exploitable.",
+            409,
+        )
+    docker_metadata = docker_repository.get("metadata") or {}
+    if isinstance(docker_metadata, dict) and docker_metadata.get("endpointReachable") is False:
+        raise ProposalError(
+            "DOCKER_REPOSITORY_UNREACHABLE",
+            f"Le repository Docker {docker_name} est détecté mais son endpoint n'est pas joignable : "
+            f"{docker_metadata.get('endpointError') or docker_repository.get('endpointUrl')}",
+            409,
+        )
+
+    git_repository_id = raw.get("gitRepositoryId")
+    git_repository: dict[str, Any] | None = None
+    helm_name = _safe_text(raw.get("helmRepositoryName"), maximum=200)
+    helm_repository: dict[str, Any] | None = None
+
+    if delivery_mode == "git":
+        git_repository = _find_repository(
+            repositories["git"],
+            repository_id=git_repository_id,
+        )
+        if git_repository is None and git_repository_id in (None, "") and repositories["git"]:
+            git_repository = repositories["git"][0]
+            git_repository_id = git_repository.get("projectId") or git_repository.get("id")
+        if git_repository is None:
+            raise ProposalError(
+                "GITOPS_REPOSITORY_REQUIRED",
+                "Sélectionnez un repository GitLab pour le mode GitOps Git.",
+                409,
+            )
+    else:
+        helm_repository = _find_repository(repositories["helm"], name=helm_name)
+        if helm_repository is None and not helm_name and repositories["helm"]:
+            helm_repository = repositories["helm"][0]
+            helm_name = str(helm_repository.get("name") or "")
+        if helm_repository is None:
+            raise ProposalError(
+                "HELM_REPOSITORY_REQUIRED",
+                "Sélectionnez un repository Helm hosted détecté dans Nexus.",
+                409,
+            )
+        helm_metadata = helm_repository.get("metadata") or {}
+        if isinstance(helm_metadata, dict) and helm_metadata.get("endpointReachable") is False:
+            raise ProposalError(
+                "HELM_REPOSITORY_UNREACHABLE",
+                f"Le repository Helm {helm_name} est détecté mais son URL n'est pas joignable : "
+                f"{helm_metadata.get('endpointError') or helm_repository.get('url')}",
+                409,
+            )
 
     domain = _normalize_domain(raw.get("domain"))
     if exposure_mode == "public" and not domain:
         domain = _normalize_domain(environment.get("domain"))
+
+    advanced_raw = raw.get("advanced") if isinstance(raw.get("advanced"), dict) else {}
+    service_type = _safe_text(advanced_raw.get("serviceType"), "ClusterIP", 30)
+    if service_type not in SERVICE_TYPES:
+        raise ProposalError("INVALID_SERVICE_TYPE", "Le type de Service Kubernetes est invalide.")
+
+    port_value = advanced_raw.get("port")
+    port = None if port_value in (None, "", 0, "0") else _safe_int(port_value, 8080, 1, 65535)
 
     return {
         "namespace": _normalize_namespace(
@@ -162,6 +324,30 @@ def _validate_decisions(
         "replicas": _safe_int(raw.get("replicas"), 1, 1, 20),
         "persistence": persistence,
         "migration": migration,
+        "imageRepositoryName": docker_name,
+        "deliveryMode": delivery_mode,
+        "gitRepositoryId": (
+            int(git_repository.get("projectId") or git_repository.get("id"))
+            if git_repository is not None else None
+        ),
+        "gitBranch": _safe_text(
+            raw.get("gitBranch"),
+            str((git_repository or {}).get("defaultBranch") or "main"),
+            200,
+        ) or "main",
+        "gitRefreshMode": git_refresh_mode,
+        "helmRepositoryName": helm_name or None,
+        "advanced": {
+            "startCommand": _safe_text(advanced_raw.get("startCommand"), maximum=1000) or None,
+            "port": port,
+            "serviceType": service_type,
+            "readinessPath": _normalize_probe_path(advanced_raw.get("readinessPath"), "/health"),
+            "livenessPath": _normalize_probe_path(advanced_raw.get("livenessPath"), "/health"),
+            "cpuRequest": _safe_text(advanced_raw.get("cpuRequest"), "100m", 50),
+            "cpuLimit": _safe_text(advanced_raw.get("cpuLimit"), "500m", 50),
+            "memoryRequest": _safe_text(advanced_raw.get("memoryRequest"), "128Mi", 50),
+            "memoryLimit": _safe_text(advanced_raw.get("memoryLimit"), "512Mi", 50),
+        },
     }
 
 
@@ -275,8 +461,6 @@ def _load_context(project_id: int) -> ProposalContext:
                     integration.name AS connection_name,
                     integration.provider_type,
                     integration.base_url,
-                    integration.registry_url,
-                    integration.registry_repository,
                     integration.description,
                     integration.enabled,
                     integration.verify_ssl,
@@ -347,8 +531,6 @@ def _environment_json(context: ProposalContext) -> dict[str, Any]:
                 "connectionName": item["connection_name"],
                 "providerType": item["provider_type"],
                 "baseUrl": item["base_url"],
-                "registryUrl": item.get("registry_url"),
-                "registryRepository": item.get("registry_repository"),
                 "status": item["status"],
                 "lastCheckedAt": _iso(item.get("last_checked_at")),
                 "lastLatencyMs": item.get("last_latency_ms"),
@@ -513,8 +695,10 @@ def _build_default_components(
     questions: list[dict[str, Any]] = []
     warnings: list[str] = []
 
+    advanced = decisions.get("advanced") or {}
+
     for component in deployable:
-        port = _default_port(component)
+        port = int(advanced.get("port") or _default_port(component))
         migration_command = _migration_command(component)
         migration_enabled = decisions["migration"] == "enabled" or (
             decisions["migration"] == "automatic" and migration_command is not None
@@ -524,6 +708,9 @@ def _build_default_components(
             context.environment["environment_type"],
             _safe_text(component.get("component_type")),
         )
+        for key in ("cpuRequest", "cpuLimit", "memoryRequest", "memoryLimit"):
+            if advanced.get(key):
+                resources[key] = str(advanced[key])
         host = _host_for_component(
             component=component,
             decisions=decisions,
@@ -562,16 +749,16 @@ def _build_default_components(
                     "strategy": "existing" if component.get("dockerfile_path") else "generated-multistage",
                     "installCommand": _install_command(component),
                     "buildCommand": _build_command(component),
-                    "startCommand": _start_command(component, port),
+                    "startCommand": advanced.get("startCommand") or _start_command(component, port),
                     "port": port,
                 },
                 "kubernetes": {
-                    "serviceType": "ClusterIP",
+                    "serviceType": advanced.get("serviceType") or "ClusterIP",
                     "ingressEnabled": host is not None,
                     "host": host,
                     "replicas": decisions["replicas"],
-                    "readinessPath": "/health" if "api" in _safe_text(component.get("component_type")).lower() else "/",
-                    "livenessPath": "/health" if "api" in _safe_text(component.get("component_type")).lower() else "/",
+                    "readinessPath": advanced.get("readinessPath") or ("/health" if "api" in _safe_text(component.get("component_type")).lower() else "/"),
+                    "livenessPath": advanced.get("livenessPath") or ("/health" if "api" in _safe_text(component.get("component_type")).lower() else "/"),
                     **resources,
                 },
                 "persistence": {
@@ -729,12 +916,14 @@ def _call_ai(
         body = {
             "model": model,
             "stream": False,
+            "think": False,
+            "keep_alive": "30m",
             "format": "json",
             "messages": [
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_message},
             ],
-            "options": {"temperature": 0.1},
+            "options": {"temperature": 0.1, "num_predict": 800},
         }
     else:
         body = {
@@ -1091,6 +1280,69 @@ def _environment_variables(component: dict[str, Any]) -> tuple[list[dict[str, An
     return configuration, secrets
 
 
+def _contract_registry_target(
+    context: ProposalContext,
+    decisions: dict[str, Any],
+    registry_service: dict[str, Any],
+) -> dict[str, Any]:
+    options = _repository_options(context)["docker"]
+    selected = _find_repository(options, name=decisions.get("imageRepositoryName"))
+    if selected is None:
+        raise ProposalError("DOCKER_REPOSITORY_REQUIRED", "Le repository Docker sélectionné est introuvable.", 409)
+    endpoint_url = str(selected.get("endpointUrl") or "").rstrip("/")
+    host = _registry_host(endpoint_url)
+    if not host:
+        raise ProposalError("DOCKER_REPOSITORY_ENDPOINT_MISSING", "L'endpoint Docker du repository est absent.", 409)
+    return {
+        "connectionId": int(registry_service["connection_id"]),
+        "repositoryName": selected.get("name"),
+        "repositoryUrl": selected.get("url"),
+        "endpointUrl": endpoint_url,
+        "host": host,
+        "repositoryPrefix": context.project["slug"],
+        "imagePullSecretName": "registry-credentials",
+    }
+
+
+def _contract_delivery_target(
+    context: ProposalContext,
+    decisions: dict[str, Any],
+    registry_service: dict[str, Any],
+    gitops_service: dict[str, Any] | None,
+) -> dict[str, Any]:
+    mode = decisions.get("deliveryMode") or "git"
+    options = _repository_options(context)
+    base_path = "projects"
+
+    if mode == "git":
+        selected = _find_repository(options["git"], repository_id=decisions.get("gitRepositoryId"))
+        if selected is None or gitops_service is None:
+            raise ProposalError("GITOPS_REPOSITORY_REQUIRED", "Le repository GitOps sélectionné est introuvable.", 409)
+        return {
+            "mode": "git",
+            "connectionId": int(gitops_service["connection_id"]),
+            "repositoryId": selected.get("projectId") or selected.get("id"),
+            "repositoryName": selected.get("name"),
+            "repositoryUrl": selected.get("url"),
+            "targetRevision": decisions.get("gitBranch") or selected.get("defaultBranch") or "main",
+            "basePath": base_path,
+            "refreshMode": decisions.get("gitRefreshMode") or "polling",
+        }
+
+    selected = _find_repository(options["helm"], name=decisions.get("helmRepositoryName"))
+    if selected is None:
+        raise ProposalError("HELM_REPOSITORY_REQUIRED", "Le repository Helm sélectionné est introuvable.", 409)
+    return {
+        "mode": "helm",
+        "connectionId": int(registry_service["connection_id"]),
+        "repositoryName": selected.get("name"),
+        "repositoryUrl": selected.get("url"),
+        "targetRevision": "__SAPIXI_HELM_VERSION__",
+        "basePath": base_path,
+        "refreshMode": "polling",
+    }
+
+
 def _contract_from_proposal(
     *,
     context: ProposalContext,
@@ -1109,11 +1361,12 @@ def _contract_from_proposal(
         for role, value in (
             ("kubernetes", kubernetes),
             ("container_registry", registry),
-            ("gitops_repository", gitops),
             ("argocd", argocd),
         )
         if value is None
     ]
+    if decisions.get("deliveryMode") == "git" and gitops is None:
+        missing.append("gitops_repository")
     if missing:
         raise ProposalError(
             "ENVIRONMENT_INCOMPLETE",
@@ -1245,23 +1498,8 @@ def _contract_from_proposal(
             "namespace": decisions["namespace"],
             "domain": decisions.get("domain"),
             "kubernetes": {"server": kubernetes["base_url"]},
-            "registry": {
-                "host": _registry_host(
-                    registry.get("registry_url")
-                    or registry["base_url"]
-                ),
-                "repositoryName": (
-                    registry.get("registry_repository")
-                    or ""
-                ),
-                "repositoryPrefix": context.project["slug"],
-                "imagePullSecretName": "registry-credentials",
-            },
-            "gitops": {
-                "repositoryUrl": gitops["base_url"],
-                "targetRevision": "main",
-                "basePath": f"projects/{context.project['slug']}/{environment_code}",
-            },
+            "registry": _contract_registry_target(context, decisions, registry),
+            "delivery": _contract_delivery_target(context, decisions, registry, gitops),
             "argocd": {
                 "serverUrl": argocd["base_url"],
                 "namespace": "argocd",
@@ -1459,6 +1697,44 @@ def _insert_contract(
     return contract_id
 
 
+@projects_blueprint.get("/<int:project_id>/deployment-target-options")
+@require_auth
+def deployment_target_options_route(project_id: int):
+    try:
+        context = _load_context(project_id)
+        options = _repository_options(context)
+        nexus = _service_by_role(context, "container_registry")
+        gitlab = _service_by_role(context, "gitops_repository")
+        return jsonify(
+            {
+                "success": True,
+                "data": {
+                    "imageRepositories": options["docker"],
+                    "helmRepositories": options["helm"],
+                    "gitRepositories": options["git"],
+                    "nexusConnection": (
+                        {
+                            "id": int(nexus["connection_id"]),
+                            "name": nexus["connection_name"],
+                            "status": nexus["status"],
+                        }
+                        if nexus else None
+                    ),
+                    "gitConnection": (
+                        {
+                            "id": int(gitlab["connection_id"]),
+                            "name": gitlab["connection_name"],
+                            "status": gitlab["status"],
+                        }
+                        if gitlab else None
+                    ),
+                },
+            }
+        )
+    except ProposalError as error:
+        return error_response(error.code, error.message, error.http_status)
+
+
 @projects_blueprint.get("/<int:project_id>/deployment-proposals/latest")
 @require_auth
 def latest_deployment_proposal_route(project_id: int):
@@ -1489,7 +1765,7 @@ def create_deployment_proposal_route(project_id: int):
         if mode not in PROPOSAL_MODES:
             raise ProposalError("INVALID_PROPOSAL_MODE", "Le mode de proposition est invalide.")
 
-        decisions = _validate_decisions(payload.get("decisions"), context.environment)
+        decisions = _validate_decisions(payload.get("decisions"), context)
         defaults, questions, warnings = _build_default_components(context, decisions)
         components = defaults
         ai_raw_response: dict[str, Any] | None = None
@@ -1566,7 +1842,7 @@ def update_deployment_proposal_route(project_id: int, proposal_id: int):
         if stored["status"] == "confirmed":
             raise ProposalError("PROPOSAL_ALREADY_CONFIRMED", "La proposition est déjà confirmée.", 409)
 
-        decisions = _validate_decisions(payload.get("decisions"), context.environment)
+        decisions = _validate_decisions(payload.get("decisions"), context)
         components = _json_value(stored.get("components"), [])
         questions = _json_value(stored.get("questions"), [])
         answers = payload.get("answers") if isinstance(payload.get("answers"), dict) else {}
