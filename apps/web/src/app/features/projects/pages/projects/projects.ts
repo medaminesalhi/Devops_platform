@@ -1,6 +1,7 @@
 import {
   Component,
   OnInit,
+  computed,
   inject,
   signal,
 } from '@angular/core';
@@ -25,6 +26,10 @@ import {
 import {
   finalize,
 } from 'rxjs';
+
+import {
+  Auth,
+} from '../../../../core/auth/auth';
 
 import {
   Project,
@@ -59,8 +64,34 @@ export class Projects implements OnInit {
   private readonly projectsService =
     inject(ProjectsService);
 
+  private readonly auth =
+    inject(Auth);
+
   private readonly formBuilder =
     inject(FormBuilder);
+
+
+  readonly isAdmin = computed(() => {
+    const roles =
+      this.auth.currentUser()?.roles ?? [];
+
+    return (
+      roles.includes('admin')
+      || roles.includes('administrator')
+    );
+  });
+
+  readonly pageTitle = computed(() =>
+    this.isAdmin()
+      ? 'Tous les projets'
+      : 'Mes projets'
+  );
+
+  readonly pageDescription = computed(() =>
+    this.isAdmin()
+      ? 'Vue administrateur : tous les projets de la plateforme.'
+      : 'Gérez uniquement vos repositories, environnements et déploiements.'
+  );
 
 
   readonly projects =

@@ -1,7 +1,10 @@
 import { Routes } from '@angular/router';
 
+import { adminGuard } from './core/auth/admin.guard';
 import { authGuard } from './core/auth/auth.guard';
+import { Admin } from './features/admin/pages/admin/admin';
 import { Login } from './features/auth/pages/login/login';
+import { Register } from './features/auth/pages/register/register';
 import { Dashboard } from './features/dashboard/pages/dashboard/dashboard';
 import { DeploymentDetail } from './features/deployments/pages/deployment-detail/deployment-detail';
 import { Deployments } from './features/deployments/pages/deployments/deployments';
@@ -12,12 +15,17 @@ import { Integrations } from './features/integrations/pages/integrations/integra
 import { NewProject } from './features/projects/pages/new-project/new-project';
 import { ProjectDetail } from './features/projects/pages/project-detail/project-detail';
 import { Projects } from './features/projects/pages/projects/projects';
+import { Settings } from './features/settings/pages/settings/settings';
 import { MainLayout } from './layout/main-layout/main-layout';
 
 export const routes: Routes = [
   {
     path: 'login',
     component: Login,
+  },
+  {
+    path: 'register',
+    component: Register,
   },
   {
     path: '',
@@ -84,6 +92,15 @@ export const routes: Routes = [
       {
         path: 'integrations',
         component: Integrations,
+      },
+      {
+        path: 'settings',
+        component: Settings,
+      },
+      {
+        path: 'admin',
+        component: Admin,
+        canActivate: [adminGuard],
       },
       {
         path: '',

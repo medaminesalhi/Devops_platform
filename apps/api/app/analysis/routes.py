@@ -11,6 +11,7 @@ from flask import (
 
 from app.auth.decorators import (
     require_auth,
+    require_project_access,
 )
 
 from app.analysis.service import (
@@ -270,6 +271,7 @@ def analysis_to_json(
     "/<int:project_id>/analyses"
 )
 @require_auth
+@require_project_access
 def start_analysis_route(
     project_id: int,
 ):
@@ -335,6 +337,7 @@ def start_analysis_route(
     "/<int:project_id>/analyses/latest"
 )
 @require_auth
+@require_project_access
 def latest_analysis_route(
     project_id: int,
 ):
@@ -373,6 +376,7 @@ def latest_analysis_route(
     )
 )
 @require_auth
+@require_project_access
 def analysis_detail_route(
     project_id: int,
     analysis_run_id: int,
@@ -413,6 +417,7 @@ def analysis_detail_route(
     )
 )
 @require_auth
+@require_project_access
 def analysis_events_route(
     project_id: int,
     analysis_run_id: int,
@@ -504,6 +509,7 @@ def analysis_events_route(
     )
 )
 @require_auth
+@require_project_access
 def update_component_route(
     project_id: int,
     analysis_run_id: int,
@@ -578,6 +584,7 @@ def update_component_route(
     )
 )
 @require_auth
+@require_project_access
 def confirm_analysis_route(
     project_id: int,
     analysis_run_id: int,

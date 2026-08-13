@@ -1,0 +1,273 @@
+:host {
+  display: block;
+  min-height: 100vh;
+}
+
+.register-page {
+  position: relative;
+  display: grid;
+  min-height: 100vh;
+  padding: 42px 24px;
+  overflow: hidden;
+  place-items: center;
+  background:
+    radial-gradient(circle at 5% 5%, rgba(126, 205, 0, 0.12), transparent 30%),
+    radial-gradient(circle at 95% 95%, rgba(35, 95, 112, 0.09), transparent 32%),
+    linear-gradient(145deg, #f4f7f9 0%, #fbfcfc 48%, #f2f7f5 100%);
+}
+
+.background-decoration {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.background-decoration--left {
+  top: -190px;
+  left: -190px;
+  width: 540px;
+  height: 540px;
+  background: rgba(121, 199, 0, 0.075);
+}
+
+.background-decoration--right {
+  right: -220px;
+  bottom: -250px;
+  width: 620px;
+  height: 620px;
+  background: rgba(29, 85, 102, 0.055);
+}
+
+.register-card {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 860px);
+  padding: 38px 42px 32px;
+  border: 1px solid rgba(216, 225, 228, 0.96);
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 35px 90px rgba(28, 44, 49, 0.13);
+}
+
+.register-header {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-bottom: 30px;
+}
+
+.company-logo {
+  width: 78px;
+  height: 78px;
+  flex: 0 0 78px;
+  border-radius: 20px;
+  object-fit: cover;
+  box-shadow: 0 14px 28px rgba(105, 181, 0, 0.22);
+}
+
+.company-name {
+  margin: 0;
+  color: #65a900;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+}
+
+h1 {
+  margin: 7px 0 6px;
+  color: #17282d;
+  font-size: 32px;
+  letter-spacing: -0.035em;
+}
+
+.register-description {
+  max-width: 610px;
+  margin: 0;
+  color: #65767c;
+  line-height: 1.6;
+}
+
+.register-form {
+  display: grid;
+  gap: 20px;
+}
+
+.form-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.form-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-field {
+  display: grid;
+  gap: 8px;
+  color: #293e44;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.form-field input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 15px;
+  border: 1px solid #d5dfe2;
+  border-radius: 12px;
+  outline: 0;
+  background: #fff;
+  color: #1c3035;
+  font: inherit;
+  font-weight: 450;
+}
+
+.form-field input:focus {
+  border-color: #71b900;
+  box-shadow: 0 0 0 4px rgba(113, 185, 0, 0.11);
+}
+
+.form-field small {
+  color: #c83f48;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.password-field {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid #d5dfe2;
+  border-radius: 12px;
+}
+
+.password-field:focus-within {
+  border-color: #71b900;
+  box-shadow: 0 0 0 4px rgba(113, 185, 0, 0.11);
+}
+
+.password-field input {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.password-field input:focus {
+  box-shadow: none;
+}
+
+.password-field button {
+  border: 0;
+  padding: 0 14px;
+  background: #f7f9f9;
+  color: #557078;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.approval-note {
+  display: flex;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #dce8d0;
+  border-radius: 13px;
+  background: #f7fbf2;
+  color: #506149;
+}
+
+.approval-note > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #7dce00;
+  color: #fff;
+  font-weight: 900;
+}
+
+.approval-note p {
+  margin: 1px 0 0;
+  line-height: 1.55;
+}
+
+.submit-button {
+  min-height: 54px;
+  border: 0;
+  border-radius: 13px;
+  background: linear-gradient(135deg, #76c600, #5ca600);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  box-shadow: 0 13px 28px rgba(94, 165, 0, 0.2);
+}
+
+.submit-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+}
+
+.message {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 22px;
+  padding: 15px 17px;
+  border-radius: 13px;
+  line-height: 1.5;
+}
+
+.message--error {
+  border: 1px solid #f0c6c9;
+  background: #fff5f5;
+  color: #a8323a;
+}
+
+.message--success {
+  border: 1px solid #cfe6bd;
+  background: #f5fbef;
+  color: #395c24;
+}
+
+.message a,
+.register-footer a {
+  color: #5d9d00;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.register-footer {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 25px;
+  padding-top: 22px;
+  border-top: 1px solid #edf1f2;
+  color: #6d7d82;
+  font-size: 14px;
+}
+
+@media (max-width: 720px) {
+  .register-page {
+    padding: 18px 12px;
+  }
+
+  .register-card {
+    padding: 28px 22px;
+  }
+
+  .register-header {
+    align-items: flex-start;
+  }
+
+  .company-logo {
+    width: 58px;
+    height: 58px;
+    flex-basis: 58px;
+  }
+
+  .form-grid--two {
+    grid-template-columns: 1fr;
+  }
+}

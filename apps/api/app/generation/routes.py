@@ -11,6 +11,7 @@ from flask import (
 
 from app.auth.decorators import (
     require_auth,
+    require_project_access,
 )
 
 from app.generation.service import (
@@ -306,6 +307,7 @@ def artifact_to_json(
     "/<int:project_id>/generations"
 )
 @require_auth
+@require_project_access
 def start_generation_route(
     project_id: int,
 ):
@@ -350,6 +352,7 @@ def start_generation_route(
     "/<int:project_id>/generations/latest"
 )
 @require_auth
+@require_project_access
 def latest_generation_route(
     project_id: int,
 ):
@@ -388,6 +391,7 @@ def latest_generation_route(
     )
 )
 @require_auth
+@require_project_access
 def generation_detail_route(
     project_id: int,
     generation_run_id: int,
@@ -430,6 +434,7 @@ def generation_detail_route(
     )
 )
 @require_auth
+@require_project_access
 def generation_events_route(
     project_id: int,
     generation_run_id: int,
@@ -505,6 +510,7 @@ def generation_events_route(
     )
 )
 @require_auth
+@require_project_access
 def generation_artifacts_route(
     project_id: int,
     generation_run_id: int,
@@ -556,6 +562,7 @@ def generation_artifacts_route(
     )
 )
 @require_auth
+@require_project_access
 def generation_artifact_detail_route(
     project_id: int,
     generation_run_id: int,

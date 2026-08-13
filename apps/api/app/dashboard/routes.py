@@ -4,7 +4,10 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, g, jsonify
 
-from app.auth.decorators import require_auth
+from app.auth.decorators import (
+    current_user_is_admin,
+    require_auth,
+)
 from app.dashboard.repository import get_dashboard_overview
 
 
@@ -19,9 +22,20 @@ dashboard_blueprint = Blueprint(
 def overview():
     """
     Retourne les informations de la vue générale.
+
+    Les administrateurs voient les statistiques globales. Les autres
+    utilisateurs voient uniquement leurs projets et leurs déploiements.
     """
 
-    dashboard_data = get_dashboard_overview()
+    user_id = int(g.current_user["id"])
+
+    dashboard_data = get_dashboard_overview(
+        owner_user_id=(
+            None
+            if current_user_is_admin()
+            else user_id
+        )
+    )
 
     dashboard_data["generatedAt"] = datetime.now(
         timezone.utc,

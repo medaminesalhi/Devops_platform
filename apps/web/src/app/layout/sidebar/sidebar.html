@@ -61,21 +61,34 @@
       <span class="navigation-item__label">Intégrations</span>
     </a>
 
-    <button
-      class="navigation-item navigation-item--disabled"
-      type="button"
-      disabled
+    <a
+      class="navigation-item"
+      routerLink="/settings"
+      routerLinkActive="navigation-item--active"
     >
       <span class="navigation-item__icon">⚙</span>
       <span class="navigation-item__label">Paramètres</span>
-    </button>
+    </a>
+
+    @if (auth.isAdmin()) {
+      <p class="navigation__title">Administration</p>
+
+      <a
+        class="navigation-item"
+        routerLink="/admin"
+        routerLinkActive="navigation-item--active"
+      >
+        <span class="navigation-item__icon">♙</span>
+        <span class="navigation-item__label">Administration</span>
+      </a>
+    }
   </nav>
 
   <footer class="sidebar-footer">
-    <div class="user-avatar">AS</div>
+    <div class="user-avatar">{{ initials }}</div>
     <div class="user-information">
-      <strong>Amine Salhi</strong>
-      <span>Administrateur</span>
+      <strong>{{ displayName }}</strong>
+      <span>{{ roleLabel }}</span>
     </div>
     <button
       class="logout-button"

@@ -4,7 +4,13 @@ from typing import Any
 
 from flask import Blueprint, g, jsonify, request
 
-from app.auth.decorators import require_auth
+from app.auth.decorators import (
+    current_user_can_access_project,
+    current_user_is_admin,
+    require_auth,
+    require_deployment_access,
+    require_project_access,
+)
 from app.deployments.service import (
     DeploymentServiceError,
     approve_correction,
@@ -101,6 +107,11 @@ def list_deployments_route():
                 "status": request.args.get("status"),
                 "date_from": request.args.get("dateFrom"),
                 "date_to": request.args.get("dateTo"),
+                "owner_user_id": (
+                    None
+                    if current_user_is_admin()
+                    else _current_user_id()
+                ),
             }
         )
         return _success(result)
@@ -112,13 +123,24 @@ def list_deployments_route():
 @require_auth
 def deployment_options_route():
     try:
-        return _success({"projects": get_options()})
+        return _success(
+            {
+                "projects": get_options(
+                    owner_user_id=(
+                        None
+                        if current_user_is_admin()
+                        else _current_user_id()
+                    )
+                )
+            }
+        )
     except Exception as error:
         return _handle_error(error)
 
 
 @deployments_blueprint.get("/projects/<int:project_id>/readiness")
 @require_auth
+@require_project_access
 def project_readiness_route(project_id: int):
     try:
         return _success(
@@ -132,8 +154,27 @@ def project_readiness_route(project_id: int):
 @require_auth
 def create_deployment_route():
     try:
+        payload = _json_payload()
+
+        raw_project_id = payload.get("projectId")
+        try:
+            project_id = int(raw_project_id)
+        except (TypeError, ValueError):
+            project_id = None
+
+        if (
+            project_id is not None
+            and project_id > 0
+            and not current_user_can_access_project(project_id)
+        ):
+            return _error_response(
+                "PROJECT_NOT_FOUND",
+                "Le projet est introuvable.",
+                404,
+            )
+
         deployment = create_deployment(
-            _json_payload(),
+            payload,
             _current_user_id(),
         )
         return _success({"deployment": deployment}, 201)
@@ -143,6 +184,7 @@ def create_deployment_route():
 
 @deployments_blueprint.get("/<int:deployment_id>")
 @require_auth
+@require_deployment_access
 def deployment_detail_route(deployment_id: int):
     try:
         return _success(
@@ -154,6 +196,7 @@ def deployment_detail_route(deployment_id: int):
 
 @deployments_blueprint.post("/<int:deployment_id>/start")
 @require_auth
+@require_deployment_access
 def start_deployment_route(deployment_id: int):
     try:
         return _success(
@@ -165,6 +208,7 @@ def start_deployment_route(deployment_id: int):
 
 @deployments_blueprint.post("/<int:deployment_id>/cancel")
 @require_auth
+@require_deployment_access
 def cancel_deployment_route(deployment_id: int):
     try:
         return _success(
@@ -176,6 +220,7 @@ def cancel_deployment_route(deployment_id: int):
 
 @deployments_blueprint.post("/<int:deployment_id>/retry")
 @require_auth
+@require_deployment_access
 def retry_deployment_route(deployment_id: int):
     try:
         return _success(
@@ -187,6 +232,7 @@ def retry_deployment_route(deployment_id: int):
 
 @deployments_blueprint.post("/<int:deployment_id>/confirm-sync")
 @require_auth
+@require_deployment_access
 def confirm_sync_route(deployment_id: int):
     try:
         return _success(
@@ -198,6 +244,7 @@ def confirm_sync_route(deployment_id: int):
 
 @deployments_blueprint.post("/<int:deployment_id>/diagnostic")
 @require_auth
+@require_deployment_access
 def diagnose_deployment_route(deployment_id: int):
     try:
         return _success(
@@ -211,6 +258,7 @@ def diagnose_deployment_route(deployment_id: int):
     "/<int:deployment_id>/diagnostic/messages"
 )
 @require_auth
+@require_deployment_access
 def deployment_chat_route(deployment_id: int):
     try:
         payload = _json_payload()
@@ -229,6 +277,7 @@ def deployment_chat_route(deployment_id: int):
     "/<int:deployment_id>/corrections/<int:correction_id>/approve"
 )
 @require_auth
+@require_deployment_access
 def approve_correction_route(
     deployment_id: int,
     correction_id: int,

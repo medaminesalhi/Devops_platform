@@ -15,6 +15,7 @@ import {
 
 import {
   Router,
+  RouterLink,
 } from '@angular/router';
 
 import {
@@ -39,6 +40,7 @@ interface ApiErrorResponse {
   selector: 'app-login',
   imports: [
     ReactiveFormsModule,
+    RouterLink,
   ],
   templateUrl: './login.html',
   styleUrl: './login.scss',

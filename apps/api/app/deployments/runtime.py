@@ -1427,7 +1427,10 @@ class ArgoCdProvider:
             response = self._request(
                 "POST",
                 "/api/v1/projects",
-                json_body=project,
+                 json_body={
+                    "project": project,
+                    "upsert": True,
+                },
                 expected=(200, 201, 409),
             )
             if response.status_code == 409:

@@ -15,6 +15,10 @@ from app.analysis import (
     analysis_blueprint,
 )
 
+from app.admin import (
+    admin_blueprint,
+)
+
 from app.auth.routes import (
     auth_blueprint,
 )
@@ -130,6 +134,12 @@ def create_app() -> Flask:
     app.register_blueprint(
         auth_blueprint,
         url_prefix="/api/auth",
+    )
+
+
+    app.register_blueprint(
+        admin_blueprint,
+        url_prefix="/api/admin",
     )
 
 

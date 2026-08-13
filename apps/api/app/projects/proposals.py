@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import requests
 from flask import current_app, g, jsonify, request
 
-from app.auth.decorators import require_auth
+from app.auth.decorators import require_auth, require_project_access
 from app.database import get_database_connection
 from app.integrations.discovery import RepositoryDiscoveryError, discover_repositories
 from app.integrations.security import decrypt_credential
@@ -1699,6 +1699,7 @@ def _insert_contract(
 
 @projects_blueprint.get("/<int:project_id>/deployment-target-options")
 @require_auth
+@require_project_access
 def deployment_target_options_route(project_id: int):
     try:
         context = _load_context(project_id)
@@ -1737,6 +1738,7 @@ def deployment_target_options_route(project_id: int):
 
 @projects_blueprint.get("/<int:project_id>/deployment-proposals/latest")
 @require_auth
+@require_project_access
 def latest_deployment_proposal_route(project_id: int):
     try:
         context = _load_context(project_id)
@@ -1757,6 +1759,7 @@ def latest_deployment_proposal_route(project_id: int):
 
 @projects_blueprint.post("/<int:project_id>/deployment-proposals")
 @require_auth
+@require_project_access
 def create_deployment_proposal_route(project_id: int):
     try:
         payload = _json_object()
@@ -1832,6 +1835,7 @@ def create_deployment_proposal_route(project_id: int):
 
 @projects_blueprint.put("/<int:project_id>/deployment-proposals/<int:proposal_id>")
 @require_auth
+@require_project_access
 def update_deployment_proposal_route(project_id: int, proposal_id: int):
     try:
         payload = _json_object()
@@ -1920,6 +1924,7 @@ def update_deployment_proposal_route(project_id: int, proposal_id: int):
 
 @projects_blueprint.post("/<int:project_id>/deployment-proposals/<int:proposal_id>/confirm")
 @require_auth
+@require_project_access
 def confirm_deployment_proposal_route(project_id: int, proposal_id: int):
     try:
         context = _load_context(project_id)

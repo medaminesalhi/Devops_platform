@@ -13,7 +13,7 @@ metadata:
 spec:
   project: projet-test2-test-local
   source:
-    repoURL: http://100.96.79.120:8081/repository/sapixi-helm
+    repoURL: http://172.16.0.40:8081/repository/sapixi-helm/
     chart: source
     targetRevision: 0.1.2
     helm:

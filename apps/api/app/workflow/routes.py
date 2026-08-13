@@ -12,6 +12,7 @@ from flask import (
 
 from app.auth.decorators import (
     require_auth,
+    require_project_access,
 )
 
 from app.workflow.ai import (
@@ -979,6 +980,7 @@ def validate_edited_artifact(
     "/<int:project_id>/workflow"
 )
 @require_auth
+@require_project_access
 def workflow_overview_route(
     project_id: int,
 ):
@@ -1280,6 +1282,7 @@ def workflow_overview_route(
     )
 )
 @require_auth
+@require_project_access
 def preview_contract_route(
     project_id: int,
 ):
@@ -1456,6 +1459,7 @@ def preview_contract_route(
     )
 )
 @require_auth
+@require_project_access
 def save_contract_route(
     project_id: int,
 ):
@@ -1735,6 +1739,7 @@ def save_contract_route(
     )
 )
 @require_auth
+@require_project_access
 def confirm_contract_route(
     project_id: int,
     contract_id: int,
@@ -1801,6 +1806,7 @@ def confirm_contract_route(
     )
 )
 @require_auth
+@require_project_access
 def ai_connections_route(
     project_id: int,
 ):
@@ -1852,6 +1858,7 @@ def ai_connections_route(
     )
 )
 @require_auth
+@require_project_access
 def ai_models_route(
     project_id: int,
     connection_id: int,
@@ -1908,6 +1915,7 @@ def ai_models_route(
     )
 )
 @require_auth
+@require_project_access
 def create_generation_route(
     project_id: int,
 ):
@@ -2199,6 +2207,7 @@ def create_generation_route(
     )
 )
 @require_auth
+@require_project_access
 def latest_generation_route(
     project_id: int,
 ):
@@ -2249,6 +2258,7 @@ def latest_generation_route(
     )
 )
 @require_auth
+@require_project_access
 def generation_detail_route(
     project_id: int,
     generation_run_id: int,
@@ -2304,6 +2314,7 @@ def generation_detail_route(
     )
 )
 @require_auth
+@require_project_access
 def generation_events_route(
     project_id: int,
     generation_run_id: int,
@@ -2413,6 +2424,7 @@ def generation_events_route(
     )
 )
 @require_auth
+@require_project_access
 def generation_artifacts_route(
     project_id: int,
     generation_run_id: int,
@@ -2480,6 +2492,7 @@ def generation_artifacts_route(
     )
 )
 @require_auth
+@require_project_access
 def artifact_detail_route(
     project_id: int,
     generation_run_id: int,
@@ -2559,6 +2572,7 @@ def artifact_detail_route(
     )
 )
 @require_auth
+@require_project_access
 def update_artifact_route(
     project_id: int,
     generation_run_id: int,
@@ -2774,6 +2788,7 @@ def update_artifact_route(
     )
 )
 @require_auth
+@require_project_access
 def review_artifact_route(
     project_id: int,
     generation_run_id: int,
@@ -2960,6 +2975,7 @@ def review_artifact_route(
     )
 )
 @require_auth
+@require_project_access
 def confirm_generation_route(
     project_id: int,
     generation_run_id: int,

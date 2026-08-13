@@ -1,0 +1,367 @@
+<section class="admin-page">
+  <header class="admin-header">
+    <div>
+      <p class="eyebrow">Administration</p>
+      <h2>Comptes et activité utilisateurs</h2>
+      <p>
+        Validez les nouvelles inscriptions, gérez les rôles et consultez
+        l’historique des connexions et déploiements de chaque utilisateur.
+      </p>
+    </div>
+
+    <button
+      class="secondary-button"
+      type="button"
+      [disabled]="loading"
+      (click)="reloadAll()"
+    >
+      {{ loading ? 'Actualisation…' : 'Actualiser' }}
+    </button>
+  </header>
+
+  @if (message) {
+    <div class="message message--success">{{ message }}</div>
+  }
+
+  @if (errorMessage) {
+    <div class="message message--error">{{ errorMessage }}</div>
+  }
+
+  @if (summary(); as stats) {
+    <div class="summary-grid">
+      <article class="summary-card">
+        <span>Utilisateurs</span>
+        <strong>{{ stats.total_users }}</strong>
+        <small>{{ stats.active_users }} actifs</small>
+      </article>
+
+      <article class="summary-card summary-card--attention">
+        <span>À valider</span>
+        <strong>{{ stats.pending_users }}</strong>
+        <small>comptes en attente</small>
+      </article>
+
+      <article class="summary-card">
+        <span>Déploiements aujourd’hui</span>
+        <strong>{{ stats.deployments_today }}</strong>
+        <small>{{ stats.active_deployments }} en cours / attente</small>
+      </article>
+
+      <article class="summary-card">
+        <span>Déploiements total</span>
+        <strong>{{ stats.total_deployments }}</strong>
+        <small>
+          {{ stats.succeeded_deployments }} réussis ·
+          {{ stats.failed_deployments }} échoués
+        </small>
+      </article>
+    </div>
+  }
+
+  <article class="users-card">
+    <div class="card-heading">
+      <div>
+        <h3>Utilisateurs</h3>
+        <p>{{ users().length }} compte(s) affiché(s)</p>
+      </div>
+
+      <form
+        class="filters"
+        [formGroup]="filterForm"
+        (ngSubmit)="reloadAll(false)"
+      >
+        <input
+          type="search"
+          formControlName="search"
+          placeholder="Nom, email, entreprise…"
+        />
+
+        <select formControlName="status">
+          <option value="">Tous les statuts</option>
+          <option value="pending">En attente</option>
+          <option value="active">Actifs</option>
+          <option value="suspended">Suspendus</option>
+          <option value="rejected">Refusés</option>
+        </select>
+
+        <select formControlName="role">
+          <option value="">Tous les rôles</option>
+          @for (role of roles(); track role.code) {
+            <option [value]="role.code">{{ role.name }}</option>
+          }
+        </select>
+
+        <button class="primary-button" type="submit">Filtrer</button>
+        <button
+          class="ghost-button"
+          type="button"
+          (click)="clearFilters()"
+        >
+          Effacer
+        </button>
+      </form>
+    </div>
+
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Utilisateur</th>
+            <th>Statut</th>
+            <th>Rôle</th>
+            <th>Inscription</th>
+            <th>Dernière connexion</th>
+            <th>Déploiements</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (user of users(); track user.id) {
+            <tr
+              [class.table-row--selected]="isSelectedUser(user.id)"
+            >
+              <td>
+                <button
+                  class="user-link"
+                  type="button"
+                  (click)="loadUser(user.id)"
+                >
+                  <strong>{{ displayName(user) }}</strong>
+                  <span>{{ user.email }}</span>
+                  @if (user.company) {
+                    <small>{{ user.company }}</small>
+                  }
+                </button>
+              </td>
+              <td>
+                <span class="status" [class]="'status status--' + user.status">
+                  {{ statusLabel(user.status) }}
+                </span>
+              </td>
+              <td>
+                {{ roleLabel(user.roles[0]) }}
+              </td>
+              <td>{{ user.createdAt | date:'dd/MM/yyyy HH:mm' }}</td>
+              <td>
+                {{ user.lastLoginAt ? (user.lastLoginAt | date:'dd/MM/yyyy HH:mm') : 'Jamais' }}
+              </td>
+              <td>
+                <strong>{{ user.deploymentCount }}</strong>
+              </td>
+              <td>
+                <div class="row-actions">
+                  @if (user.status === 'pending') {
+                    <select #approvalRole>
+                      @for (role of roles(); track role.code) {
+                        <option
+                          [value]="role.code"
+                          [selected]="role.code === 'viewer'"
+                        >
+                          {{ role.name }}
+                        </option>
+                      }
+                    </select>
+                    <button
+                      class="action-button action-button--approve"
+                      type="button"
+                      [disabled]="actionLoadingUserId === user.id"
+                      (click)="approve(user, approvalRole.value)"
+                    >
+                      Approuver
+                    </button>
+                    <button
+                      class="action-button action-button--danger"
+                      type="button"
+                      [disabled]="actionLoadingUserId === user.id"
+                      (click)="reject(user)"
+                    >
+                      Refuser
+                    </button>
+                  } @else if (user.status === 'active') {
+                    <select #currentRole [value]="user.roles.length ? user.roles[0] : 'viewer'">
+                      @for (role of roles(); track role.code) {
+                        <option [value]="role.code">{{ role.name }}</option>
+                      }
+                    </select>
+                    <button
+                      class="action-button"
+                      type="button"
+                      [disabled]="actionLoadingUserId === user.id"
+                      (click)="updateRole(user, currentRole.value)"
+                    >
+                      Rôle
+                    </button>
+                    <button
+                      class="action-button action-button--danger"
+                      type="button"
+                      [disabled]="actionLoadingUserId === user.id"
+                      (click)="suspend(user)"
+                    >
+                      Suspendre
+                    </button>
+                  } @else if (user.status === 'suspended') {
+                    <button
+                      class="action-button action-button--approve"
+                      type="button"
+                      [disabled]="actionLoadingUserId === user.id"
+                      (click)="activate(user)"
+                    >
+                      Réactiver
+                    </button>
+                  } @else {
+                    <select #reactivationRole>
+                      @for (role of roles(); track role.code) {
+                        <option
+                          [value]="role.code"
+                          [selected]="role.code === 'viewer'"
+                        >
+                          {{ role.name }}
+                        </option>
+                      }
+                    </select>
+                    <button
+                      class="action-button action-button--approve"
+                      type="button"
+                      [disabled]="actionLoadingUserId === user.id"
+                      (click)="approve(user, reactivationRole.value)"
+                    >
+                      Réactiver
+                    </button>
+                  }
+                </div>
+              </td>
+            </tr>
+          } @empty {
+            <tr>
+              <td colspan="7" class="empty-cell">
+                Aucun utilisateur ne correspond aux filtres.
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </article>
+
+  @if (detailLoading) {
+    <div class="detail-loading">Chargement de la fiche utilisateur…</div>
+  }
+
+  @if (selectedUser(); as detail) {
+    <section class="user-detail">
+      <header class="detail-header">
+        <div>
+          <p class="eyebrow">Fiche utilisateur #{{ detail.user.id }}</p>
+          <h3>{{ displayName(detail.user) }}</h3>
+          <p>
+            {{ detail.user.email }}
+            @if (detail.user.company) {
+              · {{ detail.user.company }}
+            }
+          </p>
+        </div>
+
+        <div class="detail-meta">
+          <span class="status" [class]="'status status--' + detail.user.status">
+            {{ statusLabel(detail.user.status) }}
+          </span>
+          <strong>{{ roleLabel(detail.user.roles[0]) }}</strong>
+        </div>
+      </header>
+
+      <div class="detail-stats">
+        <div>
+          <span>Inscrit le</span>
+          <strong>{{ detail.user.createdAt | date:'dd/MM/yyyy HH:mm' }}</strong>
+        </div>
+        <div>
+          <span>Validé le</span>
+          <strong>
+            {{ detail.user.approvedAt ? (detail.user.approvedAt | date:'dd/MM/yyyy HH:mm') : '—' }}
+          </strong>
+        </div>
+        <div>
+          <span>Dernière connexion</span>
+          <strong>
+            {{ detail.user.lastLoginAt ? (detail.user.lastLoginAt | date:'dd/MM/yyyy HH:mm') : 'Jamais' }}
+          </strong>
+        </div>
+        <div>
+          <span>Connexions réussies</span>
+          <strong>{{ detail.user.successfulLoginCount }}</strong>
+        </div>
+        <div>
+          <span>Déploiements</span>
+          <strong>{{ detail.user.deploymentCount }}</strong>
+        </div>
+      </div>
+
+      <div class="detail-grid">
+        <article class="detail-card">
+          <header>
+            <h4>Historique de connexion</h4>
+            <span>{{ detail.logins.length }} événement(s)</span>
+          </header>
+
+          <div class="timeline">
+            @for (login of detail.logins; track login.id) {
+              <div class="timeline-item">
+                <span
+                  class="timeline-dot"
+                  [class.timeline-dot--failed]="!login.success"
+                ></span>
+                <div>
+                  <strong>
+                    {{ login.success ? 'Connexion réussie' : 'Connexion refusée' }}
+                  </strong>
+                  <span>{{ login.loggedAt | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+                  <small>
+                    IP : {{ login.ipAddress || 'inconnue' }}
+                    @if (login.failureReason) {
+                      · {{ login.failureReason }}
+                    }
+                  </small>
+                  @if (login.userAgent) {
+                    <small class="user-agent">{{ login.userAgent }}</small>
+                  }
+                </div>
+              </div>
+            } @empty {
+              <p class="empty-text">Aucun historique de connexion.</p>
+            }
+          </div>
+        </article>
+
+        <article class="detail-card">
+          <header>
+            <h4>Déploiements de l’utilisateur</h4>
+            <span>{{ detail.deployments.length }} affiché(s)</span>
+          </header>
+
+          <div class="deployment-list">
+            @for (deployment of detail.deployments; track deployment.id) {
+              <a
+                class="deployment-item"
+                [routerLink]="['/deployments', deployment.id]"
+              >
+                <div>
+                  <strong>#{{ deployment.id }} · {{ deployment.projectName }}</strong>
+                  <span>
+                    {{ deployment.version || 'Version non définie' }}
+                    · {{ deployment.environmentName || deployment.environmentCode || 'Environnement' }}
+                  </span>
+                </div>
+                <div class="deployment-item__right">
+                  <span class="deployment-status">{{ deployment.status }}</span>
+                  <small>{{ deployment.createdAt | date:'dd/MM/yyyy HH:mm' }}</small>
+                </div>
+              </a>
+            } @empty {
+              <p class="empty-text">Aucun déploiement pour cet utilisateur.</p>
+            }
+          </div>
+        </article>
+      </div>
+    </section>
+  }
+</section>

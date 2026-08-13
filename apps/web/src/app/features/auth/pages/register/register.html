@@ -1,0 +1,177 @@
+<main class="register-page">
+  <div class="background-decoration background-decoration--left"></div>
+  <div class="background-decoration background-decoration--right"></div>
+
+  <section class="register-card">
+    <header class="register-header">
+      <img
+        class="company-logo"
+        src="/piximind-logo.png"
+        alt="Logo Piximind"
+      />
+
+      <div>
+        <p class="company-name">PIXIMIND</p>
+        <h1>Créer un compte</h1>
+        <p class="register-description">
+          Votre compte restera en attente jusqu’à sa validation
+          par un administrateur de la plateforme.
+        </p>
+      </div>
+    </header>
+
+    @if (errorMessage) {
+      <div class="message message--error" role="alert">
+        {{ errorMessage }}
+      </div>
+    }
+
+    @if (successMessage) {
+      <div class="message message--success" role="status">
+        <strong>Inscription enregistrée.</strong>
+        <span>{{ successMessage }}</span>
+        <a routerLink="/login">Retour à la connexion</a>
+      </div>
+    } @else {
+      <form
+        class="register-form"
+        [formGroup]="registerForm"
+        (ngSubmit)="submit()"
+        novalidate
+      >
+        <div class="form-grid form-grid--two">
+          <label class="form-field">
+            <span>Prénom</span>
+            <input
+              type="text"
+              formControlName="firstName"
+              autocomplete="given-name"
+              placeholder="Amine"
+            />
+          </label>
+
+          <label class="form-field">
+            <span>Nom</span>
+            <input
+              type="text"
+              formControlName="lastName"
+              autocomplete="family-name"
+              placeholder="Ben Ali"
+            />
+          </label>
+        </div>
+
+        <div class="form-grid form-grid--two">
+          <label class="form-field">
+            <span>Nom d’utilisateur *</span>
+            <input
+              type="text"
+              formControlName="username"
+              autocomplete="username"
+              placeholder="amine.benali"
+            />
+            @if (
+              registerForm.controls.username.touched &&
+              registerForm.controls.username.invalid
+            ) {
+              <small>
+                3 à 60 caractères : lettres, chiffres, point, tiret ou underscore.
+              </small>
+            }
+          </label>
+
+          <label class="form-field">
+            <span>Email *</span>
+            <input
+              type="email"
+              formControlName="email"
+              autocomplete="email"
+              placeholder="amine@entreprise.tn"
+            />
+            @if (
+              registerForm.controls.email.touched &&
+              registerForm.controls.email.invalid
+            ) {
+              <small>Entrez une adresse email valide.</small>
+            }
+          </label>
+        </div>
+
+        <label class="form-field">
+          <span>Entreprise / équipe</span>
+          <input
+            type="text"
+            formControlName="company"
+            autocomplete="organization"
+            placeholder="Piximind"
+          />
+        </label>
+
+        <div class="form-grid form-grid--two">
+          <label class="form-field">
+            <span>Mot de passe *</span>
+            <div class="password-field">
+              <input
+                [type]="showPassword ? 'text' : 'password'"
+                formControlName="password"
+                autocomplete="new-password"
+                placeholder="9 caractères minimum"
+              />
+              <button
+                type="button"
+                (click)="showPassword = !showPassword"
+              >
+                {{ showPassword ? 'Masquer' : 'Afficher' }}
+              </button>
+            </div>
+          </label>
+
+          <label class="form-field">
+            <span>Confirmer *</span>
+            <div class="password-field">
+              <input
+                [type]="showConfirmation ? 'text' : 'password'"
+                formControlName="confirmPassword"
+                autocomplete="new-password"
+                placeholder="Répétez le mot de passe"
+              />
+              <button
+                type="button"
+                (click)="showConfirmation = !showConfirmation"
+              >
+                {{ showConfirmation ? 'Masquer' : 'Afficher' }}
+              </button>
+            </div>
+            @if (
+              registerForm.controls.confirmPassword.touched &&
+              passwordsMismatch
+            ) {
+              <small>Les mots de passe ne correspondent pas.</small>
+            }
+          </label>
+        </div>
+
+        <div class="approval-note">
+          <span aria-hidden="true">i</span>
+          <p>
+            Après l’inscription, un administrateur choisira votre rôle
+            et activera votre accès. Vous ne pourrez pas vous connecter avant.
+          </p>
+        </div>
+
+        <button
+          class="submit-button"
+          type="submit"
+          [disabled]="isSubmitting"
+        >
+          {{ isSubmitting ? 'Création en cours…' : 'Créer mon compte' }}
+        </button>
+      </form>
+    }
+
+    <footer class="register-footer">
+      <span>Vous avez déjà un compte ?</span>
+      <a routerLink="/login">Se connecter</a>
+    </footer>
+  </section>
+</main>

@@ -1,0 +1,152 @@
+{
+  "target": {
+    "argocd": {
+      "prune": true,
+      "selfHeal": true,
+      "namespace": "argocd",
+      "serverUrl": "http://argocd.sapixi.home.local",
+      "projectName": "projet-test2-test-local",
+      "automaticSync": false
+    },
+    "domain": "pixismart-test.local",
+    "delivery": {
+      "mode": "helm",
+      "basePath": "projects",
+      "refreshMode": "polling",
+      "connectionId": 13,
+      "repositoryUrl": "http://100.96.79.120:8081/repository/sapixi-helm",
+      "repositoryName": "sapixi-helm",
+      "targetRevision": "__SAPIXI_HELM_VERSION__"
+    },
+    "registry": {
+      "host": "100.96.79.120:8083",
+      "endpointUrl": "http://100.96.79.120:8083",
+      "connectionId": 13,
+      "repositoryUrl": "http://100.96.79.120:8081/repository/pixismart-docker",
+      "repositoryName": "pixismart-docker",
+      "repositoryPrefix": "projet-test2",
+      "imagePullSecretName": "registry-credentials"
+    },
+    "namespace": "pixismart-test",
+    "kubernetes": {
+      "server": "https://100.96.79.120:6443"
+    },
+    "environmentId": 2,
+    "environmentCode": "test-local",
+    "environmentName": "Test Local"
+  },
+  "project": {
+    "id": 8,
+    "name": "projet test2",
+    "slug": "projet-test2",
+    "commitSha": "fb93e5c6d136dc19edde4bb421b18fd0d931a515",
+    "analysisRunId": 12
+  },
+  "policies": {
+    "requireNonRoot": true,
+    "allowPrivileged": false,
+    "maximumAiContextBytes": 120000,
+    "requireManualArgoSync": true,
+    "preserveExistingHelmChart": true,
+    "preserveExistingDockerfile": true
+  },
+  "components": [
+    {
+      "id": 8,
+      "name": "source",
+      "slug": "source",
+      "build": {
+        "context": ".",
+        "outputPath": "",
+        "buildCommand": "",
+        "helmChartPath": "",
+        "dockerfilePath": "Dockerfile",
+        "installCommand": "pip install --no-cache-dir -r requirements.txt"
+      },
+      "probes": {
+        "startup": {
+          "path": "/health",
+          "enabled": true,
+          "periodSeconds": 10,
+          "timeoutSeconds": 3,
+          "failureThreshold": 6,
+          "initialDelaySeconds": 10
+        },
+        "liveness": {
+          "path": "/health",
+          "enabled": true,
+          "periodSeconds": 10,
+          "timeoutSeconds": 3,
+          "failureThreshold": 6,
+          "initialDelaySeconds": 10
+        },
+        "readiness": {
+          "path": "/health",
+          "enabled": true,
+          "periodSeconds": 10,
+          "timeoutSeconds": 3,
+          "failureThreshold": 6,
+          "initialDelaySeconds": 10
+        }
+      },
+      "ingress": {
+        "host": "pixismart-test.local",
+        "path": "/",
+        "enabled": true,
+        "pathType": "Prefix",
+        "className": "nginx",
+        "annotations": {},
+        "tlsSecretName": ""
+      },
+      "runtime": {
+        "name": "Python",
+        "version": ""
+      },
+      "secrets": [],
+      "service": {
+        "port": 5000,
+        "type": "ClusterIP",
+        "enabled": true,
+        "targetPort": 5000
+      },
+      "volumes": [],
+      "replicas": 1,
+      "rootPath": ".",
+      "container": {
+        "port": 5000,
+        "runAsUser": 10001,
+        "startCommand": "flask --app wsgi run --host 0.0.0.0 --port 5000",
+        "workingDirectory": "/app",
+        "readOnlyRootFilesystem": false
+      },
+      "framework": "Flask",
+      "migration": {
+        "command": "flask db upgrade",
+        "enabled": false,
+        "backoffLimit": 1
+      },
+      "resources": {
+        "limits": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "requests": {
+          "cpu": "100m",
+          "memory": "128Mi"
+        }
+      },
+      "deployable": true,
+      "dependencies": [],
+      "componentType": "backend",
+      "configuration": [
+        {
+          "name": "PORT",
+          "required": true,
+          "description": "Variable détectée pendant l'analyse."
+        }
+      ],
+      "packageManager": "pip"
+    }
+  ],
+  "schemaVersion": 2
+}

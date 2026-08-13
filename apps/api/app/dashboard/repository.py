@@ -7,10 +7,14 @@ from app.database import (
 )
 
 
-def get_dashboard_overview() -> dict[str, Any]:
+def get_dashboard_overview(
+    owner_user_id: int | None = None,
+) -> dict[str, Any]:
     """
-    Récupère les statistiques générales
-    depuis PostgreSQL.
+    Récupère les statistiques générales depuis PostgreSQL.
+
+    owner_user_id = None : vue globale (administrateur).
+    owner_user_id = N    : vue limitée aux projets appartenant à N.
     """
 
     with get_database_connection() as connection:
@@ -27,15 +31,21 @@ def get_dashboard_overview() -> dict[str, Any]:
                     )::INTEGER
                         AS active_projects
 
-                FROM projects;
-            """
+                FROM projects
+
+                WHERE (
+                    %s::BIGINT IS NULL
+                    OR created_by = %s
+                );
+            """,
+            (owner_user_id, owner_user_id),
         ).fetchone()
 
         deployment_statistics = connection.execute(
             """
                 SELECT
                     COUNT(*) FILTER (
-                        WHERE created_at >=
+                        WHERE deployment.created_at >=
                             DATE_TRUNC(
                                 'day',
                                 CURRENT_TIMESTAMP
@@ -44,14 +54,14 @@ def get_dashboard_overview() -> dict[str, Any]:
                         AS deployments_today,
 
                     COUNT(*) FILTER (
-                        WHERE status = 'running'
+                        WHERE deployment.status = 'running'
                     )::INTEGER
                         AS running_deployments,
 
                     COUNT(*) FILTER (
                         WHERE
-                            status = 'succeeded'
-                            AND created_at >=
+                            deployment.status = 'succeeded'
+                            AND deployment.created_at >=
                                 CURRENT_TIMESTAMP
                                 - INTERVAL '7 days'
                     )::INTEGER
@@ -59,15 +69,24 @@ def get_dashboard_overview() -> dict[str, Any]:
 
                     COUNT(*) FILTER (
                         WHERE
-                            status = 'failed'
-                            AND created_at >=
+                            deployment.status = 'failed'
+                            AND deployment.created_at >=
                                 CURRENT_TIMESTAMP
                                 - INTERVAL '7 days'
                     )::INTEGER
                         AS failed_deployments_7d
 
-                FROM deployments;
-            """
+                FROM deployments AS deployment
+
+                INNER JOIN projects AS project
+                    ON project.id = deployment.project_id
+
+                WHERE (
+                    %s::BIGINT IS NULL
+                    OR project.created_by = %s
+                );
+            """,
+            (owner_user_id, owner_user_id),
         ).fetchone()
 
         project_status_rows = connection.execute(
@@ -78,10 +97,16 @@ def get_dashboard_overview() -> dict[str, Any]:
 
                 FROM projects
 
+                WHERE (
+                    %s::BIGINT IS NULL
+                    OR created_by = %s
+                )
+
                 GROUP BY status
 
                 ORDER BY status;
-            """
+            """,
+            (owner_user_id, owner_user_id),
         ).fetchall()
 
         recent_deployments = connection.execute(
@@ -125,34 +150,39 @@ def get_dashboard_overview() -> dict[str, Any]:
                     ON platform_user.id =
                         deployment.triggered_by
 
+                WHERE (
+                    %s::BIGINT IS NULL
+                    OR project.created_by = %s
+                )
+
                 ORDER BY
                     deployment.created_at DESC
 
                 LIMIT 8;
-            """
+            """,
+            (owner_user_id, owner_user_id),
         ).fetchall()
 
     total_finished = (
-            deployment_statistics[
-                "successful_deployments_7d"
-            ]
-            +
-            deployment_statistics[
-                "failed_deployments_7d"
-            ]
-        )
+        deployment_statistics[
+            "successful_deployments_7d"
+        ]
+        + deployment_statistics[
+            "failed_deployments_7d"
+        ]
+    )
 
     if total_finished > 0:
         success_rate = round(
-                (
-                    deployment_statistics[
-                        "successful_deployments_7d"
-                    ]
-                    / total_finished
-                )
-                * 100,
-                1,
+            (
+                deployment_statistics[
+                    "successful_deployments_7d"
+                ]
+                / total_finished
             )
+            * 100,
+            1,
+        )
     else:
         success_rate = 0.0
 

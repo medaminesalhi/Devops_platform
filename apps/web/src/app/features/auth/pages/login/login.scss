@@ -656,3 +656,37 @@ h1 {
   font-size: 11px;
   font-weight: 800;
 }
+/* =========================================================
+   INSCRIPTION ET ERREURS API
+   ========================================================= */
+
+.login-alert {
+  margin: -14px 0 22px;
+  padding: 13px 15px;
+  border: 1px solid #f0c6c9;
+  border-radius: 12px;
+  background: #fff5f5;
+  color: #a8323a;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.register-link {
+  display: flex;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 24px;
+  color: #718187;
+  font-size: 13px;
+}
+
+.register-link a {
+  color: #62a600;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.register-link a:hover {
+  text-decoration: underline;
+}

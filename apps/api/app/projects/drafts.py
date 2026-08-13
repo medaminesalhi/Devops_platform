@@ -7,7 +7,7 @@ from typing import Any
 from flask import g, jsonify, request
 from werkzeug.datastructures import FileStorage
 
-from app.auth.decorators import require_auth
+from app.auth.decorators import require_auth, require_project_access
 from app.database import get_database_connection
 from app.integrations.security import decrypt_credential, encrypt_credential
 from app.projects.archive_provider import ArchiveProviderError, archive_source_provider
@@ -1015,6 +1015,7 @@ def create_project_draft_route():
 
 @projects_blueprint.put("/<int:project_id>/source")
 @require_auth
+@require_project_access
 def save_project_draft_source_route(project_id: int):
     try:
         payload, archive_file = read_request_payload()
@@ -1058,6 +1059,7 @@ def save_project_draft_source_route(project_id: int):
 
 @projects_blueprint.post("/<int:project_id>/source/check")
 @require_auth
+@require_project_access
 def check_stored_project_source_route(project_id: int):
     try:
         validation = _test_stored_source(project_id=project_id, user_id=_user_id())
@@ -1073,6 +1075,7 @@ def check_stored_project_source_route(project_id: int):
 
 @projects_blueprint.put("/<int:project_id>/source/credential")
 @require_auth
+@require_project_access
 def replace_project_source_credential_route(project_id: int):
     try:
         project = _replace_credential(
@@ -1089,6 +1092,7 @@ def replace_project_source_credential_route(project_id: int):
 
 @projects_blueprint.put("/<int:project_id>/environment")
 @require_auth
+@require_project_access
 def save_project_environment_route(project_id: int):
     try:
         payload = _json_object()
@@ -1164,6 +1168,7 @@ def save_project_environment_route(project_id: int):
 
 @projects_blueprint.post("/<int:project_id>/activate")
 @require_auth
+@require_project_access
 def activate_project_route(project_id: int):
     try:
         project = _find_project(project_id)

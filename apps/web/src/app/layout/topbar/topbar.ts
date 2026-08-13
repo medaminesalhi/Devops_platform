@@ -155,6 +155,10 @@ export class Topbar {
       return 'Développeur';
     }
 
+    if (roles.includes('viewer')) {
+      return 'Lecteur';
+    }
+
     return 'Utilisateur';
   }
 
@@ -211,6 +215,28 @@ export class Topbar {
         subtitle:
           'Configurez les services externes.',
         section: 'Configuration',
+      });
+
+      return;
+    }
+
+    if (url.startsWith('/settings')) {
+      this.pageInformation.set({
+        title: 'Paramètres',
+        subtitle:
+          'Gérez votre profil et votre sécurité.',
+        section: 'Compte',
+      });
+
+      return;
+    }
+
+    if (url.startsWith('/admin')) {
+      this.pageInformation.set({
+        title: 'Administration',
+        subtitle:
+          'Gérez les comptes, rôles et activités utilisateurs.',
+        section: 'Administration',
       });
 
       return;

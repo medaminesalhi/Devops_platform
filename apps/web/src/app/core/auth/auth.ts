@@ -22,12 +22,23 @@ import {
 } from 'rxjs';
 
 
+export type AccountStatus =
+  | 'pending'
+  | 'active'
+  | 'rejected'
+  | 'suspended';
+
+
 export interface AuthUser {
   id: number;
   username: string;
   email: string;
   firstName: string | null;
   lastName: string | null;
+  company: string | null;
+  status: AccountStatus;
+  lastLoginAt: string | null;
+  createdAt: string | null;
   roles: string[];
 }
 
@@ -36,6 +47,42 @@ export interface LoginRequest {
   username: string;
   password: string;
   rememberMe: boolean;
+}
+
+
+export interface RegisterRequest {
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  company: string;
+  password: string;
+}
+
+
+export interface RegisterResult {
+  message: string;
+  user: {
+    id: number;
+    username: string;
+    email: string;
+    status: AccountStatus;
+    createdAt: string;
+  };
+}
+
+
+export interface ProfileUpdateRequest {
+  email: string;
+  firstName: string;
+  lastName: string;
+  company: string;
+}
+
+
+export interface PasswordChangeRequest {
+  currentPassword: string;
+  newPassword: string;
 }
 
 
@@ -53,10 +100,34 @@ interface LoginResponse {
 }
 
 
+interface RegisterResponse {
+  success: boolean;
+  data: RegisterResult;
+}
+
+
 interface CurrentUserResponse {
   success: boolean;
   data: {
     user: AuthUser;
+  };
+}
+
+
+interface ProfileResponse {
+  success: boolean;
+  data: {
+    user: AuthUser;
+    message: string;
+  };
+}
+
+
+interface MessageResponse {
+  success: boolean;
+  data: {
+    message: string;
+    revokedSessions?: number;
   };
 }
 
@@ -86,6 +157,10 @@ export class Auth {
     () => this.tokenSignal() !== null,
   );
 
+  readonly isAdmin = computed(
+    () => this.currentUser()?.roles.includes('admin') ?? false,
+  );
+
 
   login(
     credentials: LoginRequest,
@@ -109,24 +184,26 @@ export class Auth {
   }
 
 
-  loadCurrentUser(): Observable<AuthUser> {
-    const token = this.getAccessToken();
-
-    if (!token) {
-      throw new Error(
-        'Aucun token de session disponible.',
+  register(
+    registration: RegisterRequest,
+  ): Observable<RegisterResult> {
+    return this.http
+      .post<RegisterResponse>(
+        '/api/auth/register',
+        registration,
+      )
+      .pipe(
+        map((response) => response.data),
       );
-    }
+  }
 
-    const headers = new HttpHeaders({
-      Authorization: `Bearer ${token}`,
-    });
 
+  loadCurrentUser(): Observable<AuthUser> {
     return this.http
       .get<CurrentUserResponse>(
         '/api/auth/me',
         {
-          headers,
+          headers: this.authorizationHeaders(),
         },
       )
       .pipe(
@@ -134,9 +211,62 @@ export class Auth {
 
         tap((user) => {
           this.currentUser.set(user);
-
           this.updateStoredUser(user);
         }),
+      );
+  }
+
+
+  updateProfile(
+    profile: ProfileUpdateRequest,
+  ): Observable<AuthUser> {
+    return this.http
+      .put<ProfileResponse>(
+        '/api/auth/profile',
+        profile,
+        {
+          headers: this.authorizationHeaders(),
+        },
+      )
+      .pipe(
+        map((response) => response.data.user),
+
+        tap((user) => {
+          this.currentUser.set(user);
+          this.updateStoredUser(user);
+        }),
+      );
+  }
+
+
+  changePassword(
+    password: PasswordChangeRequest,
+  ): Observable<string> {
+    return this.http
+      .post<MessageResponse>(
+        '/api/auth/change-password',
+        password,
+        {
+          headers: this.authorizationHeaders(),
+        },
+      )
+      .pipe(
+        map((response) => response.data.message),
+      );
+  }
+
+
+  revokeOtherSessions(): Observable<string> {
+    return this.http
+      .post<MessageResponse>(
+        '/api/auth/sessions/revoke-others',
+        {},
+        {
+          headers: this.authorizationHeaders(),
+        },
+      )
+      .pipe(
+        map((response) => response.data.message),
       );
   }
 
@@ -150,22 +280,17 @@ export class Auth {
       return;
     }
 
-    const headers = new HttpHeaders({
-      Authorization: `Bearer ${token}`,
-    });
-
     this.http
       .post(
         '/api/auth/logout',
         {},
         {
-          headers,
+          headers: this.authorizationHeaders(),
         },
       )
       .pipe(
         finalize(() => {
           this.clearSession();
-
           this.router.navigate(['/login']);
         }),
       )
@@ -185,21 +310,31 @@ export class Auth {
   }
 
 
+  hasRole(
+    role: string,
+  ): boolean {
+    return this.currentUser()?.roles.includes(role) ?? false;
+  }
+
+
+  private authorizationHeaders(): HttpHeaders {
+    const token = this.getAccessToken();
+
+    if (!token) {
+      return new HttpHeaders();
+    }
+
+    return new HttpHeaders({
+      Authorization: `Bearer ${token}`,
+    });
+  }
+
+
   private saveSession(
     token: string,
     user: AuthUser,
     rememberMe: boolean,
   ): void {
-    /*
-     * Si rememberMe est coché :
-     * localStorage conserve la session après
-     * fermeture du navigateur.
-     *
-     * Sinon :
-     * sessionStorage conserve la session uniquement
-     * pendant l’onglet actuel.
-     */
-
     this.clearBrowserStorage();
 
     const storage = rememberMe
@@ -279,7 +414,6 @@ export class Auth {
       ) as AuthUser;
     } catch {
       this.clearBrowserStorage();
-
       return null;
     }
   }

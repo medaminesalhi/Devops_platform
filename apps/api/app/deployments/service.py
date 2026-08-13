@@ -495,6 +495,7 @@ def list_deployments(filters: dict[str, Any]) -> dict[str, Any]:
         status=status,
         date_from=filters.get("date_from"),
         date_to=filters.get("date_to"),
+        owner_user_id=filters.get("owner_user_id"),
     )
     return {
         "deployments": [_summary_json(row) for row in rows],
@@ -513,9 +514,13 @@ def get_deployment(deployment_id: int) -> dict[str, Any]:
     return _details_json(row)
 
 
-def get_options() -> list[dict[str, Any]]:
+def get_options(
+    owner_user_id: int | None = None,
+) -> list[dict[str, Any]]:
     grouped: "OrderedDict[int, dict[str, Any]]" = OrderedDict()
-    for row in repository.list_generation_options():
+    for row in repository.list_generation_options(
+        owner_user_id=owner_user_id,
+    ):
         project_id = int(row["project_id"])
         project = grouped.setdefault(
             project_id,

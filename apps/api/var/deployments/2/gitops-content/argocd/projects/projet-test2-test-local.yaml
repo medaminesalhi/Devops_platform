@@ -10,7 +10,7 @@ metadata:
 spec:
   description: Projet Argo CD géré par SApixi pour projet-test2 dans test-local.
   sourceRepos:
-  - http://100.96.79.120:8081/repository/sapixi-helm
+  - http://172.16.0.40:8081/repository/sapixi-helm/
   destinations:
   - server: https://100.96.79.120:6443
     namespace: pixismart-test

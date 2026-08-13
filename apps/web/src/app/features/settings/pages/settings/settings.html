@@ -1,0 +1,171 @@
+<section class="settings-page">
+  <header class="page-introduction">
+    <div>
+      <p class="eyebrow">Compte utilisateur</p>
+      <h2>Paramètres</h2>
+      <p>
+        Gérez vos informations personnelles, votre mot de passe
+        et les sessions ouvertes sur la plateforme.
+      </p>
+    </div>
+
+    @if (auth.currentUser(); as user) {
+      <div class="account-chip">
+        <strong>{{ user.username }}</strong>
+        <span>{{ user.email }}</span>
+      </div>
+    }
+  </header>
+
+  <div class="settings-grid">
+    <article class="settings-card">
+      <header class="card-header">
+        <div class="card-icon">◎</div>
+        <div>
+          <h3>Mon profil</h3>
+          <p>Informations visibles dans la plateforme.</p>
+        </div>
+      </header>
+
+      @if (profileMessage) {
+        <div class="message message--success">{{ profileMessage }}</div>
+      }
+
+      @if (profileError) {
+        <div class="message message--error">{{ profileError }}</div>
+      }
+
+      <form
+        class="settings-form"
+        [formGroup]="profileForm"
+        (ngSubmit)="saveProfile()"
+      >
+        @if (auth.currentUser(); as user) {
+          <label class="form-field">
+            <span>Nom d’utilisateur</span>
+            <input [value]="user.username" disabled />
+            <small>Le nom d’utilisateur n’est pas modifiable ici.</small>
+          </label>
+        }
+
+        <div class="form-row">
+          <label class="form-field">
+            <span>Prénom</span>
+            <input type="text" formControlName="firstName" />
+          </label>
+
+          <label class="form-field">
+            <span>Nom</span>
+            <input type="text" formControlName="lastName" />
+          </label>
+        </div>
+
+        <label class="form-field">
+          <span>Email</span>
+          <input type="email" formControlName="email" />
+          @if (
+            profileForm.controls.email.touched &&
+            profileForm.controls.email.invalid
+          ) {
+            <small class="field-error">Entrez une adresse email valide.</small>
+          }
+        </label>
+
+        <label class="form-field">
+          <span>Entreprise / équipe</span>
+          <input type="text" formControlName="company" />
+        </label>
+
+        <button
+          class="primary-button"
+          type="submit"
+          [disabled]="profileLoading"
+        >
+          {{ profileLoading ? 'Enregistrement…' : 'Enregistrer le profil' }}
+        </button>
+      </form>
+    </article>
+
+    <article class="settings-card">
+      <header class="card-header">
+        <div class="card-icon">⌁</div>
+        <div>
+          <h3>Sécurité</h3>
+          <p>Mot de passe et contrôle des sessions.</p>
+        </div>
+      </header>
+
+      @if (securityMessage) {
+        <div class="message message--success">{{ securityMessage }}</div>
+      }
+
+      @if (securityError) {
+        <div class="message message--error">{{ securityError }}</div>
+      }
+
+      <form
+        class="settings-form"
+        [formGroup]="passwordForm"
+        (ngSubmit)="changePassword()"
+      >
+        <label class="form-field">
+          <span>Mot de passe actuel</span>
+          <input
+            type="password"
+            formControlName="currentPassword"
+            autocomplete="current-password"
+          />
+        </label>
+
+        <label class="form-field">
+          <span>Nouveau mot de passe</span>
+          <input
+            type="password"
+            formControlName="newPassword"
+            autocomplete="new-password"
+          />
+          <small>9 caractères minimum.</small>
+        </label>
+
+        <label class="form-field">
+          <span>Confirmer le nouveau mot de passe</span>
+          <input
+            type="password"
+            formControlName="confirmPassword"
+            autocomplete="new-password"
+          />
+          @if (passwordForm.controls.confirmPassword.touched && passwordMismatch) {
+            <small class="field-error">Les mots de passe ne correspondent pas.</small>
+          }
+        </label>
+
+        <button
+          class="primary-button"
+          type="submit"
+          [disabled]="passwordLoading"
+        >
+          {{ passwordLoading ? 'Modification…' : 'Modifier le mot de passe' }}
+        </button>
+      </form>
+
+      <div class="session-zone">
+        <div>
+          <strong>Autres sessions</strong>
+          <p>
+            Déconnectez les autres navigateurs ou appareils sans fermer
+            votre session actuelle.
+          </p>
+        </div>
+
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="sessionsLoading"
+          (click)="revokeOtherSessions()"
+        >
+          {{ sessionsLoading ? 'Déconnexion…' : 'Déconnecter les autres sessions' }}
+        </button>
+      </div>
+    </article>
+  </div>
+</section>

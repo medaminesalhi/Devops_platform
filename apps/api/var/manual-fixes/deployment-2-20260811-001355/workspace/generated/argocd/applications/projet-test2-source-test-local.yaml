@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: projet-test2-source-test-local
+  namespace: argocd
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
+  labels:
+    sapixi.io/managed: 'true'
+    sapixi.io/project: projet-test2
+    sapixi.io/environment: test-local
+    sapixi.io/component: source
+spec:
+  project: projet-test2-test-local
+  source:
+    repoURL: http://100.96.79.120:8081/repository/sapixi-helm
+    chart: source
+    targetRevision: __SAPIXI_HELM_VERSION__
+    helm:
+      releaseName: projet-test2-source
+  destination:
+    server: https://100.96.79.120:6443
+    namespace: pixismart-test
+  syncPolicy:
+    syncOptions:
+    - CreateNamespace=true
+    - ApplyOutOfSyncOnly=true
+  revisionHistoryLimit: 10

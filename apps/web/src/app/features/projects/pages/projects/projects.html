@@ -6,12 +6,11 @@
       </p>
 
       <h2>
-        Projets
+        {{ pageTitle() }}
       </h2>
 
       <p>
-        Gérez les repositories,
-        les environnements et les déploiements.
+        {{ pageDescription() }}
       </p>
     </div>
 
@@ -120,7 +119,7 @@
       <header>
         <div>
           <h3>
-            Projets configurés
+            {{ isAdmin() ? 'Projets configurés' : 'Mes projets configurés' }}
           </h3>
 
           <p>
