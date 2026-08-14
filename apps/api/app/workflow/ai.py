@@ -1509,12 +1509,48 @@ def _call_ollama(
         "stream":
             False,
 
+        # Les modèles de raisonnement peuvent consommer une grande
+        # partie du budget dans le champ thinking. Pour cette étape
+        # nous voulons uniquement le JSON final exploitable.
+        "think":
+            (
+                "low"
+                if "gpt-oss" in model_identifier.lower()
+                else False
+            ),
+
+        "keep_alive":
+            str(
+                current_app.config.get(
+                    "AI_OLLAMA_KEEP_ALIVE",
+                    "30m",
+                )
+            ),
+
         "format":
             GENERATION_PLAN_SCHEMA,
 
         "options": {
             "temperature":
                 temperature,
+
+            # 800 tokens sont trop courts dès qu'il y a plusieurs
+            # composants. Cette valeur reste configurable.
+            "num_predict":
+                int(
+                    current_app.config.get(
+                        "AI_OLLAMA_NUM_PREDICT",
+                        4096,
+                    )
+                ),
+
+            "num_ctx":
+                int(
+                    current_app.config.get(
+                        "AI_OLLAMA_NUM_CTX",
+                        16384,
+                    )
+                ),
         },
     }
 
@@ -1965,9 +2001,25 @@ def _raise_http_error(
         )
 
     if status == 404:
+        lowered_detail = detail.lower()
+
+        if (
+            "model" in lowered_detail
+            and (
+                "not found" in lowered_detail
+                or "introuvable" in lowered_detail
+                or "does not exist" in lowered_detail
+            )
+        ):
+            raise AiConfigurationError(
+                "Le modèle demandé est introuvable chez le fournisseur IA : "
+                f"{detail}"
+            )
+
         raise AiConfigurationError(
             "L'endpoint IA est introuvable. "
-            "Vérifiez l'URL de base."
+            "Vérifiez l'URL de base. "
+            f"Détail : {detail}"
         )
 
     if status == 429:

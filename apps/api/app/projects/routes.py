@@ -561,7 +561,13 @@ def project_json(
 )
 @require_auth
 def options_route():
-    options = get_project_options()
+    options = get_project_options(
+        owner_user_id=(
+            None
+            if current_user_is_admin()
+            else current_user_id()
+        )
+    )
 
     maximum_bytes = int(
         current_app.config.get(
@@ -712,6 +718,11 @@ def validate_source_route():
                         current_user_id(),
 
                     data=data,
+                    owner_user_id=(
+                        None
+                        if current_user_is_admin()
+                        else current_user_id()
+                    ),
                 )
             )
 

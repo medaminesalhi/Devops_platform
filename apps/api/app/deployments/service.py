@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from app.deployments import repository
 from app.deployments.diagnostics import chat_with_ai, diagnose_with_ai
+from app.integrations.repository import find_connection as find_integration_connection
 
 
 ALLOWED_DEPLOYMENT_STATUSES = {
@@ -87,6 +88,31 @@ def _registry_host(base_url: str) -> str:
     parsed = urlparse(base_url)
     value = parsed.netloc or parsed.path
     return value.strip().rstrip("/")
+
+
+def _deployment_ai_connection(row: dict[str, Any]) -> dict[str, Any] | None:
+    """
+    Réutilise en priorité la connexion IA réellement choisie pendant
+    la génération. Si elle n'existe plus, retombe sur l'association
+    ai_provider de l'environnement.
+    """
+    generation_connection_id = row.get("generation_ai_connection_id")
+    if generation_connection_id not in (None, ""):
+        try:
+            connection = find_integration_connection(int(generation_connection_id))
+        except (TypeError, ValueError):
+            connection = None
+        if connection is not None and bool(connection.get("enabled", True)):
+            return connection
+
+    environment_id = row.get("environment_id")
+    if environment_id in (None, ""):
+        return None
+
+    return repository.find_environment_connection(
+        environment_id=int(environment_id),
+        service_role="ai_provider",
+    )
 
 
 def _summary_json(row: dict[str, Any]) -> dict[str, Any]:
@@ -218,8 +244,16 @@ def _diagnostic_json(
             "targetPhase": None,
             "evidence": [],
             "corrections": [],
+            "providerConnectionId": None,
+            "model": None,
+            "fallback": False,
+            "providerError": None,
             "createdAt": None,
         }
+
+    raw_response = row.get("raw_response")
+    raw = raw_response if isinstance(raw_response, dict) else {}
+
     return {
         "status": row.get("status") or "idle",
         "cause": row.get("cause"),
@@ -228,6 +262,10 @@ def _diagnostic_json(
         "targetPhase": row.get("target_phase"),
         "evidence": row.get("evidence") or [],
         "corrections": [_correction_json(item) for item in corrections],
+        "providerConnectionId": row.get("provider_connection_id"),
+        "model": row.get("model"),
+        "fallback": bool(raw.get("fallback")),
+        "providerError": raw.get("providerError") or row.get("error_message"),
         "createdAt": _iso(row.get("created_at")),
     }
 
@@ -495,7 +533,6 @@ def list_deployments(filters: dict[str, Any]) -> dict[str, Any]:
         status=status,
         date_from=filters.get("date_from"),
         date_to=filters.get("date_to"),
-        owner_user_id=filters.get("owner_user_id"),
     )
     return {
         "deployments": [_summary_json(row) for row in rows],
@@ -514,13 +551,9 @@ def get_deployment(deployment_id: int) -> dict[str, Any]:
     return _details_json(row)
 
 
-def get_options(
-    owner_user_id: int | None = None,
-) -> list[dict[str, Any]]:
+def get_options() -> list[dict[str, Any]]:
     grouped: "OrderedDict[int, dict[str, Any]]" = OrderedDict()
-    for row in repository.list_generation_options(
-        owner_user_id=owner_user_id,
-    ):
+    for row in repository.list_generation_options():
         project_id = int(row["project_id"])
         project = grouped.setdefault(
             project_id,
@@ -1003,12 +1036,10 @@ def request_diagnosis(deployment_id: int) -> dict[str, Any]:
     )
     logs = repository.list_deployment_logs(deployment_id)
     resources = repository.list_deployment_resources(deployment_id)
-    ai_connection = repository.find_environment_connection(
-        environment_id=int(row["environment_id"]),
-        service_role="ai_provider",
-    )
+    ai_connection = _deployment_ai_connection(row)
     result = diagnose_with_ai(
         ai_connection=ai_connection,
+        ai_model=row.get("generation_ai_model"),
         deployment=row,
         incident=incident,
         logs=logs,
@@ -1074,12 +1105,10 @@ def send_diagnostic_message(
     incident = repository.find_current_incident(deployment_id)
     diagnostic = repository.find_diagnostic(deployment_id)
     existing_messages = repository.list_chat_messages(deployment_id)
-    ai_connection = repository.find_environment_connection(
-        environment_id=int(row["environment_id"]),
-        service_role="ai_provider",
-    )
+    ai_connection = _deployment_ai_connection(row)
     answer = chat_with_ai(
         ai_connection=ai_connection,
+        ai_model=row.get("generation_ai_model"),
         deployment=row,
         incident=incident,
         diagnostic=diagnostic,

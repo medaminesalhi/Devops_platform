@@ -11,7 +11,11 @@ from flask import (
 )
 
 from app.auth.decorators import (
+    current_user_can_access_integration,
+    current_user_id,
+    current_user_is_admin,
     require_auth,
+    require_integration_access,
 )
 
 from app.integrations.discovery import (
@@ -151,6 +155,7 @@ def can_manage_integrations(
         roles.intersection(
             {
                 "admin",
+                "administrator",
                 "devops",
             }
         )
@@ -746,7 +751,13 @@ def get_connections():
                         connection
                     )
                     for connection
-                    in list_connections()
+                    in list_connections(
+                        owner_user_id=(
+                            None
+                            if current_user_is_admin()
+                            else current_user_id()
+                        )
+                    )
                 ],
             },
         }
@@ -757,6 +768,7 @@ def get_connections():
     "/<int:connection_id>"
 )
 @require_auth
+@require_integration_access
 def get_connection(
     connection_id: int,
 ):
@@ -921,6 +933,7 @@ def create_new_connection():
     "/<int:connection_id>"
 )
 @require_auth
+@require_integration_access
 def modify_connection(
     connection_id: int,
 ):
@@ -1089,6 +1102,7 @@ def modify_connection(
     "/<int:connection_id>"
 )
 @require_auth
+@require_integration_access
 def remove_connection(
     connection_id: int,
 ):
@@ -1168,9 +1182,23 @@ def test_draft_connection():
     )
 
     if connection_id is not None:
-        existing = find_connection(
-            int(connection_id)
-        )
+        try:
+            connection_id = int(connection_id)
+        except (TypeError, ValueError):
+            return error_response(
+                "INVALID_CONNECTION_ID",
+                "L'identifiant de connexion est invalide.",
+                400,
+            )
+
+        if not current_user_can_access_integration(connection_id):
+            return error_response(
+                "CONNECTION_NOT_FOUND",
+                "Connexion introuvable.",
+                404,
+            )
+
+        existing = find_connection(connection_id)
 
     try:
         configuration = read_payload(
@@ -1265,6 +1293,7 @@ def test_draft_connection():
     "/<int:connection_id>/test"
 )
 @require_auth
+@require_integration_access
 def test_existing_connection(
     connection_id: int,
 ):
@@ -1366,6 +1395,7 @@ def discover_draft_repositories_route():
 
 @integrations_blueprint.get("/<int:connection_id>/repositories")
 @require_auth
+@require_integration_access
 def discover_saved_repositories_route(connection_id: int):
     connection = find_connection(connection_id)
     if connection is None:

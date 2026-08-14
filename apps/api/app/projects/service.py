@@ -56,10 +56,17 @@ PROJECT_CREATE_ROLES = {
 }
 
 
-def get_project_options() -> dict[str, Any]:
+def get_project_options(
+    *,
+    owner_user_id: int | None,
+) -> dict[str, Any]:
     return {
-        "gitConnections": list_git_connections(),
-        "environments": list_available_environments(),
+        "gitConnections": list_git_connections(
+            owner_user_id=owner_user_id,
+        ),
+        "environments": list_available_environments(
+            owner_user_id=owner_user_id,
+        ),
     }
 
 
@@ -211,13 +218,15 @@ def validate_git_source(
     *,
     user_id: int,
     data: dict[str, Any],
+    owner_user_id: int | None,
     save_check: bool = True,
 ) -> tuple[
     SourceValidationResult,
     dict[str, Any],
 ]:
     connection = find_git_connection(
-        data["source_connection_id"]
+        data["source_connection_id"],
+        owner_user_id=owner_user_id,
     )
 
     if connection is None:
@@ -417,8 +426,15 @@ def create_new_project(
 ) -> dict[str, Any]:
     ensure_project_create_role(roles)
 
+    owner_user_id = (
+        None
+        if roles.intersection({"admin", "administrator"})
+        else user_id
+    )
+
     environment = find_environment(
-        data["environment_id"]
+        data["environment_id"],
+        owner_user_id=owner_user_id,
     )
 
     if environment is None:
@@ -440,6 +456,7 @@ def create_new_project(
     return create_git_source_project(
         user_id=user_id,
         data=data,
+        owner_user_id=owner_user_id,
     )
 
 
@@ -447,10 +464,12 @@ def create_git_source_project(
     *,
     user_id: int,
     data: dict[str, Any],
+    owner_user_id: int | None,
 ) -> dict[str, Any]:
     validation, credential = validate_git_source(
         user_id=user_id,
         data=data,
+        owner_user_id=owner_user_id,
         save_check=False,
     )
 

@@ -324,6 +324,8 @@ ENVIRONMENT_SELECT = """
 # ============================================================
 
 def list_available_connections(
+    *,
+    owner_user_id: int | None = None,
 ) -> list[dict[str, Any]]:
     query = """
         SELECT
@@ -342,6 +344,11 @@ def list_available_connections(
         WHERE
             integration.enabled = TRUE
 
+            AND (
+                %s::BIGINT IS NULL
+                OR integration.created_by = %s
+            )
+
         ORDER BY
             integration.provider_type,
             integration.name;
@@ -349,7 +356,8 @@ def list_available_connections(
 
     with get_database_connection() as connection:
         return connection.execute(
-            query
+            query,
+            (owner_user_id, owner_user_id),
         ).fetchall()
 
 
@@ -360,6 +368,7 @@ def list_available_connections(
 def list_environments(
     *,
     environment_type: str | None,
+    owner_user_id: int | None = None,
 ) -> list[dict[str, Any]]:
     query = f"""
         {ENVIRONMENT_SELECT}
@@ -367,6 +376,11 @@ def list_environments(
         WHERE
             environment.configuration_status
                 <> 'archived'
+
+            AND (
+                %s::BIGINT IS NULL
+                OR environment.created_by = %s
+            )
 
             AND (
                 %s::TEXT IS NULL
@@ -383,6 +397,8 @@ def list_environments(
         return connection.execute(
             query,
             (
+                owner_user_id,
+                owner_user_id,
                 environment_type,
                 environment_type,
             ),
@@ -422,6 +438,7 @@ def _validate_connections(
     database_connection,
     *,
     connection_ids: dict[str, int],
+    owner_user_id: int | None,
 ) -> list[tuple[str, int, bool]]:
     validated: list[
         tuple[str, int, bool]
@@ -462,10 +479,17 @@ def _validate_connections(
 
                     AND enabled = TRUE
 
+                    AND (
+                        %s::BIGINT IS NULL
+                        OR created_by = %s
+                    )
+
                 LIMIT 1;
             """,
             (
                 connection_id,
+                owner_user_id,
+                owner_user_id,
             ),
         ).fetchone()
 
@@ -596,6 +620,7 @@ def create_environment(
     domain: str | None,
     connection_ids: dict[str, int],
     user_id: int,
+    connection_owner_user_id: int | None,
 ) -> dict[str, Any]:
     with get_database_connection() as connection:
         validated_connections = (
@@ -603,6 +628,8 @@ def create_environment(
                 connection,
                 connection_ids=
                     connection_ids,
+                owner_user_id=
+                    connection_owner_user_id,
             )
         )
 
@@ -705,6 +732,7 @@ def update_environment(
     namespace: str,
     domain: str | None,
     connection_ids: dict[str, int],
+    connection_owner_user_id: int | None,
 ) -> dict[str, Any]:
     with get_database_connection() as connection:
         existing = connection.execute(
@@ -742,6 +770,8 @@ def update_environment(
                 connection,
                 connection_ids=
                     connection_ids,
+                owner_user_id=
+                    connection_owner_user_id,
             )
         )
 

@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import requests
 from flask import current_app, g, jsonify, request
 
-from app.auth.decorators import require_auth, require_project_access
+from app.auth.decorators import require_auth
 from app.database import get_database_connection
 from app.integrations.discovery import RepositoryDiscoveryError, discover_repositories
 from app.integrations.security import decrypt_credential
@@ -916,14 +916,24 @@ def _call_ai(
         body = {
             "model": model,
             "stream": False,
-            "think": False,
-            "keep_alive": "30m",
+            "think": "low" if "gpt-oss" in model.lower() else False,
+            "keep_alive": str(
+                current_app.config.get("AI_OLLAMA_KEEP_ALIVE", "30m")
+            ),
             "format": "json",
             "messages": [
                 {"role": "system", "content": system_message},
                 {"role": "user", "content": user_message},
             ],
-            "options": {"temperature": 0.1, "num_predict": 800},
+            "options": {
+                "temperature": 0.1,
+                "num_predict": int(
+                    current_app.config.get("AI_OLLAMA_NUM_PREDICT", 4096)
+                ),
+                "num_ctx": int(
+                    current_app.config.get("AI_OLLAMA_NUM_CTX", 16384)
+                ),
+            },
         }
     else:
         body = {
@@ -953,9 +963,14 @@ def _call_ai(
         ) from error
 
     if response.status_code >= 400:
+        detail = (response.text or "").strip().replace("\n", " ")[:1000]
+        suffix = f" Détail : {detail}" if detail else ""
         raise ProposalError(
             "AI_REQUEST_FAILED",
-            f"Le provider IA a répondu avec le code HTTP {response.status_code}.",
+            (
+                f"Le provider IA a répondu avec le code HTTP {response.status_code}."
+                f"{suffix}"
+            ),
             502,
         )
 
@@ -1699,7 +1714,6 @@ def _insert_contract(
 
 @projects_blueprint.get("/<int:project_id>/deployment-target-options")
 @require_auth
-@require_project_access
 def deployment_target_options_route(project_id: int):
     try:
         context = _load_context(project_id)
@@ -1738,7 +1752,6 @@ def deployment_target_options_route(project_id: int):
 
 @projects_blueprint.get("/<int:project_id>/deployment-proposals/latest")
 @require_auth
-@require_project_access
 def latest_deployment_proposal_route(project_id: int):
     try:
         context = _load_context(project_id)
@@ -1759,7 +1772,6 @@ def latest_deployment_proposal_route(project_id: int):
 
 @projects_blueprint.post("/<int:project_id>/deployment-proposals")
 @require_auth
-@require_project_access
 def create_deployment_proposal_route(project_id: int):
     try:
         payload = _json_object()
@@ -1835,7 +1847,6 @@ def create_deployment_proposal_route(project_id: int):
 
 @projects_blueprint.put("/<int:project_id>/deployment-proposals/<int:proposal_id>")
 @require_auth
-@require_project_access
 def update_deployment_proposal_route(project_id: int, proposal_id: int):
     try:
         payload = _json_object()
@@ -1924,7 +1935,6 @@ def update_deployment_proposal_route(project_id: int, proposal_id: int):
 
 @projects_blueprint.post("/<int:project_id>/deployment-proposals/<int:proposal_id>/confirm")
 @require_auth
-@require_project_access
 def confirm_deployment_proposal_route(project_id: int, proposal_id: int):
     try:
         context = _load_context(project_id)

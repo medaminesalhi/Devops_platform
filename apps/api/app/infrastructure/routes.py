@@ -12,7 +12,10 @@ from flask import (
 )
 
 from app.auth.decorators import (
+    current_user_id,
+    current_user_is_admin,
     require_auth,
+    require_environment_access,
 )
 
 from app.infrastructure.repository import (
@@ -512,14 +515,24 @@ def get_overview():
     )
 
 
+    owner_user_id = (
+        None
+        if current_user_is_admin()
+        else current_user_id()
+    )
+
     connections = (
-        list_available_connections()
+        list_available_connections(
+            owner_user_id=owner_user_id,
+        )
     )
 
 
     environments = list_environments(
         environment_type=
             environment_type,
+        owner_user_id=
+            owner_user_id,
     )
 
 
@@ -667,6 +680,11 @@ def create_new_environment():
             user_id=int(
                 g.current_user["id"]
             ),
+            connection_owner_user_id=(
+                None
+                if current_user_is_admin()
+                else current_user_id()
+            ),
         )
 
     except ValueError as error:
@@ -718,6 +736,7 @@ def create_new_environment():
     "<int:environment_id>"
 )
 @require_auth
+@require_environment_access
 def modify_environment(
     environment_id: int,
 ):
@@ -775,6 +794,11 @@ def modify_environment(
                 environment_id,
 
             **configuration,
+            connection_owner_user_id=(
+                None
+                if current_user_is_admin()
+                else current_user_id()
+            ),
         )
 
     except ValueError as error:
@@ -821,6 +845,7 @@ def modify_environment(
     "<int:environment_id>"
 )
 @require_auth
+@require_environment_access
 def remove_environment(
     environment_id: int,
 ):

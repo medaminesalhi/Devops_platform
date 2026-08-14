@@ -2,17 +2,19 @@
   <header class="page-heading">
     <div>
       <span class="eyebrow">
-        Plateforme de déploiement
+        {{ isAdmin() ? 'Administration des environnements' : 'Mes environnements' }}
       </span>
 
       <h1>
-        Infrastructure
+        {{ isAdmin() ? 'Toute l’infrastructure' : 'Mon infrastructure' }}
       </h1>
 
       <p>
-        Regroupez les connexions techniques utilisées
-        par vos environnements : Kubernetes, Argo CD,
-        registre, GitOps, stockage et intelligence artificielle.
+        @if (isAdmin()) {
+          Vous voyez les environnements et connexions techniques de tous les utilisateurs.
+        } @else {
+          Seuls vos environnements et vos propres intégrations peuvent être utilisés ici.
+        }
       </p>
     </div>
 

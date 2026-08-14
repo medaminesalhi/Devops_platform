@@ -216,6 +216,72 @@ def current_user_can_access_deployment(
     )
 
 
+
+def current_user_can_access_integration(
+    connection_id: int,
+) -> bool:
+    """
+    Un administrateur peut accéder à toutes les intégrations.
+    Tout autre utilisateur ne peut accéder qu'aux intégrations qu'il a créées.
+    Les anciennes intégrations sans created_by restent réservées aux admins.
+    """
+
+    user_id = current_user_id()
+    if user_id is None:
+        return False
+
+    with get_database_connection() as connection:
+        row = connection.execute(
+            """
+                SELECT id, created_by
+                FROM integration_connections
+                WHERE id = %s
+                LIMIT 1;
+            """,
+            (connection_id,),
+        ).fetchone()
+
+    if row is None:
+        return False
+
+    if current_user_is_admin():
+        return True
+
+    owner_id = row.get("created_by")
+    return owner_id is not None and int(owner_id) == user_id
+
+
+def current_user_can_access_environment(
+    environment_id: int,
+) -> bool:
+    """
+    Applique le cloisonnement multi-utilisateur aux infrastructures.
+    """
+
+    user_id = current_user_id()
+    if user_id is None:
+        return False
+
+    with get_database_connection() as connection:
+        row = connection.execute(
+            """
+                SELECT id, created_by
+                FROM deployment_environments
+                WHERE id = %s
+                LIMIT 1;
+            """,
+            (environment_id,),
+        ).fetchone()
+
+    if row is None:
+        return False
+
+    if current_user_is_admin():
+        return True
+
+    owner_id = row.get("created_by")
+    return owner_id is not None and int(owner_id) == user_id
+
 def require_auth(
     route_function: RouteFunction,
 ) -> RouteFunction:
@@ -382,3 +448,51 @@ def require_deployment_access(
         RouteFunction,
         wrapper,
     )
+
+
+def require_integration_access(
+    route_function: RouteFunction,
+) -> RouteFunction:
+    """À placer après @require_auth sur une route contenant connection_id."""
+
+    @wraps(route_function)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        connection_id = kwargs.get("connection_id")
+        if connection_id is None:
+            raise RuntimeError(
+                "require_integration_access nécessite un paramètre connection_id."
+            )
+
+        if not current_user_can_access_integration(int(connection_id)):
+            return resource_not_found_error(
+                code="CONNECTION_NOT_FOUND",
+                message="Connexion introuvable.",
+            )
+
+        return route_function(*args, **kwargs)
+
+    return cast(RouteFunction, wrapper)
+
+
+def require_environment_access(
+    route_function: RouteFunction,
+) -> RouteFunction:
+    """À placer après @require_auth sur une route contenant environment_id."""
+
+    @wraps(route_function)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        environment_id = kwargs.get("environment_id")
+        if environment_id is None:
+            raise RuntimeError(
+                "require_environment_access nécessite un paramètre environment_id."
+            )
+
+        if not current_user_can_access_environment(int(environment_id)):
+            return resource_not_found_error(
+                code="ENVIRONMENT_NOT_FOUND",
+                message="Environnement introuvable.",
+            )
+
+        return route_function(*args, **kwargs)
+
+    return cast(RouteFunction, wrapper)

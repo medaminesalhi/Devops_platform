@@ -191,6 +191,10 @@ export interface DeploymentDiagnostic {
   targetPhase: 'integration' | 'analysis' | 'proposal' | 'generation' | 'deployment' | null;
   evidence: string[];
   corrections: DeploymentCorrection[];
+  providerConnectionId: number | null;
+  model: string | null;
+  fallback: boolean;
+  providerError: string | null;
   createdAt: string | null;
 }
 
@@ -599,6 +603,10 @@ export class DeploymentsService {
             risk: 'low',
             status: 'proposed',
           }],
+      providerConnectionId: 1,
+      model: 'demo-model',
+      fallback: false,
+      providerError: null,
       createdAt: now,
     };
     deployment.chat.push({
@@ -800,6 +808,10 @@ export class DeploymentsService {
       targetPhase: null,
       evidence: [],
       corrections: [],
+      providerConnectionId: null,
+      model: null,
+      fallback: false,
+      providerError: null,
       createdAt: null,
     };
   }

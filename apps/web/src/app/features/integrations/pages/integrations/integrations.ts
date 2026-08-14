@@ -25,6 +25,10 @@ import {
 } from 'rxjs';
 
 import {
+  Auth,
+} from '../../../../core/auth/auth';
+
+import {
   CATEGORY_DEFINITIONS,
   IntegrationCategory,
   PROVIDER_DEFINITIONS,
@@ -76,6 +80,12 @@ export class Integrations
   implements OnInit {
   private readonly integrationsService =
     inject(IntegrationsService);
+
+  private readonly auth =
+    inject(Auth);
+
+  readonly isAdmin =
+    this.auth.isAdmin;
 
   private readonly formBuilder =
     inject(FormBuilder);

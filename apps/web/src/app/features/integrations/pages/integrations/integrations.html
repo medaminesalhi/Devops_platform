@@ -2,17 +2,19 @@
   <header class="page-header">
     <div>
       <span class="eyebrow">
-        Configuration de la plateforme
+        {{ isAdmin() ? 'Administration des connexions' : 'Mes connexions' }}
       </span>
 
       <h1>
-        Intégrations
+        {{ isAdmin() ? 'Toutes les intégrations' : 'Mes intégrations' }}
       </h1>
 
       <p>
-        Connectez les services utilisés pour le code source,
-        les images, le déploiement, Kubernetes, le stockage
-        et les modèles d’intelligence artificielle.
+        @if (isAdmin()) {
+          Vous voyez les intégrations de tous les utilisateurs de la plateforme.
+        } @else {
+          Seules les intégrations créées par votre compte sont visibles et utilisables.
+        }
       </p>
     </div>
 

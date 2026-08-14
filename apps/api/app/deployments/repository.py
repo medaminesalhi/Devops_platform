@@ -19,6 +19,9 @@ DEPLOYMENT_SELECT = """
         environment.domain AS environment_domain,
 
         generation.analysis_run_id,
+        generation.ai_connection_id AS generation_ai_connection_id,
+        generation.ai_model AS generation_ai_model,
+        generation.generation_mode AS generation_mode,
         analysis.analyzed_commit_sha AS source_commit,
 
         COALESCE(
@@ -141,14 +144,9 @@ def list_deployments(
     status: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
-    owner_user_id: int | None = None,
 ) -> list[dict[str, Any]]:
     conditions = ["1 = 1"]
     parameters: list[Any] = []
-
-    if owner_user_id is not None:
-        conditions.append("project.created_by = %s")
-        parameters.append(owner_user_id)
 
     if search:
         conditions.append(
@@ -362,9 +360,7 @@ def list_corrections(deployment_id: int) -> list[dict[str, Any]]:
         ).fetchall()
 
 
-def list_generation_options(
-    owner_user_id: int | None = None,
-) -> list[dict[str, Any]]:
+def list_generation_options() -> list[dict[str, Any]]:
     with get_database_connection() as connection:
         return connection.execute(
             """
@@ -410,10 +406,6 @@ def list_generation_options(
                 WHERE project.archived_at IS NULL
                   AND project.status = 'active'
                   AND generation.status = 'confirmed'
-                  AND (
-                      %s::BIGINT IS NULL
-                      OR project.created_by = %s
-                  )
 
                 GROUP BY
                     project.id,
@@ -431,8 +423,7 @@ def list_generation_options(
                        FILTER (WHERE artifact.review_status <> 'approved') = 0
 
                 ORDER BY project.name, generation.created_at DESC;
-            """,
-            (owner_user_id, owner_user_id),
+            """
         ).fetchall()
 
 

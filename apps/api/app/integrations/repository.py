@@ -74,15 +74,28 @@ def _fetch_connection(
 
 
 def list_connections(
+    *,
+    owner_user_id: int | None = None,
 ) -> list[dict[str, Any]]:
+    """
+    Liste les connexions visibles. owner_user_id=None signifie vue globale
+    (réservée à l'administrateur par la couche HTTP).
+    """
+
     with get_database_connection() as connection:
         return connection.execute(
             f"""
                 {CONNECTION_SELECT}
 
+                WHERE (
+                    %s::BIGINT IS NULL
+                    OR connection.created_by = %s
+                )
+
                 ORDER BY
                     connection.name ASC;
-            """
+            """,
+            (owner_user_id, owner_user_id),
         ).fetchall()
 
 

@@ -25,6 +25,10 @@ import {
 } from 'rxjs';
 
 import {
+  Auth,
+} from '../../../../core/auth/auth';
+
+import {
   ArchivedEnvironment,
   AvailableConnection,
   DeploymentEnvironment,
@@ -280,6 +284,12 @@ export class Infrastructure
     inject(
       InfrastructureService
     );
+
+  private readonly auth =
+    inject(Auth);
+
+  readonly isAdmin =
+    this.auth.isAdmin;
 
   private readonly formBuilder =
     inject(

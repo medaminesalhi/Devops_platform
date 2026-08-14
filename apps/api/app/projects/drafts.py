@@ -7,7 +7,11 @@ from typing import Any
 from flask import g, jsonify, request
 from werkzeug.datastructures import FileStorage
 
-from app.auth.decorators import require_auth, require_project_access
+from app.auth.decorators import (
+    current_user_is_admin,
+    require_auth,
+    require_project_access,
+)
 from app.database import get_database_connection
 from app.integrations.security import decrypt_credential, encrypt_credential
 from app.projects.archive_provider import ArchiveProviderError, archive_source_provider
@@ -73,6 +77,10 @@ def _user_id() -> int:
 
 def _roles() -> set[str]:
     return set(g.current_user.get("roles") or [])
+
+
+def _owner_user_id() -> int | None:
+    return None if current_user_is_admin() else _user_id()
 
 
 def _json_object() -> dict[str, Any]:
@@ -162,12 +170,16 @@ def _find_git_connection(connection_id: int) -> dict[str, Any] | None:
         WHERE connection.id = %s
           AND connection.enabled = TRUE
           AND connection.provider_type IN ('gitlab', 'github', 'git')
+          AND (
+              %s::BIGINT IS NULL
+              OR connection.created_by = %s
+          )
         LIMIT 1;
     """
     with get_database_connection() as connection:
         return connection.execute(
             query,
-            (connection_id,),
+            (connection_id, _owner_user_id(), _owner_user_id()),
         ).fetchone()
 
 
@@ -191,11 +203,18 @@ def _find_environment(environment_id: int) -> dict[str, Any] | None:
           ON link.environment_id = environment.id
         WHERE environment.id = %s
           AND environment.configuration_status <> 'archived'
+          AND (
+              %s::BIGINT IS NULL
+              OR environment.created_by = %s
+          )
         GROUP BY environment.id
         LIMIT 1;
     """
     with get_database_connection() as connection:
-        return connection.execute(query, (environment_id,)).fetchone()
+        return connection.execute(
+            query,
+            (environment_id, _owner_user_id(), _owner_user_id()),
+        ).fetchone()
 
 
 def _ensure_draft_editable(project: dict[str, Any]) -> None:

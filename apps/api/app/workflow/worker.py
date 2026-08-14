@@ -659,308 +659,179 @@ def run_generation_job(
                 or "hybrid"
             )
 
-            if (
-                generation_mode
-                == "hybrid"
-            ):
+            if generation_mode == "hybrid":
                 update_generation_step(
-                    generation_run_id=
-                        generation_run_id,
+                    generation_run_id=generation_run_id,
+                    project_id=project_id,
+                    progress=25,
+                    step="ai_planning",
+                    message="Demande d'un plan structuré au fournisseur IA.",
+                    details={"sourceFileCount": len(source_files)},
+                )
 
-                    project_id=
-                        project_id,
+                ai_connection_id = generation.get("ai_connection_id")
+                ai_model = str(generation.get("ai_model") or "").strip()
 
-                    progress=
-                        25,
+                if ai_connection_id is None or not ai_model:
+                    add_generation_event(
+                        generation_run_id=generation_run_id,
+                        level="warning",
+                        step="ai_planning",
+                        message=(
+                            "Configuration IA incomplète. La génération continue "
+                            "avec le moteur déterministe SApixi."
+                        ),
+                        details={
+                            "fallback": True,
+                            "reason": "AI_CONFIGURATION_REQUIRED",
+                        },
+                    )
+                else:
+                    ai_connection = find_ai_connection(int(ai_connection_id))
 
-                    step=
-                        "ai_planning",
-
-                    message=(
-                        "Demande d'un plan "
-                        "structuré au fournisseur IA."
-                    ),
-
-                    details={
-                        "sourceFileCount":
-                            len(
-                                source_files
+                    if ai_connection is None:
+                        add_generation_event(
+                            generation_run_id=generation_run_id,
+                            level="warning",
+                            step="ai_planning",
+                            message=(
+                                "La connexion IA sélectionnée n'est plus disponible. "
+                                "La génération continue en mode déterministe."
                             ),
-                    },
-                )
-
-                ai_connection_id = (
-                    generation.get(
-                        "ai_connection_id"
-                    )
-                )
-
-                ai_model = str(
-                    generation.get(
-                        "ai_model"
-                    )
-                    or ""
-                ).strip()
-
-                if (
-                    ai_connection_id is None
-
-                    or not ai_model
-                ):
-                    raise WorkflowWorkerError(
-                        (
-                            "AI_CONFIGURATION_"
-                            "REQUIRED"
-                        ),
-
-                        (
-                            "La génération hybride "
-                            "nécessite une connexion "
-                            "et un modèle IA."
-                        ),
-                    )
-
-                ai_connection = (
-                    find_ai_connection(
-                        int(
-                            ai_connection_id
+                            details={
+                                "fallback": True,
+                                "reason": "AI_CONNECTION_NOT_FOUND",
+                                "connectionId": int(ai_connection_id),
+                                "model": ai_model,
+                            },
                         )
-                    )
-                )
+                    else:
+                        ai_payload = build_ai_payload(
+                            contract=contract,
+                            analysis_summary=(
+                                source_context.get("analysis_summary") or {}
+                            ),
+                            source_files=source_files,
+                        )
 
-                if ai_connection is None:
-                    raise WorkflowWorkerError(
-                        "AI_CONNECTION_NOT_FOUND",
-
-                        (
-                            "La connexion IA a été "
-                            "supprimée ou désactivée."
-                        ),
-                    )
-
-                ai_payload = (
-                    build_ai_payload(
-                        contract=
-                            contract,
-
-                        analysis_summary=(
-                            source_context.get(
-                                "analysis_summary"
+                        source_bytes = sum(
+                            len(
+                                str(item.get("content") or "").encode("utf-8")
                             )
-                            or {}
-                        ),
+                            for item in source_files
+                        )
 
-                        source_files=
-                            source_files,
-                    )
-                )
+                        ai_run = create_ai_run(
+                            project_id=project_id,
+                            contract_id=int(contract_id),
+                            generation_run_id=generation_run_id,
+                            connection_id=int(ai_connection_id),
+                            provider_type=str(ai_connection["provider_type"]),
+                            model_identifier=ai_model,
+                            run_type="generation_plan",
+                            prompt_version=PROMPT_VERSION,
+                            request_summary={
+                                "contractRevision": contract_row.get("revision"),
+                                "componentCount": len(
+                                    contract.get("components") or []
+                                ),
+                                "sourceFileCount": len(source_files),
+                                "sourceBytes": source_bytes,
+                            },
+                            created_by=int(generation["created_by"]),
+                        )
 
-                source_bytes = sum(
-                    len(
-                        str(
-                            item.get(
-                                "content"
+                        attach_ai_run_to_generation(
+                            generation_run_id=generation_run_id,
+                            ai_run_id=int(ai_run["id"]),
+                            connection_id=int(ai_connection_id),
+                            model_identifier=ai_model,
+                            prompt_version=PROMPT_VERSION,
+                        )
+
+                        try:
+                            ai_result = execute_generation_plan(
+                                ai_run_id=int(ai_run["id"]),
+                                connection_id=int(ai_connection_id),
+                                model_identifier=ai_model,
+                                payload=ai_payload,
+                                temperature=0.1,
                             )
-                            or ""
-                        ).encode(
-                            "utf-8"
-                        )
-                    )
+                        except AiProviderError as error:
+                            # Le mode hybride signifie que l'IA enrichit le
+                            # plan, mais ne doit pas empêcher le moteur sûr
+                            # et déterministe de produire les artefacts.
+                            ai_plan = None
+                            add_generation_event(
+                                generation_run_id=generation_run_id,
+                                level="warning",
+                                step="ai_planning",
+                                message=(
+                                    "Le fournisseur IA n'a pas fourni de plan "
+                                    "exploitable. SApixi continue avec son moteur "
+                                    f"déterministe. Cause : {str(error)}"
+                                ),
+                                details={
+                                    "fallback": True,
+                                    "providerType": str(
+                                        ai_connection["provider_type"]
+                                    ),
+                                    "model": ai_model,
+                                    "errorCode": error.code,
+                                    "errorMessage": str(error),
+                                },
+                            )
+                        else:
+                            ai_plan = ai_result.output
 
-                    for item
-                    in source_files
-                )
+                            add_generation_event(
+                                generation_run_id=generation_run_id,
+                                level="success",
+                                step="ai_planning",
+                                message="Le plan IA structuré a été validé.",
+                                details={
+                                    "providerType": ai_result.provider_type,
+                                    "model": ai_result.model_identifier,
+                                    "latencyMs": ai_result.latency_ms,
+                                    "questionCount": len(
+                                        ai_plan.get("questions") or []
+                                    ),
+                                    "warningCount": len(
+                                        ai_plan.get("warnings") or []
+                                    ),
+                                },
+                            )
 
-                ai_run = create_ai_run(
-                    project_id=
-                        project_id,
-
-                    contract_id=
-                        int(contract_id),
-
-                    generation_run_id=
-                        generation_run_id,
-
-                    connection_id=
-                        int(
-                            ai_connection_id
-                        ),
-
-                    provider_type=
-                        str(
-                            ai_connection[
-                                "provider_type"
+                            blocking_questions = [
+                                question
+                                for question in (ai_plan.get("questions") or [])
+                                if (
+                                    isinstance(question, dict)
+                                    and question.get("blocking")
+                                )
                             ]
-                        ),
 
-                    model_identifier=
-                        ai_model,
-
-                    run_type=
-                        "generation_plan",
-
-                    prompt_version=
-                        PROMPT_VERSION,
-
-                    request_summary={
-                        "contractRevision":
-                            contract_row.get(
-                                "revision"
-                            ),
-
-                        "componentCount":
-                            len(
-                                contract.get(
-                                    "components"
+                            if blocking_questions:
+                                # Le contrat est déjà confirmé à cette étape.
+                                # Une question inventée par le LLM ne doit pas
+                                # bloquer une génération qui reste possible à
+                                # partir du contrat validé.
+                                add_generation_event(
+                                    generation_run_id=generation_run_id,
+                                    level="warning",
+                                    step="ai_planning",
+                                    message=(
+                                        "Le plan IA contient des questions "
+                                        "bloquantes. Il est ignoré et la génération "
+                                        "continue à partir du contrat confirmé."
+                                    ),
+                                    details={
+                                        "fallback": True,
+                                        "reason": "AI_BLOCKING_QUESTIONS",
+                                        "questionCount": len(blocking_questions),
+                                    },
                                 )
-                                or []
-                            ),
-
-                        "sourceFileCount":
-                            len(
-                                source_files
-                            ),
-
-                        "sourceBytes":
-                            source_bytes,
-                    },
-
-                    created_by=
-                        int(
-                            generation[
-                                "created_by"
-                            ]
-                        ),
-                )
-
-                attach_ai_run_to_generation(
-                    generation_run_id=
-                        generation_run_id,
-
-                    ai_run_id=
-                        int(
-                            ai_run["id"]
-                        ),
-
-                    connection_id=
-                        int(
-                            ai_connection_id
-                        ),
-
-                    model_identifier=
-                        ai_model,
-
-                    prompt_version=
-                        PROMPT_VERSION,
-                )
-
-                ai_result = (
-                    execute_generation_plan(
-                        ai_run_id=
-                            int(
-                                ai_run["id"]
-                            ),
-
-                        connection_id=
-                            int(
-                                ai_connection_id
-                            ),
-
-                        model_identifier=
-                            ai_model,
-
-                        payload=
-                            ai_payload,
-
-                        temperature=
-                            0.1,
-                    )
-                )
-
-                ai_plan = (
-                    ai_result.output
-                )
-
-                add_generation_event(
-                    generation_run_id=
-                        generation_run_id,
-
-                    level=
-                        "success",
-
-                    step=
-                        "ai_planning",
-
-                    message=(
-                        "Le plan IA structuré "
-                        "a été validé."
-                    ),
-
-                    details={
-                        "providerType":
-                            ai_result
-                            .provider_type,
-
-                        "model":
-                            ai_result
-                            .model_identifier,
-
-                        "latencyMs":
-                            ai_result
-                            .latency_ms,
-
-                        "questionCount":
-                            len(
-                                ai_plan.get(
-                                    "questions"
-                                )
-                                or []
-                            ),
-
-                        "warningCount":
-                            len(
-                                ai_plan.get(
-                                    "warnings"
-                                )
-                                or []
-                            ),
-                    },
-                )
-
-                blocking_questions = [
-                    question
-
-                    for question
-                    in (
-                        ai_plan.get(
-                            "questions"
-                        )
-                        or []
-                    )
-
-                    if (
-                        isinstance(
-                            question,
-                            dict,
-                        )
-
-                        and question.get(
-                            "blocking"
-                        )
-                    )
-                ]
-
-                if blocking_questions:
-                    raise WorkflowWorkerError(
-                        "AI_BLOCKING_QUESTIONS",
-
-                        (
-                            "Le fournisseur IA a "
-                            "identifié des informations "
-                            "bloquantes. Complétez le "
-                            "contrat avant de relancer."
-                        ),
-                    )
+                                ai_plan = None
 
             update_generation_step(
                 generation_run_id=
@@ -1169,13 +1040,17 @@ def collect_ai_source_files(
         ):
             maximum_bytes = 200_000
 
+    configured_cap = int(
+        current_app.config.get(
+            "AI_MAX_SOURCE_CONTEXT_BYTES",
+            40_000,
+        )
+    )
+
     maximum_bytes = min(
         500_000,
-
-        max(
-            20_000,
-            maximum_bytes,
-        ),
+        max(8_000, maximum_bytes),
+        max(8_000, configured_cap),
     )
 
     candidate_roots: list[

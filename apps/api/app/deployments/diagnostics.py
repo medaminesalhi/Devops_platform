@@ -251,25 +251,147 @@ def fallback_diagnostic(
 
 
 class DeploymentAiClient:
-    def __init__(self, connection: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        connection: dict[str, Any],
+        *,
+        model: str | None = None,
+    ) -> None:
         self.connection = connection
         self.base_url = str(connection.get("base_url") or "").rstrip("/")
         self.provider_type = str(connection.get("provider_type") or "").lower()
         self.verify_ssl = bool(connection.get("verify_ssl", True))
         self.secret = decrypt_credential(connection.get("secret_ciphertext"))
-        self.username = connection.get("username")
+        self.username = str(connection.get("username") or "")
+        self.auth_type = str(connection.get("auth_type") or "none").lower()
         self.timeout = int(
-            current_app.config.get("DEPLOYMENT_AI_TIMEOUT_SECONDS", 90)
+            current_app.config.get(
+                "DEPLOYMENT_AI_TIMEOUT_SECONDS",
+                current_app.config.get("AI_REQUEST_TIMEOUT_SECONDS", 180),
+            )
         )
-        self.model = str(
-            current_app.config.get("DEPLOYMENT_AI_MODEL", "llama3.1:8b")
+        self.num_predict = int(
+            current_app.config.get("AI_OLLAMA_NUM_PREDICT", 4096)
         )
+        self.num_ctx = int(
+            current_app.config.get("AI_OLLAMA_NUM_CTX", 16384)
+        )
+        self.keep_alive = str(
+            current_app.config.get("AI_OLLAMA_KEEP_ALIVE", "30m")
+        )
+        if not self.base_url:
+            raise DiagnosticProviderError("L’URL du provider IA est absente.")
+        self.model = self._resolve_model(model)
 
     def _headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json"}
-        if self.secret:
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "SApixi-Platform/1.0",
+        }
+        if self.auth_type == "token" and self.secret:
             headers["Authorization"] = f"Bearer {self.secret}"
         return headers
+
+    def _auth(self) -> tuple[str, str] | None:
+        if self.auth_type == "basic" and self.secret:
+            return (self.username, self.secret)
+        return None
+
+    def _request(
+        self,
+        method: str,
+        url: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+    ) -> requests.Response:
+        try:
+            response = requests.request(
+                method=method,
+                url=url,
+                json=json_body,
+                headers=self._headers(),
+                auth=self._auth(),
+                timeout=self.timeout,
+                verify=self.verify_ssl,
+            )
+        except requests.RequestException as error:
+            raise DiagnosticProviderError(
+                "Connexion impossible au provider IA : "
+                f"{sanitize_text(str(error), 800)}"
+            ) from error
+
+        if response.status_code >= 400:
+            detail = sanitize_text(
+                (response.text or "").strip().replace("\n", " "),
+                1200,
+            )
+            if response.status_code == 404 and "model" in detail.lower():
+                raise DiagnosticProviderError(
+                    "Le modèle IA demandé est introuvable chez le provider. "
+                    f"Détail : {detail or 'HTTP 404'}"
+                )
+            raise DiagnosticProviderError(
+                f"Le provider IA a répondu HTTP {response.status_code}. "
+                f"Détail : {detail or 'aucun détail'}"
+            )
+
+        return response
+
+    @staticmethod
+    def _json_body(response: requests.Response) -> dict[str, Any]:
+        try:
+            body = response.json()
+        except ValueError as error:
+            raise DiagnosticProviderError(
+                "Le provider IA n'a pas retourné une réponse JSON valide."
+            ) from error
+        if not isinstance(body, dict):
+            raise DiagnosticProviderError(
+                "La réponse du provider IA doit être un objet JSON."
+            )
+        return body
+
+    def _discover_ollama_models(self) -> list[str]:
+        response = self._request(
+            "GET",
+            urljoin(self.base_url + "/", "api/tags"),
+        )
+        body = self._json_body(response)
+        values: list[str] = []
+        for item in body.get("models") or []:
+            if not isinstance(item, dict):
+                continue
+            value = str(item.get("model") or item.get("name") or "").strip()
+            if value and value not in values:
+                values.append(value)
+        return values
+
+    def _resolve_model(self, preferred_model: str | None) -> str:
+        preferred = str(preferred_model or "").strip()
+        if preferred:
+            return preferred
+
+        configured = str(
+            current_app.config.get("DEPLOYMENT_AI_MODEL", "") or ""
+        ).strip()
+        if configured:
+            return configured
+
+        if self.provider_type == "ollama":
+            models = self._discover_ollama_models()
+            if models:
+                # Les modèles d'embedding ne sont pas adaptés au chat.
+                chat_models = [
+                    value
+                    for value in models
+                    if "embed" not in value.lower()
+                ]
+                return (chat_models or models)[0]
+
+        raise DiagnosticProviderError(
+            "Aucun modèle IA n'est configuré pour le diagnostic."
+        )
 
     def complete_json(
         self,
@@ -281,26 +403,31 @@ class DeploymentAiClient:
             raise DiagnosticProviderError("L’URL du provider IA est absente.")
 
         if self.provider_type == "ollama":
-            response = requests.post(
+            response = self._request(
+                "POST",
                 urljoin(self.base_url + "/", "api/chat"),
-                json={
+                json_body={
                     "model": self.model,
                     "stream": False,
+                    "think": "low" if "gpt-oss" in self.model.lower() else False,
+                    "keep_alive": self.keep_alive,
                     "format": "json",
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
+                    "options": {
+                        "temperature": 0.1,
+                        "num_predict": self.num_predict,
+                        "num_ctx": self.num_ctx,
+                    },
                 },
-                headers=self._headers(),
-                timeout=self.timeout,
-                verify=self.verify_ssl,
             )
-            response.raise_for_status()
-            body = response.json()
+            body = self._json_body(response)
+            message = body.get("message")
             content = (
-                body.get("message", {}).get("content")
-                if isinstance(body, dict)
+                message.get("content")
+                if isinstance(message, dict)
                 else None
             )
         else:
@@ -309,32 +436,32 @@ class DeploymentAiClient:
                 if self.base_url.endswith("/chat/completions")
                 else urljoin(self.base_url + "/", "v1/chat/completions")
             )
-            response = requests.post(
+            response = self._request(
+                "POST",
                 endpoint,
-                json={
+                json_body={
                     "model": self.model,
                     "temperature": 0.1,
+                    "max_tokens": self.num_predict,
                     "response_format": {"type": "json_object"},
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": user_prompt},
                     ],
                 },
-                headers=self._headers(),
-                timeout=self.timeout,
-                verify=self.verify_ssl,
             )
-            response.raise_for_status()
-            body = response.json()
-            choices = body.get("choices") if isinstance(body, dict) else None
+            body = self._json_body(response)
+            choices = body.get("choices")
             content = (
                 choices[0].get("message", {}).get("content")
-                if isinstance(choices, list) and choices
+                if isinstance(choices, list) and choices and isinstance(choices[0], dict)
                 else None
             )
 
         if not isinstance(content, str) or not content.strip():
-            raise DiagnosticProviderError("Le provider IA a retourné une réponse vide.")
+            raise DiagnosticProviderError(
+                "Le provider IA a retourné une réponse vide."
+            )
         return _extract_json(content)
 
     def complete_text(
@@ -343,60 +470,73 @@ class DeploymentAiClient:
         system_prompt: str,
         messages: list[dict[str, str]],
     ) -> str:
+        if not self.base_url:
+            raise DiagnosticProviderError("L’URL du provider IA est absente.")
+
         if self.provider_type == "ollama":
-            response = requests.post(
+            response = self._request(
+                "POST",
                 urljoin(self.base_url + "/", "api/chat"),
-                json={
+                json_body={
                     "model": self.model,
                     "stream": False,
+                    "think": "low" if "gpt-oss" in self.model.lower() else False,
+                    "keep_alive": self.keep_alive,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         *messages,
                     ],
+                    "options": {
+                        "temperature": 0.2,
+                        "num_predict": self.num_predict,
+                        "num_ctx": self.num_ctx,
+                    },
                 },
-                headers=self._headers(),
-                timeout=self.timeout,
-                verify=self.verify_ssl,
             )
-            response.raise_for_status()
-            body = response.json()
-            content = body.get("message", {}).get("content")
+            body = self._json_body(response)
+            message = body.get("message")
+            content = (
+                message.get("content")
+                if isinstance(message, dict)
+                else None
+            )
         else:
             endpoint = (
                 self.base_url
                 if self.base_url.endswith("/chat/completions")
                 else urljoin(self.base_url + "/", "v1/chat/completions")
             )
-            response = requests.post(
+            response = self._request(
+                "POST",
                 endpoint,
-                json={
+                json_body={
                     "model": self.model,
                     "temperature": 0.2,
+                    "max_tokens": self.num_predict,
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         *messages,
                     ],
                 },
-                headers=self._headers(),
-                timeout=self.timeout,
-                verify=self.verify_ssl,
             )
-            response.raise_for_status()
-            body = response.json()
-            choices = body.get("choices") if isinstance(body, dict) else None
+            body = self._json_body(response)
+            choices = body.get("choices")
             content = (
                 choices[0].get("message", {}).get("content")
-                if isinstance(choices, list) and choices
+                if isinstance(choices, list) and choices and isinstance(choices[0], dict)
                 else None
             )
-        if not isinstance(content, str) or not content.strip():
-            raise DiagnosticProviderError("Le provider IA a retourné une réponse vide.")
-        return sanitize_text(content.strip(), 12000)
 
+        if not isinstance(content, str) or not content.strip():
+            raise DiagnosticProviderError(
+                "Le provider IA a retourné une réponse vide."
+            )
+        return sanitize_text(content.strip(), 12000)
 
 def diagnose_with_ai(
     *,
     ai_connection: dict[str, Any] | None,
+    ai_model: str | None,
     deployment: dict[str, Any],
     incident: dict[str, Any],
     logs: list[dict[str, Any]],
@@ -409,9 +549,9 @@ def diagnose_with_ai(
         {
             "scope": item.get("scope"),
             "level": item.get("level"),
-            "message": sanitize_text(str(item.get("message") or ""), 1200),
+            "message": sanitize_text(str(item.get("message") or ""), 600),
         }
-        for item in logs[-80:]
+        for item in logs[-30:]
     ]
     safe_resources = [
         {
@@ -419,9 +559,9 @@ def diagnose_with_ai(
             "name": item.get("name"),
             "status": item.get("status"),
             "health": item.get("health"),
-            "message": sanitize_text(str(item.get("message") or ""), 600),
+            "message": sanitize_text(str(item.get("message") or ""), 300),
         }
-        for item in resources[-80:]
+        for item in resources[-30:]
     ]
 
     system_prompt = (
@@ -459,7 +599,10 @@ def diagnose_with_ai(
     )
 
     try:
-        client = DeploymentAiClient(ai_connection)
+        client = DeploymentAiClient(
+            ai_connection,
+            model=ai_model,
+        )
         payload = client.complete_json(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
@@ -471,6 +614,8 @@ def diagnose_with_ai(
     except Exception as error:
         current_app.logger.exception("Diagnostic IA indisponible.")
         result = fallback_diagnostic(incident=incident, logs=logs)
+        result["provider_connection_id"] = ai_connection.get("id")
+        result["model"] = str(ai_model or "").strip() or None
         result["raw"] = {
             "fallback": True,
             "providerError": sanitize_text(str(error), 1000),
@@ -481,6 +626,7 @@ def diagnose_with_ai(
 def chat_with_ai(
     *,
     ai_connection: dict[str, Any] | None,
+    ai_model: str | None,
     deployment: dict[str, Any],
     incident: dict[str, Any] | None,
     diagnostic: dict[str, Any] | None,
@@ -506,21 +652,25 @@ def chat_with_ai(
     history = [
         {
             "role": item["role"] if item["role"] in {"assistant", "user"} else "assistant",
-            "content": sanitize_text(str(item.get("content") or ""), 4000),
+            "content": sanitize_text(str(item.get("content") or ""), 1800),
         }
-        for item in messages[-20:]
+        for item in messages[-12:]
         if item.get("role") in {"assistant", "user", "system"}
     ]
     try:
-        client = DeploymentAiClient(ai_connection)
+        client = DeploymentAiClient(
+            ai_connection,
+            model=ai_model,
+        )
         return client.complete_text(
             system_prompt=system_prompt,
             messages=history,
         )
-    except Exception:
+    except Exception as error:
         current_app.logger.exception("Conversation IA indisponible.")
+        detail = sanitize_text(str(error), 700)
         return (
             "Je ne peux pas joindre le provider IA pour le moment. "
-            "Le diagnostic déjà enregistré reste disponible. Vérifiez la connexion "
-            "IA de l’environnement puis réessayez."
+            "Le diagnostic déjà enregistré reste disponible. "
+            f"Détail provider : {detail}"
         )

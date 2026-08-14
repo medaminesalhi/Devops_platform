@@ -137,7 +137,10 @@ PROJECT_SELECT = """
 """
 
 
-def list_git_connections() -> list[dict[str, Any]]:
+def list_git_connections(
+    *,
+    owner_user_id: int | None = None,
+) -> list[dict[str, Any]]:
     query = """
         SELECT
             connection.id,
@@ -173,18 +176,25 @@ def list_git_connections() -> list[dict[str, Any]]:
         WHERE
             connection.provider_type = 'gitlab'
             AND connection.enabled = TRUE
+            AND (
+                %s::BIGINT IS NULL
+                OR connection.created_by = %s
+            )
 
         ORDER BY connection.name;
     """
 
     with get_database_connection() as connection:
         return connection.execute(
-            query
+            query,
+            (owner_user_id, owner_user_id),
         ).fetchall()
 
 
 def find_git_connection(
     connection_id: int,
+    *,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any] | None:
     query = """
         SELECT
@@ -223,6 +233,10 @@ def find_git_connection(
             connection.id = %s
             AND connection.provider_type = 'gitlab'
             AND connection.enabled = TRUE
+            AND (
+                %s::BIGINT IS NULL
+                OR connection.created_by = %s
+            )
 
         LIMIT 1;
     """
@@ -230,11 +244,14 @@ def find_git_connection(
     with get_database_connection() as connection:
         return connection.execute(
             query,
-            (connection_id,),
+            (connection_id, owner_user_id, owner_user_id),
         ).fetchone()
 
 
-def list_available_environments() -> list[dict[str, Any]]:
+def list_available_environments(
+    *,
+    owner_user_id: int | None = None,
+) -> list[dict[str, Any]]:
     query = """
         SELECT
             id,
@@ -247,18 +264,25 @@ def list_available_environments() -> list[dict[str, Any]]:
         FROM deployment_environments
 
         WHERE configuration_status <> 'archived'
+          AND (
+              %s::BIGINT IS NULL
+              OR created_by = %s
+          )
 
         ORDER BY name;
     """
 
     with get_database_connection() as connection:
         return connection.execute(
-            query
+            query,
+            (owner_user_id, owner_user_id),
         ).fetchall()
 
 
 def find_environment(
     environment_id: int,
+    *,
+    owner_user_id: int | None = None,
 ) -> dict[str, Any] | None:
     query = """
         SELECT
@@ -274,6 +298,10 @@ def find_environment(
         WHERE
             id = %s
             AND configuration_status <> 'archived'
+            AND (
+                %s::BIGINT IS NULL
+                OR created_by = %s
+            )
 
         LIMIT 1;
     """
@@ -281,7 +309,7 @@ def find_environment(
     with get_database_connection() as connection:
         return connection.execute(
             query,
-            (environment_id,),
+            (environment_id, owner_user_id, owner_user_id),
         ).fetchone()
 
 

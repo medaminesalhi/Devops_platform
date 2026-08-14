@@ -159,7 +159,37 @@ class Config:
     AI_REQUEST_TIMEOUT_SECONDS = (
         read_integer(
             "AI_REQUEST_TIMEOUT_SECONDS",
-            120,
+            180,
+        )
+    )
+
+
+    AI_OLLAMA_NUM_PREDICT = (
+        read_integer(
+            "AI_OLLAMA_NUM_PREDICT",
+            4096,
+        )
+    )
+
+
+    AI_OLLAMA_KEEP_ALIVE = os.getenv(
+        "AI_OLLAMA_KEEP_ALIVE",
+        "30m",
+    )
+
+
+    AI_OLLAMA_NUM_CTX = (
+        read_integer(
+            "AI_OLLAMA_NUM_CTX",
+            16_384,
+        )
+    )
+
+
+    AI_MAX_SOURCE_CONTEXT_BYTES = (
+        read_integer(
+            "AI_MAX_SOURCE_CONTEXT_BYTES",
+            40_000,
         )
     )
 
@@ -243,10 +273,13 @@ class Config:
 
     DEPLOYMENT_AI_TIMEOUT_SECONDS = read_integer(
         "DEPLOYMENT_AI_TIMEOUT_SECONDS",
-        90,
+        180,
     )
 
+    # Optionnel. Si vide, le diagnostic reprend d'abord le modèle
+    # utilisé par la génération. Pour Ollama, il peut ensuite
+    # découvrir un modèle disponible via /api/tags.
     DEPLOYMENT_AI_MODEL = os.getenv(
         "DEPLOYMENT_AI_MODEL",
-        "llama3.1:8b",
+        "",
     )
