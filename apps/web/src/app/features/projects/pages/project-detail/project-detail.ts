@@ -134,7 +134,7 @@ export class ProjectDetail implements OnInit, OnDestroy {
   readonly proposalAnswers = signal<Partial<Record<string, string>>>({});
   readonly showAdvancedProposal = signal(false);
 
-  readonly generationMode = signal<WorkflowGenerationMode>('deterministic');
+  readonly generationMode = signal<WorkflowGenerationMode>('hybrid');
   readonly generationTab = signal<GenerationTab>('progress');
   readonly artifactDraft = signal('');
   readonly artifactReviewComment = signal('');
@@ -364,22 +364,35 @@ export class ProjectDetail implements OnInit, OnDestroy {
     }));
   }
 
-  selectAiConnection(value: number | string | null): void {
+  selectAiConnection(
+    value: number | string | null,
+    preferredModel: string | null = null,
+  ): void {
     const id = Number(value);
-    this.selectedAiConnectionId.set(Number.isInteger(id) && id > 0 ? id : null);
+    const normalizedId = Number.isInteger(id) && id > 0 ? id : null;
+    const requestedModel = preferredModel?.trim() ?? '';
+
+    this.selectedAiConnectionId.set(normalizedId);
     this.aiModels.set([]);
-    this.selectedAiModel.set('');
-    if (Number.isInteger(id) && id > 0) {
-      const projectId = this.projectId();
-      if (!projectId) return;
-      this.workflowService.getAiModels(projectId, id).subscribe({
-        next: models => {
-          this.aiModels.set(models);
-          this.selectedAiModel.set(models[0] ?? '');
-        },
-        error: error => this.actionError.set(this.resolveError(error)),
-      });
-    }
+    this.selectedAiModel.set(requestedModel);
+
+    if (!normalizedId) return;
+
+    const projectId = this.projectId();
+    if (!projectId) return;
+
+    this.workflowService.getAiModels(projectId, normalizedId).subscribe({
+      next: models => {
+        // Évite qu'une ancienne requête remplace la sélection si
+        // l'utilisateur a changé de connexion entre-temps.
+        if (this.selectedAiConnectionId() !== normalizedId) return;
+
+        this.aiModels.set(models);
+        const currentModel = this.selectedAiModel().trim();
+        this.selectedAiModel.set(currentModel || models[0] || '');
+      },
+      error: error => this.actionError.set(this.resolveError(error)),
+    });
   }
 
   prepareProposal(): void {
@@ -464,6 +477,14 @@ export class ProjectDetail implements OnInit, OnDestroy {
     const contractId = proposal?.contractId ?? this.workflow()?.latestContract?.id;
     if (!projectId || !contractId) {
       this.actionError.set('Aucun contrat interne confirmé n’est disponible.');
+      return;
+    }
+
+    if (this.generationMode() === 'hybrid'
+      && (!this.selectedAiConnectionId() || !this.selectedAiModel().trim())) {
+      this.actionError.set(
+        'La génération hybride nécessite une connexion Ollama et un modèle.',
+      );
       return;
     }
 
@@ -754,12 +775,34 @@ export class ProjectDetail implements OnInit, OnDestroy {
       advanced: { ...defaultAdvanced, ...(stored?.advanced ?? {}) },
     });
 
+    const latestGeneration = this.generation();
+
+    this.proposalMode.set(currentProposal?.mode ?? 'hybrid');
+    this.generationMode.set(
+      latestGeneration?.generationMode
+        ?? currentProposal?.mode
+        ?? 'hybrid',
+    );
+
     const preferredAi = this.workflow()?.aiConnections.find(item => item.status === 'online')
       ?? this.workflow()?.aiConnections[0]
       ?? null;
-    if (preferredAi && this.selectedAiConnectionId() === null) {
-      this.selectedAiConnectionId.set(preferredAi.id);
-      this.selectAiConnection(preferredAi.id);
+
+    const preferredConnectionId = latestGeneration?.aiConnectionId
+      ?? currentProposal?.aiConnectionId
+      ?? preferredAi?.id
+      ?? null;
+
+    const preferredModel = latestGeneration?.aiModel
+      ?? currentProposal?.aiModel
+      ?? null;
+
+    if (preferredConnectionId) {
+      this.selectAiConnection(preferredConnectionId, preferredModel);
+    } else {
+      this.selectedAiConnectionId.set(null);
+      this.aiModels.set([]);
+      this.selectedAiModel.set('');
     }
   }
 

@@ -480,7 +480,39 @@
           <section class="panel generation-launch">
             <div><p class="eyebrow">Nouvelle génération</p><h3>{{ generationStatusLabel() }}</h3><p>Le worker crée Docker, Helm et Argo CD à partir de la proposition confirmée.</p></div>
             <div class="generation-controls">
-              <select [ngModel]="generationMode()" (ngModelChange)="generationMode.set($event)"><option value="deterministic">Déterministe</option><option value="hybrid">Hybride</option></select>
+              <label class="field">
+                <span>Mode</span>
+                <select [ngModel]="generationMode()" (ngModelChange)="generationMode.set($event)">
+                  <option value="hybrid">Hybride avec IA</option>
+                  <option value="deterministic">Déterministe</option>
+                </select>
+              </label>
+
+              @if (generationMode() === 'hybrid') {
+                <label class="field">
+                  <span>Connexion IA</span>
+                  <select [ngModel]="selectedAiConnectionId()" (ngModelChange)="selectAiConnection($event)">
+                    <option [ngValue]="null">Sélectionner</option>
+                    @for (connection of workflow()?.aiConnections ?? []; track connection.id) {
+                      <option [ngValue]="connection.id">{{ connection.name }} · {{ connection.providerType }} · {{ connection.status }}</option>
+                    }
+                  </select>
+                </label>
+
+                <label class="field">
+                  <span>Modèle</span>
+                  <input
+                    type="text"
+                    list="generation-models"
+                    [ngModel]="selectedAiModel()"
+                    (ngModelChange)="selectedAiModel.set($event)"
+                  />
+                  <datalist id="generation-models">
+                    @for (model of aiModels(); track model) {<option [value]="model"></option>}
+                  </datalist>
+                </label>
+              }
+
               <button class="button button--primary" type="button" [disabled]="generationRunning() || isWorking()" (click)="startGeneration()">{{ generation() ? 'Nouvelle génération' : 'Démarrer la génération' }}</button>
             </div>
           </section>
@@ -496,6 +528,12 @@
               <section class="panel execution-card">
                 <header><div><p class="eyebrow">Exécution #{{ currentGeneration.id }}</p><h3>{{ generationStatusLabel() }}</h3><p>{{ currentGeneration.currentStep }}</p></div><strong class="progress-value">{{ currentGeneration.progress }} %</strong></header>
                 <div class="progress-track"><span [style.width.%]="currentGeneration.progress"></span></div>
+                @if (currentGeneration.generationMode === 'hybrid') {
+                  <div class="alert">
+                    <strong>IA</strong>
+                    <span>Connexion #{{ currentGeneration.aiConnectionId ?? '—' }} · modèle {{ currentGeneration.aiModel ?? '—' }}</span>
+                  </div>
+                }
                 @if (currentGeneration.error) {<div class="alert alert--error"><strong>{{ currentGeneration.error.code }}</strong><span>{{ currentGeneration.error.message }}</span></div>}
                 <div class="event-list">
                   @for (event of generationEvents(); track event.id) {

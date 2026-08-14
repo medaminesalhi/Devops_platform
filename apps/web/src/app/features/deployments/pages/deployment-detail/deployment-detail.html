@@ -240,53 +240,209 @@
     @if (activeTab() === 'assistant') {
       <div class="assistant-layout">
         <section class="panel diagnosis-card">
-          <header class="panel-heading">
-            <div><p class="eyebrow">Analyse contrôlée</p><h2>Diagnostic IA</h2><p>Les logs utiles sont filtrés et aucun secret n’est transmis.</p></div>
-            @if (current.incident && current.diagnostic.status === 'idle') {<button class="button button--primary" type="button" [disabled]="isWorking()" (click)="requestDiagnosis()">Lancer le diagnostic</button>}
+          <header class="panel-heading diagnosis-heading">
+            <div>
+              <p class="eyebrow">Analyse contrôlée</p>
+              <h2>Diagnostic IA</h2>
+              <p>Comprenez d'abord la cause, puis choisissez une correction. Les détails techniques restent accessibles sans encombrer la lecture.</p>
+            </div>
+            @if (current.incident && current.diagnostic.status === 'idle') {
+              <button class="button button--primary" type="button" [disabled]="isWorking()" (click)="requestDiagnosis()">
+                ✦ Lancer le diagnostic
+              </button>
+            }
           </header>
 
           @if (!current.incident) {
-            <div class="empty-state"><span>✦</span><h3>Aucun incident à analyser</h3><p>L’assistant sera activé automatiquement lorsqu’une étape échoue.</p></div>
+            <div class="empty-state">
+              <span>✦</span>
+              <h3>Aucun incident à analyser</h3>
+              <p>L’assistant sera activé automatiquement lorsqu’une étape échoue.</p>
+            </div>
           } @else if (current.diagnostic.status === 'idle' || current.diagnostic.status === 'running') {
-            <div class="diagnosis-loading"><span class="assistant-orb">✦</span><h3>{{ current.diagnostic.status === 'running' ? 'Analyse en cours…' : 'Diagnostic disponible' }}</h3><p>L’IA examinera uniquement l’étape échouée, les événements et les artefacts concernés.</p></div>
+            <div class="diagnosis-loading">
+              <span class="assistant-orb">✦</span>
+              <h3>{{ current.diagnostic.status === 'running' ? 'Analyse en cours…' : 'Diagnostic disponible' }}</h3>
+              <p>L’IA examine l’étape échouée, les événements utiles et les artefacts concernés afin de proposer une cause et des actions concrètes.</p>
+            </div>
           } @else {
             <div class="diagnosis-summary">
-              <div class="diagnosis-title"><span>✦</span><div><p>Cause probable</p><h3>{{ current.diagnostic.cause }}</h3></div><small>Confiance {{ current.diagnostic.confidence }}</small></div>
-              <p class="diagnosis-explanation">{{ current.diagnostic.explanation }}</p>
-              <div class="evidence-list"><strong>Preuves utilisées</strong><ul>@for (evidence of current.diagnostic.evidence; track evidence) {<li>{{ evidence }}</li>}</ul></div>
-            </div>
+              <div class="diagnosis-summary__top">
+                <div class="diagnosis-title">
+                  <span>✦</span>
+                  <div>
+                    <p>Cause principale détectée</p>
+                    <h3>{{ current.diagnostic.cause }}</h3>
+                  </div>
+                </div>
 
-            <div class="corrections-list">
-              @for (correction of current.diagnostic.corrections; track correction.id) {
-                <article class="correction-card">
-                  <header><div><p class="eyebrow">Correction proposée</p><h3>{{ correction.title }}</h3></div><span [class]="'risk-pill risk-pill--' + correction.risk">Risque {{ correction.risk }}</span></header>
-                  <p>{{ correction.summary }}</p>
-                  <dl><div><dt>Phase concernée</dt><dd>{{ phaseLabel(correction.targetPhase) }}</dd></div>@if (correction.targetFile) {<div><dt>Fichier</dt><dd>{{ correction.targetFile }}</dd></div>}</dl>
-                  @if (correction.diff) {<pre><code>{{ correction.diff }}</code></pre>}
-                  <footer>
-                    @if (correction.targetPhase === 'integration') {<a class="button button--secondary" routerLink="/integrations">Ouvrir l’intégration</a>}
-                    @if (correction.status === 'proposed') {<button class="button button--primary" type="button" [disabled]="isWorking()" (click)="approveCorrection(correction)">Approuver la correction</button>}
-                    @else {<span class="approved-label">✓ Correction {{ correction.status }}</span>}
-                  </footer>
-                </article>
+                <div class="diagnosis-badges">
+                  <span [class]="'confidence-pill confidence-pill--' + (current.diagnostic.confidence ?? 'unknown')">
+                    Confiance
+                    <strong>
+                      {{
+                        current.diagnostic.confidence === 'high'
+                          ? 'élevée'
+                          : current.diagnostic.confidence === 'medium'
+                            ? 'moyenne'
+                            : current.diagnostic.confidence === 'low'
+                              ? 'faible'
+                              : 'inconnue'
+                      }}
+                    </strong>
+                  </span>
+
+                  <span class="provider-pill" [class.provider-pill--fallback]="current.diagnostic.fallback">
+                    {{ current.diagnostic.fallback ? 'Fallback déterministe' : 'Réponse IA' }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="diagnosis-model-row">
+                <span>Modèle utilisé</span>
+                <strong>{{ current.diagnostic.model ?? 'Non renseigné' }}</strong>
+              </div>
+
+              <div class="diagnosis-explanation-block">
+                <strong>Ce que cela signifie</strong>
+                <p>{{ current.diagnostic.explanation }}</p>
+              </div>
+
+              @if (current.diagnostic.providerError) {
+                <div class="provider-error">
+                  <div>
+                    <strong>Le provider IA a rencontré une erreur</strong>
+                    <span>Le diagnostic affiché peut provenir du moteur de secours.</span>
+                  </div>
+                  <code>{{ current.diagnostic.providerError }}</code>
+                </div>
+              }
+
+              @if (current.diagnostic.evidence.length) {
+                <details class="evidence-details">
+                  <summary>
+                    <span>Preuves techniques utilisées</span>
+                    <strong>{{ current.diagnostic.evidence.length }}</strong>
+                  </summary>
+                  <ul>
+                    @for (evidence of current.diagnostic.evidence; track evidence) {
+                      <li><code>{{ evidence }}</code></li>
+                    }
+                  </ul>
+                </details>
               }
             </div>
+
+            @if (current.diagnostic.corrections.length) {
+              <div class="corrections-heading">
+                <div>
+                  <p class="eyebrow">Plan de résolution</p>
+                  <h3>Corrections recommandées</h3>
+                  <span>Commencez par l’action la plus simple et la moins risquée.</span>
+                </div>
+                <strong>{{ current.diagnostic.corrections.length }} action(s)</strong>
+              </div>
+
+              <div class="corrections-list">
+                @for (correction of current.diagnostic.corrections; track correction.id; let index = $index) {
+                  <article class="correction-card" [class.correction-card--with-diff]="!!correction.diff">
+                    <header>
+                      <div class="correction-heading">
+                        <span class="correction-index">{{ index + 1 }}</span>
+                        <div>
+                          <p>Action recommandée</p>
+                          <h3>{{ correction.title }}</h3>
+                        </div>
+                      </div>
+                      <span [class]="'risk-pill risk-pill--' + correction.risk">
+                        Risque {{ correction.risk === 'low' ? 'faible' : correction.risk === 'medium' ? 'moyen' : 'élevé' }}
+                      </span>
+                    </header>
+
+                    <p class="correction-summary">{{ correction.summary }}</p>
+
+                    <div class="correction-meta">
+                      <div>
+                        <span>Phase</span>
+                        <strong>{{ phaseLabel(correction.targetPhase) }}</strong>
+                      </div>
+                      @if (correction.targetFile) {
+                        <div>
+                          <span>Fichier</span>
+                          <strong>{{ correction.targetFile }}</strong>
+                        </div>
+                      }
+                    </div>
+
+                    @if (correction.diff) {
+                      <details class="correction-diff">
+                        <summary>Afficher le correctif technique</summary>
+                        <pre><code>{{ correction.diff }}</code></pre>
+                      </details>
+                    }
+
+                    <footer>
+                      @if (correction.targetPhase === 'integration') {
+                        <a class="button button--secondary" routerLink="/integrations">Ouvrir l’intégration</a>
+                      }
+                      @if (correction.status === 'proposed') {
+                        <button class="button button--primary" type="button" [disabled]="isWorking()" (click)="approveCorrection(correction)">
+                          Approuver cette correction
+                        </button>
+                      } @else {
+                        <span class="approved-label">✓ Correction {{ correction.status }}</span>
+                      }
+                    </footer>
+                  </article>
+                }
+              </div>
+            }
           }
         </section>
 
         <aside class="panel chat-card">
-          <header><span class="assistant-orb assistant-orb--small">✦</span><div><h2>Assistant de résolution</h2><p>Discutez de la cause et de la correction.</p></div></header>
+          <header>
+            <span class="assistant-orb assistant-orb--small">✦</span>
+            <div>
+              <h2>Assistant de résolution</h2>
+              <p>Posez une question sur la cause ou demandez une autre solution.</p>
+            </div>
+          </header>
+
           <div class="chat-messages">
+            @if (!current.chat.length) {
+              <div class="chat-empty">
+                <span>✦</span>
+                <strong>Conversation prête</strong>
+                <p>Vous pouvez demander une explication plus simple ou une alternative à la correction proposée.</p>
+              </div>
+            }
+
             @for (message of current.chat; track message.id) {
               <article [class]="'chat-message chat-message--' + message.role">
                 <span>{{ message.role === 'assistant' ? 'IA' : message.role === 'user' ? 'Vous' : 'SApixi' }}</span>
-                <div><p>{{ message.content }}</p><time>{{ message.createdAt | date:'HH:mm' }}</time></div>
+                <div>
+                  <p>{{ message.content }}</p>
+                  <time>{{ message.createdAt | date:'HH:mm' }}</time>
+                </div>
               </article>
             }
           </div>
+
           <footer class="chat-composer">
-            <textarea rows="3" [ngModel]="chatInput()" (ngModelChange)="chatInput.set($event)" placeholder="Demandez une explication ou une autre solution…" (keydown.control.enter)="sendMessage()"></textarea>
-            <div><small>Ctrl + Entrée pour envoyer</small><button class="button button--primary" type="button" [disabled]="!chatInput().trim() || isWorking()" (click)="sendMessage()">Envoyer ↑</button></div>
+            <textarea
+              rows="4"
+              [ngModel]="chatInput()"
+              (ngModelChange)="chatInput.set($event)"
+              placeholder="Ex. Explique-moi cette erreur simplement ou propose une autre correction…"
+              (keydown.control.enter)="sendMessage()"
+            ></textarea>
+            <div>
+              <small>Ctrl + Entrée pour envoyer</small>
+              <button class="button button--primary" type="button" [disabled]="!chatInput().trim() || isWorking()" (click)="sendMessage()">
+                Envoyer ↑
+              </button>
+            </div>
           </footer>
         </aside>
       </div>
