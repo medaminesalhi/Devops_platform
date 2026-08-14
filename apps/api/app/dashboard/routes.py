@@ -23,8 +23,8 @@ def overview():
     """
     Retourne les informations de la vue générale.
 
-    Les administrateurs voient les statistiques globales. Les autres
-    utilisateurs voient uniquement leurs projets et leurs déploiements.
+    Les administrateurs voient les statistiques et intégrations globales.
+    Les autres utilisateurs voient uniquement leurs propres ressources.
     """
 
     user_id = int(g.current_user["id"])
@@ -49,11 +49,34 @@ def overview():
         ),
     }
 
+    integration_services = dashboard_data.pop(
+        "integrationServices",
+        {},
+    )
+
     dashboard_data["services"] = {
         "api": "online",
         "database": "online",
-        "gitlab": "not_configured",
-        "argoCd": "not_configured",
+        "gitlab": integration_services.get(
+            "gitlab",
+            "not_configured",
+        ),
+        "nexus": integration_services.get(
+            "nexus",
+            "not_configured",
+        ),
+        "argoCd": integration_services.get(
+            "argoCd",
+            "not_configured",
+        ),
+        "kubernetes": integration_services.get(
+            "kubernetes",
+            "not_configured",
+        ),
+        "ollama": integration_services.get(
+            "ollama",
+            "not_configured",
+        ),
     }
 
     return jsonify(

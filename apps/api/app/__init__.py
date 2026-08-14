@@ -61,6 +61,10 @@ from app.integrations.routes import (
     integrations_blueprint,
 )
 
+from app.notifications import (
+    notifications_blueprint,
+)
+
 from app.projects.routes import (
     projects_blueprint,
 )
@@ -158,6 +162,12 @@ def create_app() -> Flask:
     app.register_blueprint(
         infrastructure_blueprint,
         url_prefix="/api/infrastructure",
+    )
+
+
+    app.register_blueprint(
+        notifications_blueprint,
+        url_prefix="/api/notifications",
     )
 
 

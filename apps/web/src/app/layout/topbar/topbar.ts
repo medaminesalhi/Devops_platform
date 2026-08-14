@@ -2,6 +2,7 @@ import {
   Component,
   DestroyRef,
   EventEmitter,
+  HostListener,
   Input,
   Output,
   inject,
@@ -25,6 +26,11 @@ import {
   Auth,
 } from '../../core/auth/auth';
 
+import {
+  NotificationsService,
+  PlatformNotification,
+} from '../../core/notifications/notifications';
+
 
 interface PageInformation {
   title: string;
@@ -35,9 +41,7 @@ interface PageInformation {
 
 @Component({
   selector: 'app-topbar',
-
   imports: [],
-
   templateUrl: './topbar.html',
   styleUrl: './topbar.scss',
 })
@@ -46,61 +50,52 @@ export class Topbar {
   private readonly auth = inject(Auth);
   private readonly destroyRef = inject(DestroyRef);
 
+  readonly notificationsService = inject(NotificationsService);
+
   @Input()
   sidebarOpen = true;
 
   @Output()
-  readonly sidebarToggle =
-    new EventEmitter<void>();
+  readonly sidebarToggle = new EventEmitter<void>();
 
-  readonly pageInformation =
-    signal<PageInformation>({
-      title: 'Vue générale',
-      subtitle:
-        'Suivez l’activité de votre plateforme.',
-      section: 'Dashboard',
-    });
+  readonly notificationsOpen = signal(false);
 
-  readonly currentDate =
-    new Intl.DateTimeFormat(
-      'fr-FR',
-      {
-        weekday: 'short',
-        day: '2-digit',
-        month: 'short',
-      },
-    ).format(new Date());
+  readonly pageInformation = signal<PageInformation>({
+    title: 'Vue générale',
+    subtitle: 'Suivez l’activité de votre plateforme.',
+    section: 'Dashboard',
+  });
+
+  readonly currentDate = new Intl.DateTimeFormat(
+    'fr-FR',
+    {
+      weekday: 'short',
+      day: '2-digit',
+      month: 'short',
+    },
+  ).format(new Date());
 
 
   constructor() {
-    this.updatePageInformation(
-      this.router.url,
-    );
+    this.updatePageInformation(this.router.url);
 
     this.router.events
       .pipe(
         filter(
-          (
-            event,
-          ): event is NavigationEnd =>
+          (event): event is NavigationEnd =>
             event instanceof NavigationEnd,
         ),
-
-        takeUntilDestroyed(
-          this.destroyRef,
-        ),
+        takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((event) => {
-        this.updatePageInformation(
-          event.urlAfterRedirects,
-        );
+        this.notificationsOpen.set(false);
+        this.updatePageInformation(event.urlAfterRedirects);
       });
   }
 
 
   get displayName(): string {
-    const user =
-      this.auth.currentUser();
+    const user = this.auth.currentUser();
 
     if (!user) {
       return 'Utilisateur';
@@ -119,8 +114,7 @@ export class Topbar {
 
 
   get initials(): string {
-    const user =
-      this.auth.currentUser();
+    const user = this.auth.currentUser();
 
     if (!user) {
       return 'U';
@@ -140,8 +134,7 @@ export class Topbar {
 
 
   get roleLabel(): string {
-    const roles =
-      this.auth.currentUser()?.roles ?? [];
+    const roles = this.auth.currentUser()?.roles ?? [];
 
     if (roles.includes('admin')) {
       return 'Administrateur';
@@ -163,8 +156,126 @@ export class Topbar {
   }
 
 
+  @HostListener('document:keydown.escape')
+  closeNotificationsWithEscape(): void {
+    this.notificationsOpen.set(false);
+  }
+
+
   toggleSidebar(): void {
     this.sidebarToggle.emit();
+  }
+
+
+  toggleNotifications(): void {
+    const nextValue = !this.notificationsOpen();
+    this.notificationsOpen.set(nextValue);
+
+    if (nextValue) {
+      this.notificationsService.refresh();
+    }
+  }
+
+
+  markAllNotificationsAsRead(): void {
+    if (this.notificationsService.unreadCount() === 0) {
+      return;
+    }
+
+    this.notificationsService
+      .markAllAsRead()
+      .subscribe();
+  }
+
+
+  openNotification(
+    notification: PlatformNotification,
+  ): void {
+    const navigate = () => {
+      this.notificationsOpen.set(false);
+
+      if (notification.actionUrl) {
+        this.router.navigateByUrl(notification.actionUrl);
+      }
+    };
+
+    if (notification.readAt) {
+      navigate();
+      return;
+    }
+
+    this.notificationsService
+      .markAsRead(notification.id)
+      .subscribe({
+        next: navigate,
+        error: navigate,
+      });
+  }
+
+
+  notificationIcon(
+    notification: PlatformNotification,
+  ): string {
+    if (notification.severity === 'critical') {
+      return '!';
+    }
+
+    if (notification.severity === 'warning') {
+      return '!';
+    }
+
+    if (notification.severity === 'success') {
+      return '✓';
+    }
+
+    return 'i';
+  }
+
+
+  notificationTimeLabel(
+    createdAt: string,
+  ): string {
+    const createdTime = new Date(createdAt).getTime();
+
+    if (Number.isNaN(createdTime)) {
+      return '';
+    }
+
+    const differenceSeconds = Math.max(
+      0,
+      Math.floor((Date.now() - createdTime) / 1000),
+    );
+
+    if (differenceSeconds < 60) {
+      return 'À l’instant';
+    }
+
+    const minutes = Math.floor(differenceSeconds / 60);
+
+    if (minutes < 60) {
+      return `Il y a ${minutes} min`;
+    }
+
+    const hours = Math.floor(minutes / 60);
+
+    if (hours < 24) {
+      return `Il y a ${hours} h`;
+    }
+
+    const days = Math.floor(hours / 24);
+
+    if (days < 7) {
+      return `Il y a ${days} j`;
+    }
+
+    return new Intl.DateTimeFormat(
+      'fr-FR',
+      {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      },
+    ).format(new Date(createdAt));
   }
 
 
@@ -179,84 +290,69 @@ export class Topbar {
     if (url.startsWith('/projects/new')) {
       this.pageInformation.set({
         title: 'Nouveau projet',
-        subtitle:
-          'Analysez et préparez une application.',
+        subtitle: 'Analysez et préparez une application.',
         section: 'Projets',
       });
-
       return;
     }
 
     if (url.startsWith('/infrastructure')) {
       this.pageInformation.set({
         title: 'Infrastructure',
-        subtitle:
-          'Gérez les environnements de déploiement.',
+        subtitle: 'Gérez les environnements de déploiement.',
         section: 'Supervision',
       });
-
       return;
     }
-    
+
     if (url.startsWith('/projects')) {
       this.pageInformation.set({
         title: 'Projets',
-        subtitle:
-          'Gérez les applications de la plateforme.',
+        subtitle: 'Gérez les applications de la plateforme.',
         section: 'Espace de travail',
       });
-
       return;
     }
 
     if (url.startsWith('/integrations')) {
       this.pageInformation.set({
         title: 'Intégrations',
-        subtitle:
-          'Configurez les services externes.',
+        subtitle: 'Configurez les services externes.',
         section: 'Configuration',
       });
-
       return;
     }
 
     if (url.startsWith('/settings')) {
       this.pageInformation.set({
         title: 'Paramètres',
-        subtitle:
-          'Gérez votre profil et votre sécurité.',
+        subtitle: 'Gérez votre profil et votre sécurité.',
         section: 'Compte',
       });
-
       return;
     }
 
     if (url.startsWith('/admin')) {
       this.pageInformation.set({
         title: 'Administration',
-        subtitle:
-          'Gérez les comptes, rôles et activités utilisateurs.',
+        subtitle: 'Gérez les comptes, rôles et activités utilisateurs.',
         section: 'Administration',
       });
-
       return;
     }
 
     if (url.startsWith('/deployments')) {
       this.pageInformation.set({
         title: 'Déploiements',
-        subtitle:
-          'Consultez les exécutions et leurs statuts.',
+        subtitle: 'Consultez les exécutions et leurs statuts.',
         section: 'Exécution',
       });
-
       return;
     }
 
     this.pageInformation.set({
       title: 'Vue générale',
-      subtitle:
-        'Suivez l’activité de votre plateforme.',
+      subtitle: 'Suivez l’activité de votre plateforme.',
       section: 'Dashboard',
     });
   }

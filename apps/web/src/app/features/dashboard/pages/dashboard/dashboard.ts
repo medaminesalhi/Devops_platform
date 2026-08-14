@@ -137,14 +137,21 @@ export class Dashboard implements OnInit {
   serviceStatusLabel(
     status: string,
   ): string {
-    if (status === 'online') {
-      return 'Opérationnel';
-    }
+    const labels: Record<string, string> = {
+      online: 'Connecté',
+      degraded: 'Dégradé',
+      offline: 'Indisponible',
+      unchecked: 'À vérifier',
+      not_configured: 'Non configuré',
+    };
 
-    if (status === 'not_configured') {
-      return 'Non configuré';
-    }
+    return labels[status] ?? 'Inconnu';
+  }
 
-    return 'Indisponible';
+
+  serviceIndicatorClass(
+    status: string,
+  ): string {
+    return `service-indicator service-indicator--${status}`;
   }
 }

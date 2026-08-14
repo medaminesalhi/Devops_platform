@@ -319,85 +319,78 @@
           <div class="services-list">
             <div class="service-item">
               <span
-                class="service-indicator"
-                [class.service-indicator--online]="
-                  data.services.api ===
-                  'online'
-                "
+                [class]="serviceIndicatorClass(data.services.api)"
               ></span>
 
               <div>
-                <strong>
-                  API Flask
-                </strong>
-
-                <small>
-                  {{
-                    serviceStatusLabel(
-                      data.services.api
-                    )
-                  }}
-                </small>
+                <strong>API Flask</strong>
+                <small>{{ serviceStatusLabel(data.services.api) }}</small>
               </div>
             </div>
 
             <div class="service-item">
               <span
-                class="service-indicator"
-                [class.service-indicator--online]="
-                  data.services.database ===
-                  'online'
-                "
+                [class]="serviceIndicatorClass(data.services.database)"
               ></span>
 
               <div>
-                <strong>
-                  PostgreSQL
-                </strong>
-
-                <small>
-                  {{
-                    serviceStatusLabel(
-                      data.services.database
-                    )
-                  }}
-                </small>
+                <strong>PostgreSQL</strong>
+                <small>{{ serviceStatusLabel(data.services.database) }}</small>
               </div>
             </div>
 
             <div class="service-item">
-              <span class="service-indicator"></span>
+              <span
+                [class]="serviceIndicatorClass(data.services.gitlab)"
+              ></span>
 
               <div>
-                <strong>
-                  GitLab
-                </strong>
-
-                <small>
-                  {{
-                    serviceStatusLabel(
-                      data.services.gitlab
-                    )
-                  }}
-                </small>
+                <strong>GitLab</strong>
+                <small>{{ serviceStatusLabel(data.services.gitlab) }}</small>
               </div>
             </div>
 
             <div class="service-item">
-              <span class="service-indicator"></span>
+              <span
+                [class]="serviceIndicatorClass(data.services.nexus)"
+              ></span>
 
               <div>
-                <strong>
-                  Argo CD
-                </strong>
+                <strong>Nexus</strong>
+                <small>{{ serviceStatusLabel(data.services.nexus) }}</small>
+              </div>
+            </div>
 
-                <small>
-                  {{
-                    serviceStatusLabel(
-                      data.services.argoCd
-                    )
-                  }}
-                </small>
+            <div class="service-item">
+              <span
+                [class]="serviceIndicatorClass(data.services.argoCd)"
+              ></span>
+
+              <div>
+                <strong>Argo CD</strong>
+                <small>{{ serviceStatusLabel(data.services.argoCd) }}</small>
+              </div>
+            </div>
+
+            <div class="service-item">
+              <span
+                [class]="serviceIndicatorClass(data.services.kubernetes)"
+              ></span>
+
+              <div>
+                <strong>Kubernetes</strong>
+                <small>{{ serviceStatusLabel(data.services.kubernetes) }}</small>
+              </div>
+            </div>
+
+            <div class="service-item">
+              <span
+                [class]="serviceIndicatorClass(data.services.ollama)"
+              ></span>
+
+              <div>
+                <strong>IA / Ollama</strong>
+                <small>{{ serviceStatusLabel(data.services.ollama) }}</small>
               </div>
             </div>
           </div>

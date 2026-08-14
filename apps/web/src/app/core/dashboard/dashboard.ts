@@ -55,7 +55,10 @@ export interface DashboardServices {
   api: string;
   database: string;
   gitlab: string;
+  nexus: string;
   argoCd: string;
+  kubernetes: string;
+  ollama: string;
 }
 
 

@@ -735,3 +735,31 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 }
+/* =========================================================
+   ÉTATS RÉELS DES SERVICES / INTÉGRATIONS
+   ========================================================= */
+
+.service-indicator--degraded,
+.service-indicator--unchecked {
+  background: #d89a18;
+
+  box-shadow:
+    0 0 0 0.25rem
+    rgba(216, 154, 24, 0.13);
+}
+
+.service-indicator--offline {
+  background: #df4c57;
+
+  box-shadow:
+    0 0 0 0.25rem
+    rgba(223, 76, 87, 0.13);
+}
+
+.service-indicator--not_configured {
+  background: #c6d0d3;
+
+  box-shadow:
+    0 0 0 0.25rem
+    rgba(151, 166, 171, 0.12);
+}
