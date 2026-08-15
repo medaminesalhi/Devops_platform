@@ -27,7 +27,9 @@ from app.generation.workspace import (
 
 from app.workflow.ai import (
     PROMPT_VERSION,
+    ARTIFACT_REVISION_PROMPT_VERSION,
     AiProviderError,
+    execute_artifact_revision,
     execute_generation_plan,
 )
 
@@ -46,6 +48,8 @@ from app.workflow.generation_repository import (
 
 from app.workflow.renderers import (
     ArtifactRenderingError,
+    ai_editable_artifacts,
+    apply_ai_artifact_revision,
     render_project_artifacts,
 )
 
@@ -111,9 +115,31 @@ SOURCE_FILE_NAMES = {
 
 
 SOURCE_FILE_SUFFIXES = {
+    ".py",
+    ".pyi",
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".vue",
+    ".java",
+    ".kt",
+    ".kts",
+    ".go",
+    ".php",
+    ".rb",
+    ".rs",
+    ".cs",
     ".csproj",
+    ".fs",
     ".fsproj",
+    ".vb",
     ".vbproj",
+    ".sh",
+    ".yaml",
+    ".yml",
 }
 
 
@@ -145,6 +171,25 @@ SENSITIVE_SOURCE_NAMES = {
     "secrets.yaml",
     "secret.yaml",
 }
+
+
+SOURCE_PRIORITY_TERMS = (
+    "main",
+    "app",
+    "wsgi",
+    "asgi",
+    "route",
+    "url",
+    "view",
+    "controller",
+    "health",
+    "config",
+    "setting",
+    "worker",
+    "task",
+    "migration",
+    "entrypoint",
+)
 
 
 class WorkflowWorkerError(
@@ -659,6 +704,10 @@ def run_generation_job(
                 or "hybrid"
             )
 
+            ai_connection_id = generation.get("ai_connection_id")
+            ai_model = str(generation.get("ai_model") or "").strip()
+            ai_connection: dict[str, Any] | None = None
+
             if generation_mode == "hybrid":
                 update_generation_step(
                     generation_run_id=generation_run_id,
@@ -668,9 +717,6 @@ def run_generation_job(
                     message="Demande d'un plan structuré au fournisseur IA.",
                     details={"sourceFileCount": len(source_files)},
                 )
-
-                ai_connection_id = generation.get("ai_connection_id")
-                ai_model = str(generation.get("ai_model") or "").strip()
 
                 if ai_connection_id is None or not ai_model:
                     add_generation_event(
@@ -841,15 +887,14 @@ def run_generation_job(
                     project_id,
 
                 progress=
-                    55,
+                    50,
 
                 step=
                     "rendering",
 
                 message=(
-                    "Génération déterministe "
-                    "des artefacts Docker, "
-                    "Helm et Argo CD."
+                    "Création de la base sûre des artefacts "
+                    "Docker, Helm et Argo CD."
                 ),
             )
 
@@ -871,6 +916,167 @@ def run_generation_job(
                     prepared_source
                     .version,
             )
+
+            # ------------------------------------------------------------
+            # PASSAGE IA 2 : Qwen reçoit les vrais artefacts candidats et
+            # peut retourner leur contenu complet. Pour la V1, seuls les
+            # fichiers explicitement marqués aiEditable par le renderer
+            # (Dockerfile généré et deployment.yaml) sont autorisés.
+            # ------------------------------------------------------------
+            if (
+                generation_mode == "hybrid"
+                and ai_plan is not None
+                and ai_connection is not None
+                and ai_connection_id is not None
+                and ai_model
+            ):
+                editable = ai_editable_artifacts(artifacts)
+
+                if editable:
+                    update_generation_step(
+                        generation_run_id=generation_run_id,
+                        project_id=project_id,
+                        progress=68,
+                        step="ai_artifact_revision",
+                        message=(
+                            "Qwen révise les artefacts candidats autorisés "
+                            "et peut retourner leur contenu complet."
+                        ),
+                        details={
+                            "artifactCount": len(editable),
+                            "paths": [
+                                item["relativePath"]
+                                for item in editable
+                            ],
+                        },
+                    )
+
+                    revision_payload = {
+                        "task": "artifact_revision",
+                        "contract": contract,
+                        "analysisSummary": (
+                            source_context.get("analysis_summary") or {}
+                        ),
+                        "generationPlan": ai_plan,
+                        "sourceFiles": source_files,
+                        "allowedArtifacts": editable,
+                        "constraints": {
+                            "noSecretValues": True,
+                            "noDirectExecution": True,
+                            "onlyAllowedPaths": True,
+                            "preserveLockedContractDecisions": True,
+                        },
+                    }
+
+                    revision_run = create_ai_run(
+                        project_id=project_id,
+                        contract_id=int(contract_id),
+                        generation_run_id=generation_run_id,
+                        connection_id=int(ai_connection_id),
+                        provider_type=str(ai_connection["provider_type"]),
+                        model_identifier=ai_model,
+                        run_type="artifact_revision",
+                        prompt_version=ARTIFACT_REVISION_PROMPT_VERSION,
+                        request_summary={
+                            "artifactCount": len(editable),
+                            "paths": [
+                                item["relativePath"]
+                                for item in editable
+                            ],
+                            "sourceFileCount": len(source_files),
+                        },
+                        created_by=int(generation["created_by"]),
+                    )
+
+                    try:
+                        revision_result = execute_artifact_revision(
+                            ai_run_id=int(revision_run["id"]),
+                            connection_id=int(ai_connection_id),
+                            model_identifier=ai_model,
+                            payload=revision_payload,
+                            temperature=0.05,
+                        )
+                    except AiProviderError as error:
+                        add_generation_event(
+                            generation_run_id=generation_run_id,
+                            level="warning",
+                            step="ai_artifact_revision",
+                            message=(
+                                "La révision IA des fichiers a échoué. "
+                                "Les templates sûrs de SApixi sont conservés."
+                            ),
+                            details={
+                                "fallback": True,
+                                "errorCode": error.code,
+                                "errorMessage": str(error),
+                                "model": ai_model,
+                            },
+                        )
+                    else:
+                        artifacts, revision_report = apply_ai_artifact_revision(
+                            artifacts=artifacts,
+                            revision=revision_result.output,
+                        )
+
+                        summary["aiArtifactRevision"] = {
+                            **revision_report,
+                            "model": revision_result.model_identifier,
+                            "latencyMs": revision_result.latency_ms,
+                        }
+
+                        validation_counts = {
+                            "passed": 0,
+                            "warning": 0,
+                            "failed": 0,
+                            "pending": 0,
+                        }
+                        for artifact_item in artifacts:
+                            status = str(
+                                artifact_item.get("validation_status") or "pending"
+                            )
+                            validation_counts[status] = (
+                                validation_counts.get(status, 0) + 1
+                            )
+
+                        summary["validationCounts"] = validation_counts
+                        summary["readyForReview"] = (
+                            validation_counts.get("failed", 0) == 0
+                        )
+
+                        if revision_report.get("rejected"):
+                            add_generation_event(
+                                generation_run_id=generation_run_id,
+                                level="warning",
+                                step="ai_artifact_revision",
+                                message=(
+                                    "Qwen a proposé des fichiers, mais leur "
+                                    "validation a échoué. SApixi a restauré "
+                                    "automatiquement les templates sûrs."
+                                ),
+                                details=revision_report,
+                            )
+                        elif revision_report.get("applied"):
+                            add_generation_event(
+                                generation_run_id=generation_run_id,
+                                level="success",
+                                step="ai_artifact_revision",
+                                message=(
+                                    "Les artefacts proposés par Qwen ont été "
+                                    "validés et intégrés à la génération."
+                                ),
+                                details=revision_report,
+                            )
+                        else:
+                            add_generation_event(
+                                generation_run_id=generation_run_id,
+                                level="info",
+                                step="ai_artifact_revision",
+                                message=(
+                                    "Qwen n'a proposé aucune modification utile. "
+                                    "Les templates SApixi sont conservés."
+                                ),
+                                details=revision_report,
+                            )
 
         update_generation_step(
             generation_run_id=
@@ -1011,39 +1217,29 @@ def collect_ai_source_files(
     contract: dict[str, Any],
 ) -> list[dict[str, str]]:
     """
-    Sélectionne un contexte limité et sans secrets.
+    Construit le contexte code transmis à Qwen.
 
-    L'IA ne reçoit pas tout le repository.
+    V1 : on transmet maintenant du vrai code applicatif en plus des fichiers
+    de build/configuration. Les fichiers sont classés par pertinence afin de
+    ne pas remplir le contexte avec des modules secondaires avant les routes,
+    entrypoints, health checks et fichiers de configuration.
     """
 
-    policies = contract.get(
-        "policies"
-    )
-
+    policies = contract.get("policies")
     maximum_bytes = 200_000
 
-    if isinstance(
-        policies,
-        dict,
-    ):
+    if isinstance(policies, dict):
         try:
             maximum_bytes = int(
-                policies.get(
-                    "maximumAiContextBytes",
-                    maximum_bytes,
-                )
+                policies.get("maximumAiContextBytes", maximum_bytes)
             )
-
-        except (
-            TypeError,
-            ValueError,
-        ):
+        except (TypeError, ValueError):
             maximum_bytes = 200_000
 
     configured_cap = int(
         current_app.config.get(
             "AI_MAX_SOURCE_CONTEXT_BYTES",
-            40_000,
+            60_000,
         )
     )
 
@@ -1053,166 +1249,118 @@ def collect_ai_source_files(
         max(8_000, configured_cap),
     )
 
-    candidate_roots: list[
-        Path
-    ] = [
-        source_root,
-    ]
+    source_root = source_root.resolve()
+    candidate_roots: list[Path] = [source_root]
 
-    components = contract.get(
-        "components"
-    )
-
-    if isinstance(
-        components,
-        list,
-    ):
+    components = contract.get("components")
+    if isinstance(components, list):
         for component in components:
-            if not isinstance(
-                component,
-                dict,
-            ):
+            if not isinstance(component, dict):
                 continue
 
-            root_path = str(
-                component.get(
-                    "rootPath"
-                )
-                or "."
-            )
-
             candidate = (
-                source_root
-                / root_path
+                source_root / str(component.get("rootPath") or ".")
             ).resolve()
 
             try:
-                candidate.relative_to(
-                    source_root.resolve()
-                )
-
+                candidate.relative_to(source_root)
             except ValueError:
                 continue
 
-            if (
-                candidate.is_dir()
+            if candidate.is_dir() and candidate not in candidate_roots:
+                candidate_roots.append(candidate)
 
-                and candidate
-                not in candidate_roots
-            ):
-                candidate_roots.append(
-                    candidate
-                )
-
-    selected_paths: set[
-        Path
-    ] = set()
+    candidates: dict[Path, tuple[int, str]] = {}
 
     for root in candidate_roots:
-        for path in sorted(
-            root.rglob("*")
-        ):
-            if (
-                len(selected_paths)
-                >= 60
-            ):
-                break
+        for path in root.rglob("*"):
+            if not path.is_file() or path.is_symlink():
+                continue
+
+            try:
+                relative = path.resolve().relative_to(source_root)
+            except ValueError:
+                continue
+
+            if any(part in SOURCE_EXCLUDED_PARTS for part in relative.parts):
+                continue
 
             if (
-                not path.is_file()
-
-                or path.is_symlink()
+                path.name in SENSITIVE_SOURCE_NAMES
+                or path.name.startswith(".env")
             ):
                 continue
 
-            relative = path.relative_to(
-                source_root
-            )
+            suffix = path.suffix.lower()
+            if (
+                path.name not in SOURCE_FILE_NAMES
+                and suffix not in SOURCE_FILE_SUFFIXES
+            ):
+                continue
 
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+
+            # Les gros fichiers générés/minifiés ne sont pas utiles au LLM.
+            if size <= 0 or size > 35_000:
+                continue
+
+            lower_name = path.name.lower()
+            relative_text = relative.as_posix().lower()
+
+            score = 100
+            if path.name in SOURCE_FILE_NAMES:
+                score -= 50
+            if any(term in lower_name for term in SOURCE_PRIORITY_TERMS):
+                score -= 35
             if any(
-                part
-                in SOURCE_EXCLUDED_PARTS
-
-                for part
-                in relative.parts
-            ):
-                continue
-
-            if (
-                path.name
-                in SENSITIVE_SOURCE_NAMES
-
-                or path.name.startswith(
-                    ".env"
+                token in relative_text
+                for token in (
+                    "/routes", "/controllers", "/api/", "/health",
+                    "/config", "/settings", "/worker", "/tasks",
                 )
             ):
-                continue
+                score -= 20
+            score += min(len(relative.parts), 10)
 
-            if (
-                path.name
-                not in SOURCE_FILE_NAMES
+            candidates[path.resolve()] = (score, relative.as_posix())
 
-                and path.suffix.lower()
-                not in SOURCE_FILE_SUFFIXES
-            ):
-                continue
+    ordered = sorted(
+        candidates,
+        key=lambda path: (
+            candidates[path][0],
+            candidates[path][1],
+        ),
+    )
 
-            if (
-                path.stat().st_size
-                > 50_000
-            ):
-                continue
-
-            selected_paths.add(
-                path
-            )
-
-    result: list[
-        dict[str, str]
-    ] = []
-
+    result: list[dict[str, str]] = []
     used_bytes = 0
 
-    for path in sorted(
-        selected_paths
-    ):
-        content = path.read_text(
-            encoding="utf-8",
-            errors="replace",
-        )
-
-        content_bytes = len(
-            content.encode(
-                "utf-8"
-            )
-        )
-
-        if (
-            used_bytes
-            + content_bytes
-            > maximum_bytes
-        ):
+    for path in ordered:
+        if len(result) >= 80:
             break
 
-        used_bytes += (
-            content_bytes
-        )
+        try:
+            content = path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError:
+            continue
 
+        content_bytes = len(content.encode("utf-8"))
+        if used_bytes + content_bytes > maximum_bytes:
+            continue
+
+        used_bytes += content_bytes
         result.append(
             {
-                "path":
-                    str(
-                        path.relative_to(
-                            source_root
-                        )
-                    ).replace(
-                        "\\",
-                        "/",
-                    ),
-
-                "content":
-                    content,
+                "path": candidates[path][1],
+                "content": content,
             }
         )
 
     return result
+

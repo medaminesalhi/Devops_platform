@@ -818,6 +818,12 @@ def render_component(
 
                     "notes":
                         docker_warnings,
+
+                    "aiEditable":
+                        True,
+
+                    "aiRole":
+                        "container_build",
                 },
             )
         )
@@ -937,6 +943,7 @@ def render_component(
                     chart_root,
                     source_version,
                     effective_port,
+                    recommendation,
                 )
             )
 
@@ -951,6 +958,7 @@ def render_component(
                 chart_root,
                 source_version,
                 effective_port,
+                recommendation,
             )
         )
 
@@ -1560,6 +1568,7 @@ def helm_chart(
     chart_root: str,
     source_version: str,
     effective_port: int,
+    recommendation: dict[str, Any],
 ) -> list[RenderedArtifact]:
     """
     Construit un chart Helm complet et indépendant
@@ -1589,6 +1598,9 @@ def helm_chart(
 
         effective_port=
             effective_port,
+
+        recommendation=
+            recommendation,
     )
 
 
@@ -1638,6 +1650,9 @@ def helm_chart(
             component.get(
                 "name"
             ),
+
+        "aiRecommendationUsed":
+            bool(recommendation),
     }
 
 
@@ -1645,187 +1660,119 @@ def helm_chart(
         artifact(
             component_id,
             "helm_chart",
-
-            join_path(
-                chart_root,
-                "Chart.yaml",
-            ),
-
-            yaml_text(
-                chart_document
-            ),
-
+            join_path(chart_root, "Chart.yaml"),
+            yaml_text(chart_document),
             "generated",
-
             common_metadata,
         ),
-
-
         artifact(
             component_id,
             "helm_values",
-
-            join_path(
-                chart_root,
-                "values.yaml",
-            ),
-
-            yaml_text(
-                values
-            ),
-
+            join_path(chart_root, "values.yaml"),
+            yaml_text(values),
             "generated",
-
             common_metadata,
         ),
-
-
         artifact(
             component_id,
             "helm_template",
-
-            join_path(
-                chart_root,
-                "templates/_helpers.tpl",
-            ),
-
+            join_path(chart_root, "templates/_helpers.tpl"),
             HELPERS_TEMPLATE,
-
             "generated",
-
             common_metadata,
         ),
-
-
         artifact(
             component_id,
             "helm_template",
-
-            join_path(
-                chart_root,
-                "templates/deployment.yaml",
-            ),
-
+            join_path(chart_root, "templates/deployment.yaml"),
             DEPLOYMENT_TEMPLATE,
-
             "generated",
-
-            common_metadata,
-        ),
-
-
-        artifact(
-            component_id,
-            "helm_template",
-
-            join_path(
-                chart_root,
-                "templates/service.yaml",
-            ),
-
-            SERVICE_TEMPLATE,
-
-            "generated",
-
-            common_metadata,
-        ),
-
-
-        artifact(
-            component_id,
-            "helm_template",
-
-            join_path(
-                chart_root,
-                "templates/ingress.yaml",
-            ),
-
-            INGRESS_TEMPLATE,
-
-            "generated",
-
-            common_metadata,
-        ),
-
-
-        artifact(
-            component_id,
-            "configmap",
-
-            join_path(
-                chart_root,
-                "templates/configmap.yaml",
-            ),
-
-            CONFIGMAP_TEMPLATE,
-
-            "generated",
-
-            common_metadata,
-        ),
-
-
-        artifact(
-            component_id,
-            "secret_template",
-
-            join_path(
-                chart_root,
-                "templates/secret.yaml",
-            ),
-
-            SECRET_TEMPLATE,
-
-            "generated",
-
             {
                 **common_metadata,
-
-                "containsSecretValues":
-                    False,
-
-                "installedByDefault":
-                    False,
+                "aiEditable": True,
+                "aiRole": "application_deployment",
             },
         ),
-
-
-        artifact(
-            component_id,
-            "helm_template",
-
-            join_path(
-                chart_root,
-                "templates/pvc.yaml",
-            ),
-
-            PVC_TEMPLATE,
-
-            "generated",
-
-            common_metadata,
-        ),
-
-
-        artifact(
-            component_id,
-            "migration_job",
-
-            join_path(
-                chart_root,
-                (
-                    "templates/"
-                    "migration-job.yaml"
-                ),
-            ),
-
-            MIGRATION_JOB_TEMPLATE,
-
-            "generated",
-
-            common_metadata,
-        ),
     ]
+
+    # On ne génère plus systématiquement des templates vides/inactifs.
+    # La liste des artefacts correspond maintenant réellement au contrat.
+    if bool(values.get("service", {}).get("enabled", True)):
+        artifacts.append(
+            artifact(
+                component_id,
+                "helm_template",
+                join_path(chart_root, "templates/service.yaml"),
+                SERVICE_TEMPLATE,
+                "generated",
+                common_metadata,
+            )
+        )
+
+    if bool(values.get("ingress", {}).get("enabled", False)):
+        artifacts.append(
+            artifact(
+                component_id,
+                "helm_template",
+                join_path(chart_root, "templates/ingress.yaml"),
+                INGRESS_TEMPLATE,
+                "generated",
+                common_metadata,
+            )
+        )
+
+    if bool(values.get("config")):
+        artifacts.append(
+            artifact(
+                component_id,
+                "configmap",
+                join_path(chart_root, "templates/configmap.yaml"),
+                CONFIGMAP_TEMPLATE,
+                "generated",
+                common_metadata,
+            )
+        )
+
+    if bool(values.get("secrets", {}).get("values")):
+        artifacts.append(
+            artifact(
+                component_id,
+                "secret_template",
+                join_path(chart_root, "templates/secret.yaml"),
+                SECRET_TEMPLATE,
+                "generated",
+                {
+                    **common_metadata,
+                    "containsSecretValues": False,
+                    "installedByDefault": False,
+                },
+            )
+        )
+
+    if bool(values.get("persistence")):
+        artifacts.append(
+            artifact(
+                component_id,
+                "helm_template",
+                join_path(chart_root, "templates/pvc.yaml"),
+                PVC_TEMPLATE,
+                "generated",
+                common_metadata,
+            )
+        )
+
+    if bool(values.get("migration", {}).get("enabled", False)):
+        artifacts.append(
+            artifact(
+                component_id,
+                "migration_job",
+                join_path(chart_root, "templates/migration-job.yaml"),
+                MIGRATION_JOB_TEMPLATE,
+                "generated",
+                common_metadata,
+            )
+        )
+
 
 
     return artifacts
@@ -1839,6 +1786,7 @@ def build_values(
     component_slug: str,
     source_version: str,
     effective_port: int,
+    recommendation: dict[str, Any],
 ) -> dict[str, Any]:
     """
     Construit values.yaml depuis le contrat confirmé.
@@ -1887,6 +1835,40 @@ def build_values(
         component,
         "probes",
     )
+
+
+    # Les décisions d'infrastructure confirmées par l'utilisateur restent
+    # prioritaires. En revanche, les chemins de probes sont une information
+    # technique dérivée du code : Qwen peut les corriger lorsqu'il possède
+    # une recommandation suffisamment fiable.
+    ai_kubernetes = (
+        recommendation.get("kubernetes")
+        if isinstance(recommendation.get("kubernetes"), dict)
+        else {}
+    )
+
+    try:
+        ai_confidence = int(recommendation.get("confidence") or 0)
+    except (TypeError, ValueError):
+        ai_confidence = 0
+
+    if ai_confidence >= 70:
+        probe_mapping = {
+            "startup": "startupPath",
+            "readiness": "readinessPath",
+            "liveness": "livenessPath",
+        }
+
+        for probe_name, ai_key in probe_mapping.items():
+            ai_path = str(ai_kubernetes.get(ai_key) or "").strip()
+            if not ai_path:
+                continue
+
+            raw_probe = probes.get(probe_name)
+            probe = dict(raw_probe) if isinstance(raw_probe, dict) else {}
+            probe["enabled"] = True
+            probe["path"] = ai_path
+            probes[probe_name] = probe
 
 
     migration = require_dict(
@@ -3320,6 +3302,155 @@ def existing_chart_artifact_type(
 
 
     return "gitops_manifest"
+
+
+def apply_ai_artifact_revision(
+    *,
+    artifacts: list[dict[str, Any]],
+    revision: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """
+    Applique les fichiers COMPLETS retournés par Qwen uniquement sur les
+    artefacts marqués aiEditable par le renderer.
+
+    Si une révision rend le bundle invalide, toutes les révisions IA sont
+    rejetées et SApixi revient automatiquement aux templates sûrs.
+    """
+
+    base_artifacts = [dict(item) for item in artifacts]
+    if not isinstance(revision, dict):
+        return base_artifacts, {
+            "applied": False,
+            "modifiedPaths": [],
+            "rejected": False,
+        }
+
+    raw_revisions = revision.get("artifacts")
+    if not isinstance(raw_revisions, list):
+        raw_revisions = []
+
+    by_path = {
+        str(item.get("relative_path") or ""): item
+        for item in base_artifacts
+    }
+
+    modified_paths: list[str] = []
+    policy_rejected_paths: list[str] = []
+
+    for raw_revision in raw_revisions:
+        if not isinstance(raw_revision, dict):
+            continue
+
+        if str(raw_revision.get("action") or "") != "replace":
+            continue
+
+        path = str(raw_revision.get("relativePath") or "").replace("\\", "/").strip()
+        target = by_path.get(path)
+        if target is None:
+            continue
+
+        metadata = target.get("metadata")
+        if not isinstance(metadata, dict) or not bool(metadata.get("aiEditable")):
+            continue
+
+        candidate = str(raw_revision.get("content") or "")
+        if not candidate.strip():
+            continue
+
+        # Garde-fous supplémentaires avant les validateurs Docker/Helm.
+        forbidden = (
+            r"(?im)^\s*privileged\s*:\s*true\s*$",
+            r"(?im)^\s*hostNetwork\s*:\s*true\s*$",
+            r"(?im)^\s*hostPID\s*:\s*true\s*$",
+            r"(?im)^\s*hostPath\s*:\s*$",
+            r"(?im)^\s*runAsNonRoot\s*:\s*false\s*$",
+        )
+
+        if any(re.search(pattern, candidate) for pattern in forbidden):
+            policy_rejected_paths.append(path)
+            continue
+
+        original_content = str(target.get("content") or "")
+        target["original_content"] = (
+            target.get("original_content")
+            if target.get("original_content") is not None
+            else original_content
+        )
+        target["content"] = candidate
+        target["artifact_status"] = "ai_modified"
+        target["metadata"] = {
+            **metadata,
+            "aiModified": True,
+            "aiRevisionReason": str(raw_revision.get("reason") or ""),
+            "aiChanges": list(raw_revision.get("changes") or []),
+        }
+        modified_paths.append(path)
+
+    if not modified_paths:
+        return base_artifacts, {
+            "applied": False,
+            "modifiedPaths": [],
+            "rejected": bool(policy_rejected_paths),
+            "policyRejectedPaths": policy_rejected_paths,
+            "summary": str(revision.get("summary") or ""),
+        }
+
+    revised = validate_artifacts(base_artifacts)
+
+    failed = [
+        item
+        for item in revised
+        if str(item.get("validation_status") or "") == "failed"
+    ]
+
+    if failed:
+        # Un seul fichier IA invalide ne doit jamais casser une génération.
+        # On revient au bundle déterministe complet puis on le revalide.
+        safe = validate_artifacts(artifacts)
+        return safe, {
+            "applied": False,
+            "modifiedPaths": modified_paths,
+            "rejected": True,
+            "summary": str(revision.get("summary") or ""),
+            "failedPaths": [
+                str(item.get("relative_path") or "")
+                for item in failed
+            ],
+            "policyRejectedPaths": policy_rejected_paths,
+        }
+
+    return revised, {
+        "applied": True,
+        "modifiedPaths": modified_paths,
+        "rejected": False,
+        "policyRejectedPaths": policy_rejected_paths,
+        "summary": str(revision.get("summary") or ""),
+    }
+
+
+def ai_editable_artifacts(
+    artifacts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Retourne uniquement les artefacts que Qwen a le droit de réviser."""
+
+    result: list[dict[str, Any]] = []
+
+    for item in artifacts:
+        metadata = item.get("metadata")
+        if not isinstance(metadata, dict) or not bool(metadata.get("aiEditable")):
+            continue
+
+        result.append(
+            {
+                "componentId": item.get("component_id"),
+                "artifactType": str(item.get("artifact_type") or ""),
+                "relativePath": str(item.get("relative_path") or ""),
+                "baseContent": str(item.get("content") or ""),
+                "role": str(metadata.get("aiRole") or ""),
+            }
+        )
+
+    return result
 
 
 def validate_artifacts(
