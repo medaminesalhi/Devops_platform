@@ -302,6 +302,9 @@ export interface DeploymentProposalDecisions {
   imageRepositoryName: string;
   deliveryMode: DeliveryMode;
   gitRepositoryId: number | null;
+  // Chemin groupe/projet ou URL GitLab. Permet une saisie manuelle
+  // lorsque l'API GitLab ne retourne aucun projet dans la découverte.
+  gitRepositoryRef: string | null;
   gitBranch: string;
   gitRefreshMode: GitRefreshMode;
   helmRepositoryName: string | null;
@@ -328,6 +331,7 @@ export interface DeploymentTargetOptions {
   imageRepositories: DeploymentTargetRepositoryOption[];
   helmRepositories: DeploymentTargetRepositoryOption[];
   gitRepositories: DeploymentTargetRepositoryOption[];
+  gitDiscoveryError: string | null;
   nexusConnection: { id: number; name: string; status: string } | null;
   gitConnection: { id: number; name: string; status: string } | null;
 }

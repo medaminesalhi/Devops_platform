@@ -116,6 +116,7 @@ export class ProjectDetail implements OnInit, OnDestroy {
     imageRepositoryName: '',
     deliveryMode: 'git',
     gitRepositoryId: null,
+    gitRepositoryRef: null,
     gitBranch: 'main',
     gitRefreshMode: 'polling',
     helmRepositoryName: null,
@@ -207,8 +208,8 @@ export class ProjectDetail implements OnInit, OnDestroy {
         completed: this.analysisConfirmed(), unlocked: this.project()?.status === 'active',
       },
       {
-        key: 'proposal', number: 3, label: 'Proposition',
-        description: 'Stratégie de déploiement', path: `${base}/proposal`,
+        key: 'proposal', number: 3, label: 'Contrat',
+        description: 'Contraintes de déploiement', path: `${base}/proposal`,
         completed: this.proposalConfirmed(), unlocked: this.analysisConfirmed(),
       },
       {
@@ -324,7 +325,7 @@ export class ProjectDetail implements OnInit, OnDestroy {
         next: () => {
           const current = this.analysis();
           if (current) this.analysis.set({ ...current, status: 'confirmed' });
-          this.successMessage.set('Analyse confirmée. La proposition de déploiement est maintenant disponible.');
+          this.successMessage.set('Analyse confirmée. Le contrat de déploiement peut maintenant être préparé.');
           void this.router.navigate(['/projects', projectId, 'proposal']);
         },
         error: error => this.actionError.set(this.resolveError(error)),
@@ -357,10 +358,24 @@ export class ProjectDetail implements OnInit, OnDestroy {
     const selected = this.deploymentTargetOptions()?.gitRepositories.find(
       item => Number(item.projectId ?? item.id) === projectId,
     );
+
     this.proposalDecisions.update(current => ({
       ...current,
-      gitRepositoryId: Number.isInteger(projectId) && projectId > 0 ? projectId : null,
+      gitRepositoryId: selected ? Number(selected.projectId ?? selected.id) : null,
+      gitRepositoryRef: selected?.name ?? null,
       gitBranch: selected?.defaultBranch ?? current.gitBranch ?? 'main',
+    }));
+  }
+
+  updateManualGitRepository(value: string | null): void {
+    const repositoryRef = String(value ?? '').trim();
+
+    this.proposalDecisions.update(current => ({
+      ...current,
+      // Une saisie manuelle doit être re-résolue par le backend ; on ne
+      // conserve donc pas l'ID d'un ancien repository détecté.
+      gitRepositoryId: null,
+      gitRepositoryRef: repositoryRef || null,
     }));
   }
 
@@ -370,11 +385,14 @@ export class ProjectDetail implements OnInit, OnDestroy {
   ): void {
     const id = Number(value);
     const normalizedId = Number.isInteger(id) && id > 0 ? id : null;
-    const requestedModel = preferredModel?.trim() ?? '';
+    // Aucun modèle n'est sélectionné automatiquement.
+    // Même si un ancien contrat avait utilisé un modèle, l'utilisateur
+    // choisit explicitement le modèle pour chaque nouvelle opération.
+    void preferredModel;
 
     this.selectedAiConnectionId.set(normalizedId);
     this.aiModels.set([]);
-    this.selectedAiModel.set(requestedModel);
+    this.selectedAiModel.set('');
 
     if (!normalizedId) return;
 
@@ -388,8 +406,9 @@ export class ProjectDetail implements OnInit, OnDestroy {
         if (this.selectedAiConnectionId() !== normalizedId) return;
 
         this.aiModels.set(models);
-        const currentModel = this.selectedAiModel().trim();
-        this.selectedAiModel.set(currentModel || models[0] || '');
+        // La liste est chargée mais aucun modèle n'est choisi à la place
+        // de l'utilisateur.
+        this.selectedAiModel.set('');
       },
       error: error => this.actionError.set(this.resolveError(error)),
     });
@@ -418,7 +437,7 @@ export class ProjectDetail implements OnInit, OnDestroy {
         next: proposal => {
           this.proposal.set(proposal);
           this.proposalDecisions.set(proposal.decisions);
-          this.successMessage.set('La proposition de déploiement a été préparée.');
+          this.successMessage.set('Le contrat de déploiement a été préparé.');
         },
         error: error => this.actionError.set(this.resolveError(error)),
       });
@@ -447,7 +466,7 @@ export class ProjectDetail implements OnInit, OnDestroy {
       .subscribe({
         next: proposal => {
           this.proposal.set(proposal);
-          this.successMessage.set('Les décisions ont été enregistrées et la proposition a été revalidée.');
+          this.successMessage.set('Les décisions ont été enregistrées et le contrat a été revalidé.');
         },
         error: error => this.actionError.set(this.resolveError(error)),
       });
@@ -464,7 +483,7 @@ export class ProjectDetail implements OnInit, OnDestroy {
       .subscribe({
         next: proposal => {
           this.proposal.set(proposal);
-          this.successMessage.set('Proposition confirmée. Les fichiers peuvent maintenant être générés.');
+          this.successMessage.set('Contrat confirmé. Les fichiers peuvent maintenant être générés.');
           void this.router.navigate(['/projects', projectId, 'generation']);
         },
         error: error => this.actionError.set(this.resolveError(error)),
@@ -707,6 +726,7 @@ export class ProjectDetail implements OnInit, OnDestroy {
           gitRepositories: [],
           nexusConnection: null,
           gitConnection: null,
+          gitDiscoveryError: null,
         } as DeploymentTargetOptions)),
       ),
     })
@@ -756,8 +776,14 @@ export class ProjectDetail implements OnInit, OnDestroy {
     const firstDocker = options?.imageRepositories[0] ?? null;
     const firstGit = options?.gitRepositories[0] ?? null;
     const firstHelm = options?.helmRepositories[0] ?? null;
-    const defaultDeliveryMode = firstGit ? 'git' : 'helm';
+    const defaultDeliveryMode = options?.gitConnection ? 'git' : 'helm';
     const stored = currentProposal?.decisions;
+
+    const storedGitRepository = stored?.gitRepositoryId
+      ? options?.gitRepositories.find(
+          item => Number(item.projectId ?? item.id) === Number(stored.gitRepositoryId),
+        ) ?? null
+      : null;
 
     this.proposalDecisions.set({
       namespace: stored?.namespace ?? environment?.namespace ?? this.project()?.defaultEnvironment?.namespace ?? '',
@@ -768,8 +794,11 @@ export class ProjectDetail implements OnInit, OnDestroy {
       migration: stored?.migration ?? 'automatic',
       imageRepositoryName: stored?.imageRepositoryName ?? firstDocker?.name ?? '',
       deliveryMode: stored?.deliveryMode ?? defaultDeliveryMode,
-      gitRepositoryId: stored?.gitRepositoryId ?? (firstGit ? Number(firstGit.projectId ?? firstGit.id) : null),
-      gitBranch: stored?.gitBranch ?? firstGit?.defaultBranch ?? 'main',
+      // On ne sélectionne plus automatiquement le premier projet GitLab.
+      // L'utilisateur choisit un projet détecté ou saisit son chemin/URL.
+      gitRepositoryId: stored?.gitRepositoryId ?? null,
+      gitRepositoryRef: stored?.gitRepositoryRef ?? storedGitRepository?.name ?? null,
+      gitBranch: stored?.gitBranch ?? storedGitRepository?.defaultBranch ?? firstGit?.defaultBranch ?? 'main',
       gitRefreshMode: stored?.gitRefreshMode ?? 'polling',
       helmRepositoryName: stored?.helmRepositoryName ?? firstHelm?.name ?? null,
       advanced: { ...defaultAdvanced, ...(stored?.advanced ?? {}) },
@@ -793,12 +822,8 @@ export class ProjectDetail implements OnInit, OnDestroy {
       ?? preferredAi?.id
       ?? null;
 
-    const preferredModel = latestGeneration?.aiModel
-      ?? currentProposal?.aiModel
-      ?? null;
-
     if (preferredConnectionId) {
-      this.selectAiConnection(preferredConnectionId, preferredModel);
+      this.selectAiConnection(preferredConnectionId);
     } else {
       this.selectedAiConnectionId.set(null);
       this.aiModels.set([]);

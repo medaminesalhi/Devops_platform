@@ -273,6 +273,109 @@ def discover_gitlab_repositories(
     return repositories
 
 
+def resolve_gitlab_repository(
+    connection: dict[str, Any],
+    credential: str | None,
+    repository_ref: str,
+) -> dict[str, Any]:
+    """Résout un projet GitLab saisi manuellement par ID, chemin ou URL.
+
+    Exemples acceptés :
+      - 123
+      - groupe/projet
+      - https://gitlab.exemple.local/groupe/projet
+      - https://gitlab.exemple.local/groupe/projet.git
+
+    Le projet est toujours vérifié auprès du GitLab configuré. On ne fait
+    donc pas confiance aveuglément à une URL fournie par le navigateur.
+    """
+
+    base_url = str(connection.get("base_url") or "").rstrip("/")
+    raw = str(repository_ref or "").strip()
+    if not raw:
+        raise RepositoryDiscoveryError("Le repository GitLab est vide.")
+
+    base = urlparse(base_url)
+    identifier = raw
+
+    if "://" in raw:
+        parsed = urlparse(raw)
+        if (
+            parsed.hostname
+            and base.hostname
+            and parsed.hostname.lower() != base.hostname.lower()
+        ):
+            raise RepositoryDiscoveryError(
+                "L'URL du repository n'appartient pas au GitLab configuré."
+            )
+
+        path = parsed.path.strip("/")
+        base_path = base.path.strip("/")
+        if base_path and path.startswith(base_path + "/"):
+            path = path[len(base_path) + 1 :]
+        identifier = path
+
+    identifier = identifier.strip("/")
+    if identifier.endswith(".git"):
+        identifier = identifier[:-4]
+    if not identifier:
+        raise RepositoryDiscoveryError("Le repository GitLab est invalide.")
+
+    payload, _ = _get_json(
+        connection,
+        credential,
+        f"{base_url}/api/v4/projects/{quote(identifier, safe='')}",
+    )
+    if not isinstance(payload, dict):
+        raise RepositoryDiscoveryError("Le projet GitLab retourné est invalide.")
+
+    project_id = payload.get("id")
+    path = str(
+        payload.get("path_with_namespace")
+        or payload.get("name")
+        or ""
+    ).strip()
+    repo_url = str(payload.get("http_url_to_repo") or "").strip()
+    if not project_id or not path or not repo_url:
+        raise RepositoryDiscoveryError(
+            "Le projet GitLab ne contient pas les informations nécessaires au GitOps."
+        )
+
+    permissions = payload.get("permissions") if isinstance(payload.get("permissions"), dict) else {}
+    access_levels: list[int] = []
+    for key in ("project_access", "group_access"):
+        value = permissions.get(key) if isinstance(permissions, dict) else None
+        if isinstance(value, dict):
+            try:
+                access_levels.append(int(value.get("access_level") or 0))
+            except (TypeError, ValueError):
+                pass
+
+    # GitLab Developer = 30. Si le serveur ne renvoie pas `permissions`,
+    # on laisse la validation du push au déploiement plutôt que de bloquer
+    # un projet pourtant accessible.
+    writable = max(access_levels, default=30) >= 30
+
+    return {
+        "provider": "gitlab",
+        "id": str(project_id),
+        "name": path,
+        "label": path,
+        "format": "git",
+        "type": "project",
+        "url": repo_url,
+        "endpointUrl": repo_url,
+        "defaultBranch": payload.get("default_branch") or "main",
+        "projectId": int(project_id),
+        "writable": writable,
+        "metadata": {
+            "webUrl": payload.get("web_url"),
+            "visibility": payload.get("visibility"),
+            "manual": True,
+        },
+    }
+
+
 def discover_repositories(
     connection: dict[str, Any],
     credential: str | None,

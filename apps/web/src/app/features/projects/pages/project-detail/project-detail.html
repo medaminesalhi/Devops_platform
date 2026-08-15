@@ -65,7 +65,7 @@
               </section>
 
               <section class="panel summary-card">
-                <header><span class="summary-icon">ENV</span><div><p class="eyebrow">Environnement choisi</p><h3>{{ currentProject.defaultEnvironment?.name ?? 'Non sélectionné' }}</h3><p>Infrastructure utilisée automatiquement pour la proposition, la génération et le déploiement.</p></div></header>
+                <header><span class="summary-icon">ENV</span><div><p class="eyebrow">Environnement choisi</p><h3>{{ currentProject.defaultEnvironment?.name ?? 'Non sélectionné' }}</h3><p>Infrastructure utilisée automatiquement pour le contrat, la génération et le déploiement.</p></div></header>
                 @if (currentProject.defaultEnvironment; as environment) {
                   <dl class="fact-grid">
                     <div><dt>Type</dt><dd>{{ environment.environmentType }}</dd></div>
@@ -157,9 +157,9 @@
               }
 
               @if (currentAnalysis.status !== 'confirmed') {
-                <section class="panel phase-summary"><div><p class="eyebrow">Confirmation</p><h3>Les résultats sont-ils corrects ?</h3><p>La proposition de déploiement utilisera cette version exacte du code et ces composants.</p></div><button class="button button--primary" type="button" [disabled]="isWorking()" (click)="confirmAnalysis()">Confirmer l’analyse →</button></section>
+                <section class="panel phase-summary"><div><p class="eyebrow">Confirmation</p><h3>Les résultats sont-ils corrects ?</h3><p>Le contrat de déploiement utilisera cette version exacte du code et ces composants.</p></div><button class="button button--primary" type="button" [disabled]="isWorking()" (click)="confirmAnalysis()">Confirmer l’analyse →</button></section>
               } @else {
-                <section class="panel phase-summary"><div><p class="eyebrow">Phase terminée</p><h3>Analyse confirmée</h3><p>La proposition de déploiement peut être préparée.</p></div><a class="button button--primary" [routerLink]="['/projects', projectId(), 'proposal']">Ouvrir la proposition →</a></section>
+                <section class="panel phase-summary"><div><p class="eyebrow">Phase terminée</p><h3>Analyse confirmée</h3><p>Le contrat de déploiement peut être préparé.</p></div><a class="button button--primary" [routerLink]="['/projects', projectId(), 'proposal']">Ouvrir le contrat →</a></section>
               }
             }
           } @else {
@@ -172,7 +172,7 @@
         <main class="phase-content">
           <header class="phase-heading">
             <div><span class="phase-number">3</span></div>
-            <div><p class="eyebrow">Phase 3 · Proposition de déploiement</p><h2>Décider l’essentiel, laisser SApixi préparer le reste</h2><p>L’environnement est déjà choisi. L’IA et les règles SApixi proposent Docker, Kubernetes, Helm, GitOps et Argo CD.</p></div>
+            <div><p class="eyebrow">Phase 3 · Contrat de déploiement</p><h2>Définir les contraintes avant la génération</h2><p>Vous fixez les contraintes de déploiement. SApixi et l’IA complètent uniquement les éléments techniques incertains avant confirmation du contrat.</p></div>
           </header>
 
           @if (selectedEnvironment(); as environment) {
@@ -191,7 +191,7 @@
             <header>
               <div>
                 <p class="eyebrow">Décisions nécessaires</p>
-                <h3>Quelques choix avant la proposition</h3>
+                <h3>Paramètres du contrat</h3>
                 <p>Choisissez où publier l’image et quelle source Argo CD doit suivre. Les détails techniques restent optionnels.</p>
               </div>
               <button
@@ -232,7 +232,7 @@
               <label class="field">
                 <span>Stockage persistant</span>
                 <select [ngModel]="proposalDecisions().persistence" (ngModelChange)="updateProposalDecision('persistence', $event)">
-                  <option value="suggested">Utiliser la proposition SApixi</option>
+                  <option value="suggested">Laisser SApixi recommander</option>
                   <option value="none">Aucun volume</option>
                   <option value="required">Volume requis</option>
                 </select>
@@ -288,11 +288,11 @@
                 <button
                   type="button"
                   [class.active]="proposalDecisions().deliveryMode === 'git'"
-                  [disabled]="(deploymentTargetOptions()?.gitRepositories?.length ?? 0) === 0"
+                  [disabled]="!deploymentTargetOptions()?.gitConnection"
                   (click)="selectDeliveryMode('git')"
                 >
                   <strong>Repository GitLab GitOps</strong>
-                  <small>SApixi commit et push les charts. Argo CD lit le dossier Git.</small>
+                  <small>Choisissez un projet détecté ou saisissez manuellement son chemin/URL.</small>
                 </button>
 
                 <button
@@ -306,16 +306,67 @@
                 </button>
               </div>
 
+              @if (deploymentTargetOptions()?.gitConnection; as gitConnection) {
+                <div class="field">
+                  <span>Connexion GitLab : {{ gitConnection.name }}</span>
+                  <small>État : {{ gitConnection.status }}. Le mode GitOps reste disponible même si la découverte automatique des projets échoue.</small>
+                </div>
+              } @else {
+                <div class="warning-list">
+                  <p>△ Aucune connexion GitLab n’est associée au rôle <strong>gitops_repository</strong> de cet environnement.</p>
+                </div>
+              }
+
+              @if (deploymentTargetOptions()?.gitDiscoveryError; as gitDiscoveryError) {
+                <div class="warning-list">
+                  <p>△ Découverte automatique GitLab indisponible : {{ gitDiscoveryError }}. Vous pouvez quand même saisir le chemin <strong>groupe/projet</strong> manuellement.</p>
+                </div>
+              }
+
               @if (proposalDecisions().deliveryMode === 'git') {
                 <div class="decision-grid delivery-fields">
+                  <label class="field">
+                    <span>Connexion GitLab utilisée</span>
+                    <input
+                      type="text"
+                      [value]="deploymentTargetOptions()?.gitConnection?.name ?? 'Aucune connexion GitLab'"
+                      readonly
+                    />
+                    <small>Cette connexion vient du rôle gitops_repository de l’environnement sélectionné.</small>
+                  </label>
+
+                  @if ((deploymentTargetOptions()?.gitRepositories?.length ?? 0) > 0) {
+                    <label class="field">
+                      <span>Repositories détectés</span>
+                      <select
+                        [ngModel]="proposalDecisions().gitRepositoryId"
+                        (ngModelChange)="selectGitRepository($event)"
+                      >
+                        <option [ngValue]="null">Saisie manuelle</option>
+                        @for (repository of deploymentTargetOptions()?.gitRepositories ?? []; track repository.id) {
+                          <option [ngValue]="repository.projectId ?? repository.id">
+                            {{ repository.name }}
+                          </option>
+                        }
+                      </select>
+                      <small>{{ deploymentTargetOptions()?.gitRepositories?.length }} repository(s) détecté(s) par l’API GitLab.</small>
+                    </label>
+                  } @else {
+                    <div class="field">
+                      <span>Découverte GitLab</span>
+                      <small>Aucun repository n’a été détecté automatiquement. La saisie manuelle reste disponible ci-dessous.</small>
+                    </div>
+                  }
+
                   <label class="field field--wide">
-                    <span>Repository GitOps GitLab</span>
-                    <select [ngModel]="proposalDecisions().gitRepositoryId" (ngModelChange)="selectGitRepository($event)">
-                      <option [ngValue]="null">Sélectionner un repository GitLab</option>
-                      @for (repository of deploymentTargetOptions()?.gitRepositories ?? []; track repository.id) {
-                        <option [ngValue]="repository.projectId ?? repository.id">{{ repository.name }}</option>
-                      }
-                    </select>
+                    <span>Repository GitLab</span>
+                    <input
+                      type="text"
+                      [ngModel]="proposalDecisions().gitRepositoryRef"
+                      (ngModelChange)="updateManualGitRepository($event)"
+                      placeholder="groupe/projet ou https://gitlab.exemple/groupe/projet.git"
+                    />
+                    <small>SApixi vérifie ce projet auprès du GitLab configuré avant de préparer le contrat.</small>
                   </label>
 
                   <label class="field">
@@ -326,10 +377,10 @@
                   <label class="field">
                     <span>Détection des changements</span>
                     <select [ngModel]="proposalDecisions().gitRefreshMode" (ngModelChange)="updateProposalDecision('gitRefreshMode', $event)">
-                      <option value="polling">Polling Argo CD</option>
-                      <option value="webhook">Webhook GitLab vers Argo CD</option>
+                      <option value="polling">Polling Argo CD (recommandé par défaut)</option>
+                      <option value="webhook">Webhook GitLab → Argo CD</option>
                     </select>
-                    <small>Le webhook accélère la détection. Le polling reste fonctionnel sans webhook.</small>
+                    <small>Le webhook n’est créé que si vous le choisissez. En cas d’échec de création, SApixi conserve le polling Argo CD.</small>
                   </label>
                 </div>
               } @else {
@@ -350,7 +401,7 @@
                 <div class="choice-heading">
                   <div>
                     <p class="eyebrow">Paramètres avancés</p>
-                    <h4>Overrides techniques de la proposition</h4>
+                    <h4>Overrides techniques du contrat</h4>
                     <p>Ces valeurs servent de base à tous les composants et restent vérifiables avant confirmation.</p>
                   </div>
                 </div>
@@ -410,23 +461,42 @@
           </section>
 
           <section class="panel ai-card">
-            <header><div><p class="eyebrow">Moteur de proposition</p><h3>Préparation assistée par IA</h3><p>En cas d’indisponibilité, le mode déterministe applique les valeurs sécurisées de SApixi.</p></div></header>
+            <header><div><p class="eyebrow">Assistant du contrat</p><h3>Finalisation assistée par IA</h3><p>En cas d’indisponibilité, le mode déterministe applique les valeurs sécurisées de SApixi.</p></div></header>
             <div class="mode-selector">
-              <button type="button" [class.active]="proposalMode() === 'hybrid'" (click)="proposalMode.set('hybrid')"><strong>Hybride avec IA</strong><small>Recommandé pour compléter les éléments incertains.</small></button>
-              <button type="button" [class.active]="proposalMode() === 'deterministic'" (click)="proposalMode.set('deterministic')"><strong>Standard SApixi</strong><small>Sans appel IA, avec valeurs par défaut sécurisées.</small></button>
+              <button type="button" [class.active]="proposalMode() === 'hybrid'" (click)="proposalMode.set('hybrid')"><strong>Contrat assisté par IA</strong><small>L’IA complète les éléments techniques incertains sans remplacer vos choix.</small></button>
+              <button type="button" [class.active]="proposalMode() === 'deterministic'" (click)="proposalMode.set('deterministic')"><strong>Contrat standard SApixi</strong><small>Sans appel IA, avec règles et valeurs sécurisées de SApixi.</small></button>
             </div>
             @if (proposalMode() === 'hybrid') {
               <div class="form-grid">
                 <label class="field"><span>Connexion IA</span><select [ngModel]="selectedAiConnectionId()" (ngModelChange)="selectAiConnection($event)"><option [ngValue]="null">Sélectionner</option>@for (connection of workflow()?.aiConnections ?? []; track connection.id) {<option [ngValue]="connection.id">{{ connection.name }} · {{ connection.providerType }} · {{ connection.status }}</option>}</select></label>
-                <label class="field"><span>Modèle</span><input type="text" list="proposal-models" [ngModel]="selectedAiModel()" (ngModelChange)="selectedAiModel.set($event)" /><datalist id="proposal-models">@for (model of aiModels(); track model) {<option [value]="model"></option>}</datalist></label>
+                <label class="field">
+                  <span>Modèle</span>
+                  <select
+                    [ngModel]="selectedAiModel()"
+                    (ngModelChange)="selectedAiModel.set($event)"
+                    [disabled]="aiModels().length === 0"
+                  >
+                    <option value="">Choisir un modèle</option>
+                    @for (model of aiModels(); track model) {
+                      <option [value]="model">{{ model }}</option>
+                    }
+                  </select>
+                  <small>
+                    @if (aiModels().length > 0) {
+                      {{ aiModels().length }} modèle(s) détecté(s). Aucun modèle n’est choisi automatiquement.
+                    } @else {
+                      Sélectionnez une connexion IA pour charger ses modèles.
+                    }
+                  </small>
+                </label>
               </div>
             }
-            <footer class="editor-actions"><span></span><button class="button button--primary" type="button" [disabled]="isWorking()" (click)="prepareProposal()">{{ isWorking() ? 'Préparation…' : 'Préparer la proposition →' }}</button></footer>
+            <footer class="editor-actions"><span></span><button class="button button--primary" type="button" [disabled]="isWorking()" (click)="prepareProposal()">{{ isWorking() ? 'Préparation…' : 'Préparer le contrat →' }}</button></footer>
           </section>
 
           @if (proposal(); as currentProposal) {
             <section class="proposal-results">
-              <header class="section-title"><div><p class="eyebrow">Proposition #{{ currentProposal.id }}</p><h3>Stratégie préparée pour {{ currentProposal.components.length }} composant(s)</h3></div><span class="status-badge" [class.status-badge--success]="currentProposal.status === 'confirmed'">{{ currentProposal.status }}</span></header>
+              <header class="section-title"><div><p class="eyebrow">Contrat préparatoire #{{ currentProposal.id }}</p><h3>Paramètres préparés pour {{ currentProposal.components.length }} composant(s)</h3></div><span class="status-badge" [class.status-badge--success]="currentProposal.status === 'confirmed'">{{ currentProposal.status }}</span></header>
 
               @for (component of currentProposal.components; track component.componentId) {
                 <article class="panel proposal-component">
@@ -458,11 +528,11 @@
               }
 
               <section class="panel phase-summary">
-                <div><p class="eyebrow">Confirmation</p><h3>{{ currentProposal.validation.valid ? 'Proposition prête à confirmer' : 'Corrections nécessaires' }}</h3><p>{{ currentProposal.validation.errorCount }} erreur(s), {{ currentProposal.validation.warningCount }} avertissement(s), {{ currentProposal.validation.questionCount }} question(s).</p></div>
+                <div><p class="eyebrow">Confirmation</p><h3>{{ currentProposal.validation.valid ? 'Contrat prêt à confirmer' : 'Corrections nécessaires' }}</h3><p>{{ currentProposal.validation.errorCount }} erreur(s), {{ currentProposal.validation.warningCount }} avertissement(s), {{ currentProposal.validation.questionCount }} question(s).</p></div>
                 @if (currentProposal.status === 'confirmed') {
                   <a class="button button--primary" [routerLink]="['/projects', projectId(), 'generation']">Ouvrir la génération →</a>
                 } @else {
-                  <button class="button button--primary" type="button" [disabled]="!currentProposal.validation.valid || isWorking()" (click)="confirmProposal()">Confirmer la proposition →</button>
+                  <button class="button button--primary" type="button" [disabled]="!currentProposal.validation.valid || isWorking()" (click)="confirmProposal()">Confirmer le contrat →</button>
                 }
               </section>
             </section>
@@ -478,7 +548,7 @@
           </header>
 
           <section class="panel generation-launch">
-            <div><p class="eyebrow">Nouvelle génération</p><h3>{{ generationStatusLabel() }}</h3><p>Le worker crée Docker, Helm et Argo CD à partir de la proposition confirmée.</p></div>
+            <div><p class="eyebrow">Nouvelle génération</p><h3>{{ generationStatusLabel() }}</h3><p>Le worker crée Docker, Helm et Argo CD à partir du contrat confirmé.</p></div>
             <div class="generation-controls">
               <label class="field">
                 <span>Mode</span>
@@ -501,15 +571,17 @@
 
                 <label class="field">
                   <span>Modèle</span>
-                  <input
-                    type="text"
-                    list="generation-models"
+                  <select
                     [ngModel]="selectedAiModel()"
                     (ngModelChange)="selectedAiModel.set($event)"
-                  />
-                  <datalist id="generation-models">
-                    @for (model of aiModels(); track model) {<option [value]="model"></option>}
-                  </datalist>
+                    [disabled]="aiModels().length === 0"
+                  >
+                    <option value="">Choisir un modèle</option>
+                    @for (model of aiModels(); track model) {
+                      <option [value]="model">{{ model }}</option>
+                    }
+                  </select>
+                  <small>{{ aiModels().length }} modèle(s) disponible(s).</small>
                 </label>
               }
 
