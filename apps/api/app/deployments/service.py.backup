@@ -551,15 +551,9 @@ def get_deployment(deployment_id: int) -> dict[str, Any]:
     return _details_json(row)
 
 
-def get_options(
-    *,
-    owner_user_id: int | None = None,
-) -> list[dict[str, Any]]:
+def get_options() -> list[dict[str, Any]]:
     grouped: "OrderedDict[int, dict[str, Any]]" = OrderedDict()
-
-    for row in repository.list_generation_options(
-        owner_user_id=owner_user_id,
-    ):
+    for row in repository.list_generation_options():
         project_id = int(row["project_id"])
         project = grouped.setdefault(
             project_id,

@@ -567,6 +567,20 @@ class NexusAdapter(
                 authenticated=None,
             )
 
+        if not registry_url or not repository_name:
+            return IntegrationTestResult(
+                status="not_configured",
+                http_status=None,
+                latency_ms=0,
+                message=(
+                    "Le repository Docker et l'URL du registre "
+                    "Docker Nexus doivent être configurés."
+                ),
+                checked_url=None,
+                server_reachable=False,
+                authenticated=None,
+            )
+
         request_definition = self.build_request(
             connection,
             credential,
@@ -634,28 +648,6 @@ class NexusAdapter(
                     message=(
                         "L'API Nexus répond, mais la liste des "
                         "repositories n'est pas un JSON valide."
-                    ),
-                    checked_url=request_definition.url,
-                    server_reachable=True,
-                    authenticated=(
-                        True
-                        if request_definition.credential_used
-                        else None
-                    ),
-                )
-
-            # Une connexion Nexus ne nécessite pas encore
-            # de repository Docker. Celui-ci sera sélectionné
-            # plus tard au niveau du projet.
-            if not registry_url or not repository_name:
-                return IntegrationTestResult(
-                    status="online",
-                    http_status=api_response.status_code,
-                    latency_ms=latency_ms,
-                    message=(
-                        "API Nexus accessible. Les repositories sont "
-                        "détectables. Le repository Docker sera "
-                        "sélectionné au niveau du projet."
                     ),
                     checked_url=request_definition.url,
                     server_reachable=True,

@@ -360,10 +360,7 @@ def list_corrections(deployment_id: int) -> list[dict[str, Any]]:
         ).fetchall()
 
 
-def list_generation_options(
-    *,
-    owner_user_id: int | None = None,
-) -> list[dict[str, Any]]:
+def list_generation_options() -> list[dict[str, Any]]:
     with get_database_connection() as connection:
         return connection.execute(
             """
@@ -410,11 +407,6 @@ def list_generation_options(
                   AND project.status = 'active'
                   AND generation.status = 'confirmed'
 
-                  AND (
-                      %s::BIGINT IS NULL
-                      OR project.created_by = %s
-                  )
-
                 GROUP BY
                     project.id,
                     project.name,
@@ -431,11 +423,7 @@ def list_generation_options(
                        FILTER (WHERE artifact.review_status <> 'approved') = 0
 
                 ORDER BY project.name, generation.created_at DESC;
-            """,
-            (
-                owner_user_id,
-                owner_user_id,
-            ),
+            """
         ).fetchall()
 
 
