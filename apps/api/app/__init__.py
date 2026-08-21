@@ -69,6 +69,11 @@ from app.projects.routes import (
     projects_blueprint,
 )
 
+from app.performance import (
+    performance_blueprint,
+    register_performance_commands,
+)
+
 from app.workflow import (
     register_workflow_commands,
     workflow_blueprint,
@@ -135,6 +140,17 @@ def create_app() -> Flask:
         )
 
 
+    performance_root_value = app.config.get(
+        "PERFORMANCE_WORKSPACE_ROOT"
+    )
+
+    if performance_root_value:
+        Path(performance_root_value).mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+
     app.register_blueprint(
         auth_blueprint,
         url_prefix="/api/auth",
@@ -196,6 +212,12 @@ def create_app() -> Flask:
     )
 
 
+    app.register_blueprint(
+        performance_blueprint,
+        url_prefix="/api/performance",
+    )
+
+
     # Nouveau workflow sécurisé
     # des phases 2, 3 et 4.
     app.register_blueprint(
@@ -219,6 +241,8 @@ def create_app() -> Flask:
     )
 
     register_deployment_commands(app)
+
+    register_performance_commands(app)
 
 
     @app.errorhandler(

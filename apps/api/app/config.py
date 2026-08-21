@@ -97,6 +97,55 @@ def read_float(
         ) from error
 
 
+def read_boolean(
+    variable_name: str,
+    default_value: bool,
+) -> bool:
+    raw_value = os.getenv(variable_name)
+    if raw_value is None:
+        return default_value
+
+    normalized = raw_value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+
+    raise RuntimeError(
+        f"{variable_name} doit contenir true/false."
+    )
+
+
+def read_csv_strings(
+    variable_name: str,
+    default_value: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    raw_value = os.getenv(variable_name)
+    if raw_value is None:
+        return default_value
+    return tuple(
+        item.strip()
+        for item in raw_value.split(",")
+        if item.strip()
+    )
+
+
+def read_csv_integers(
+    variable_name: str,
+    default_value: tuple[int, ...] = (),
+) -> tuple[int, ...]:
+    values = read_csv_strings(variable_name)
+    if not values:
+        return default_value
+
+    try:
+        return tuple(int(value) for value in values)
+    except ValueError as error:
+        raise RuntimeError(
+            f"{variable_name} doit contenir une liste d'entiers séparés par des virgules."
+        ) from error
+
+
 class Config:
     APP_ENV = os.getenv(
         "APP_ENV",
@@ -283,3 +332,80 @@ class Config:
         "DEPLOYMENT_AI_MODEL",
         "",
     )
+
+    # --------------------------------------------------------
+    # Tests de performance k6
+    # --------------------------------------------------------
+    PERFORMANCE_WORKSPACE_ROOT = os.getenv(
+        "PERFORMANCE_WORKSPACE_ROOT",
+        str(API_ROOT / "var" / "performance"),
+    )
+
+    PERFORMANCE_K6_BINARY = os.getenv(
+        "PERFORMANCE_K6_BINARY",
+        "k6",
+    )
+
+    PERFORMANCE_MAX_VUS = read_integer(
+        "PERFORMANCE_MAX_VUS",
+        500,
+    )
+
+    PERFORMANCE_MAX_DURATION_SECONDS = read_integer(
+        "PERFORMANCE_MAX_DURATION_SECONDS",
+        3600,
+    )
+
+    PERFORMANCE_RUN_GRACE_SECONDS = read_integer(
+        "PERFORMANCE_RUN_GRACE_SECONDS",
+        120,
+    )
+
+    PERFORMANCE_STALE_RUN_SECONDS = read_integer(
+        "PERFORMANCE_STALE_RUN_SECONDS",
+        300,
+    )
+
+    PERFORMANCE_MAX_RUNTIME_LOG_LINES = read_integer(
+        "PERFORMANCE_MAX_RUNTIME_LOG_LINES",
+        300,
+    )
+
+    PERFORMANCE_MAX_RETENTION_DAYS = read_integer(
+        "PERFORMANCE_MAX_RETENTION_DAYS",
+        90,
+    )
+
+    # Sécurité : par défaut une cible doit figurer dans cette allowlist.
+    # Exemple : .company.local,api.example.com
+    PERFORMANCE_REQUIRE_TARGET_ALLOWLIST = read_boolean(
+        "PERFORMANCE_REQUIRE_TARGET_ALLOWLIST",
+        True,
+    )
+
+    PERFORMANCE_ALLOWED_TARGETS = read_csv_strings(
+        "PERFORMANCE_ALLOWED_TARGETS",
+    )
+
+    PERFORMANCE_ALLOWED_TARGET_PORTS = read_csv_integers(
+        "PERFORMANCE_ALLOWED_TARGET_PORTS",
+        (80, 443),
+    )
+
+    # Le playbook Ansible de l'étape suivante devra créer un Service
+    # portant ce nom, avec le receiver remote-write activé.
+    PERFORMANCE_PROMETHEUS_REMOTE_WRITE_URL_TEMPLATE = os.getenv(
+        "PERFORMANCE_PROMETHEUS_REMOTE_WRITE_URL_TEMPLATE",
+        "http://sapixi-k6-prometheus.{namespace}.svc.cluster.local:9090/api/v1/write",
+    )
+
+    PERFORMANCE_GRAFANA_SCHEME = os.getenv(
+        "PERFORMANCE_GRAFANA_SCHEME",
+        "https",
+    )
+
+    PERFORMANCE_GRAFANA_DASHBOARD_UID = os.getenv(
+        "PERFORMANCE_GRAFANA_DASHBOARD_UID",
+        "k6-performance",
+    )
+
