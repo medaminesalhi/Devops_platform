@@ -11,6 +11,9 @@ import { Deployments } from './features/deployments/pages/deployments/deployment
 import { NewDeployment } from './features/deployments/pages/new-deployment/new-deployment';
 import { ProjectDeploymentGateway } from './features/deployments/pages/project-deployment-gateway/project-deployment-gateway';
 import { Infrastructure } from './features/infrastructure/pages/infrastructure/infrastructure';
+import { NewPerformanceTest } from './features/performance/pages/new-performance-test/new-performance-test';
+import { Performance } from './features/performance/pages/performance/performance';
+import { PerformanceRunDetail } from './features/performance/pages/performance-run-detail/performance-run-detail';
 import { Integrations } from './features/integrations/pages/integrations/integrations';
 import { NewProject } from './features/projects/pages/new-project/new-project';
 import { ProjectDetail } from './features/projects/pages/project-detail/project-detail';
@@ -84,6 +87,18 @@ export const routes: Routes = [
       {
         path: 'deployments',
         component: Deployments,
+      },
+      {
+        path: 'performance/new',
+        component: NewPerformanceTest,
+      },
+      {
+        path: 'performance/runs/:runId',
+        component: PerformanceRunDetail,
+      },
+      {
+        path: 'performance',
+        component: Performance,
       },
       {
         path: 'infrastructure',

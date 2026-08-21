@@ -296,6 +296,15 @@ export class Topbar {
       return;
     }
 
+    if (url.startsWith('/performance')) {
+      this.pageInformation.set({
+        title: 'Performance',
+        subtitle: 'Validez la charge avec k6 et, si besoin, Grafana + Prometheus.',
+        section: 'Validation',
+      });
+      return;
+    }
+
     if (url.startsWith('/infrastructure')) {
       this.pageInformation.set({
         title: 'Infrastructure',

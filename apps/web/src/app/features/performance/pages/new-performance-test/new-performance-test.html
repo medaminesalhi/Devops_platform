@@ -1,0 +1,114 @@
+<section class="new-performance-page">
+  <nav class="breadcrumb" aria-label="Fil d’Ariane">
+    <a routerLink="/performance">Performance</a><span>›</span><strong>Nouveau test</strong>
+  </nav>
+
+  <header class="page-heading">
+    <div><p class="eyebrow">k6</p><h1>Créer un test de performance</h1><p>Choisissez d’abord comment les résultats seront gérés, puis configurez la charge et les thresholds.</p></div>
+    <a class="button button--secondary" routerLink="/performance">Annuler</a>
+  </header>
+
+  @if (demoMode) {
+    <section class="demo-banner"><span>◈</span><div><strong>Mode aperçu</strong><p>Le formulaire est fonctionnel localement. À l’étape backend, la création appellera le worker k6 réel.</p></div></section>
+  }
+  @if (errorMessage()) {<section class="message message--error"><span>!</span><p>{{ errorMessage() }}</p></section>}
+
+  @if (isLoading()) {
+    <section class="loading-card"><span class="loader"></span><p>Chargement du contexte projet…</p></section>
+  } @else {
+    <div class="workspace">
+      <main class="form-column">
+        <section class="panel section-card">
+          <header class="section-heading"><span>01</span><div><h2>Mode d’exécution</h2><p>Le test k6 est identique. Seule la destination des métriques détaillées change.</p></div></header>
+          <div class="mode-choice-grid">
+            <button type="button" class="mode-choice" [class.mode-choice--active]="mode() === 'basic'" (click)="setMode('basic')">
+              <span class="mode-choice__radio"></span>
+              <div><div class="mode-choice__title"><strong>Basic</strong><b>Recommandé pour commencer</b></div><p>k6 génère un résumé. Notre backend l’enregistre dans PostgreSQL et notre interface affiche les résultats.</p><ul><li>Aucune stack monitoring à installer</li><li>p95 / p99 / RPS / erreurs / thresholds</li></ul></div>
+            </button>
+            <button type="button" class="mode-choice mode-choice--advanced" [class.mode-choice--active]="mode() === 'observability'" (click)="setMode('observability')">
+              <span class="mode-choice__radio"></span>
+              <div><div class="mode-choice__title"><strong>Grafana + Prometheus</strong><b>Observabilité avancée</b></div><p>L’utilisateur prépare un namespace et les droits Kubernetes. Notre backend exécutera ensuite le rôle Ansible de provisioning.</p><ul><li>Résumé conservé dans PostgreSQL</li><li>Métriques temps réel vers Prometheus</li><li>Dashboard Grafana par run</li></ul></div>
+            </button>
+          </div>
+
+          @if (mode() === 'observability') {
+            <div class="advanced-config">
+              <div class="advanced-config__intro"><span>◎</span><div><strong>Namespace fourni par l’utilisateur</strong><p>La plateforme ne crée pas le namespace sans autorisation. Le backend vérifiera le namespace et les droits avant de lancer Ansible.</p></div></div>
+              <div class="form-grid">
+                <label class="field"><span>Namespace observabilité</span><input type="text" [ngModel]="observabilityNamespace()" (ngModelChange)="observabilityNamespace.set($event)" placeholder="performance-observability" /><small>Doit déjà exister sur le cluster cible.</small></label>
+                <label class="field"><span>Rétention Prometheus</span><div class="input-suffix"><input type="number" min="1" max="90" [ngModel]="retentionDays()" (ngModelChange)="retentionDays.set(+$event)" /><i>jours</i></div><small>Durée de conservation des métriques détaillées.</small></label>
+                <label class="field field--full"><span>Hostname Grafana <i>facultatif</i></span><input type="text" [ngModel]="grafanaIngressHost()" (ngModelChange)="grafanaIngressHost.set($event)" placeholder="grafana.performance.example.com" /><small>Si vide, le backend pourra laisser Grafana en ClusterIP selon la stratégie que nous définirons.</small></label>
+              </div>
+              <div class="ansible-preview"><span>Étape backend suivante</span><code>Ansible → vérifier RBAC → installer Prometheus → installer Grafana → créer datasource/dashboard → retourner URL</code></div>
+            </div>
+          }
+        </section>
+
+        <section class="panel section-card">
+          <header class="section-heading"><span>02</span><div><h2>Cible</h2><p>Le test appartient à un projet et peut être relié à un déploiement existant.</p></div></header>
+          @if (linkedDeployment(); as deployment) {
+            <div class="deployment-context"><span>✓</span><div><strong>Deployment #{{ deployment.id }} · {{ deployment.projectName }}</strong><p>{{ deployment.version }} · {{ deployment.environmentName }} · {{ deployment.namespace }}</p></div><a [routerLink]="['/deployments', deployment.id]">Voir ↗</a></div>
+          }
+          <div class="form-grid">
+            <label class="field"><span>Projet</span><select [ngModel]="projectId()" (ngModelChange)="projectId.set(+$event)" [disabled]="!!linkedDeployment()">@for (project of projects(); track project.id) {<option [value]="project.id">{{ project.name }}</option>}</select></label>
+            <label class="field"><span>URL cible</span><input type="url" [ngModel]="targetUrl()" (ngModelChange)="targetUrl.set($event)" placeholder="https://app.example.com" /><small>HTTP/HTTPS uniquement. Le backend validera ensuite que la cible est autorisée.</small></label>
+            <label class="field"><span>Nom du test</span><input type="text" [ngModel]="name()" (ngModelChange)="name.set($event)" placeholder="Checkout load test" /></label>
+            <label class="field"><span>Description <i>facultatif</i></span><input type="text" [ngModel]="description()" (ngModelChange)="description.set($event)" placeholder="Objectif de ce test…" /></label>
+          </div>
+        </section>
+
+        <section class="panel section-card">
+          <header class="section-heading"><span>03</span><div><h2>Profil de charge</h2><p>Les presets remplissent les valeurs. Elles restent modifiables avant le lancement.</p></div></header>
+          <div class="preset-grid">
+            @for (preset of [
+              { key: 'smoke', label: 'Smoke', desc: 'Validation rapide' },
+              { key: 'load', label: 'Load', desc: 'Charge normale' },
+              { key: 'stress', label: 'Stress', desc: 'Limites du service' },
+              { key: 'spike', label: 'Spike', desc: 'Pic brutal' },
+              { key: 'soak', label: 'Soak', desc: 'Charge longue' }
+            ]; track preset.key) {
+              <button type="button" [class.active]="testType() === preset.key" (click)="setTestType($any(preset.key))"><strong>{{ preset.label }}</strong><span>{{ preset.desc }}</span></button>
+            }
+          </div>
+          <div class="form-grid load-fields">
+            <label class="field"><span>VUs de départ</span><input type="number" min="1" max="10000" [ngModel]="virtualUsers()" (ngModelChange)="virtualUsers.set(+$event)" /></label>
+            <label class="field"><span>VUs maximum</span><input type="number" min="1" max="10000" [ngModel]="maxVirtualUsers()" (ngModelChange)="maxVirtualUsers.set(+$event)" /></label>
+            <label class="field"><span>Durée</span><div class="input-suffix"><input type="number" min="10" [ngModel]="durationSeconds()" (ngModelChange)="durationSeconds.set(+$event)" /><i>sec</i></div><small>{{ formatDuration(durationSeconds()) }}</small></label>
+          </div>
+        </section>
+
+        <section class="panel section-card">
+          <header class="section-heading"><span>04</span><div><h2>Quality gate</h2><p>Ces thresholds décideront si le run est PASS ou FAIL.</p></div></header>
+          <div class="threshold-grid">
+            <label class="threshold-field"><span>Error rate</span><div><b>&lt;</b><input type="number" min="0" max="100" step="0.1" [ngModel]="errorRatePercent()" (ngModelChange)="errorRatePercent.set(+$event)" /><i>%</i></div></label>
+            <label class="threshold-field"><span>p95</span><div><b>&lt;</b><input type="number" min="1" [ngModel]="p95Ms()" (ngModelChange)="p95Ms.set(+$event)" /><i>ms</i></div></label>
+            <label class="threshold-field"><span>p99</span><div><b>&lt;</b><input type="number" min="1" [ngModel]="p99Ms()" (ngModelChange)="p99Ms.set(+$event)" /><i>ms</i></div></label>
+            <label class="threshold-field"><span>Checks</span><div><b>&gt;</b><input type="number" min="1" max="100" step="0.1" [ngModel]="checksRatePercent()" (ngModelChange)="checksRatePercent.set(+$event)" /><i>%</i></div></label>
+          </div>
+        </section>
+      </main>
+
+      <aside class="summary-column">
+        <section class="panel summary-card">
+          <p class="eyebrow">Résumé</p><h2>{{ name() || 'Nouveau test' }}</h2>
+          <dl>
+            <div><dt>Mode</dt><dd>{{ mode() === 'basic' ? 'Basic' : 'Grafana + Prometheus' }}</dd></div>
+            <div><dt>Projet</dt><dd>{{ selectedProject()?.name ?? '—' }}</dd></div>
+            <div><dt>Deployment</dt><dd>{{ deploymentId() ? '#' + deploymentId() : 'Indépendant' }}</dd></div>
+            <div><dt>Type</dt><dd>{{ testType() }}</dd></div>
+            <div><dt>VUs max</dt><dd>{{ maxVirtualUsers() }}</dd></div>
+            <div><dt>Durée</dt><dd>{{ formatDuration(durationSeconds()) }}</dd></div>
+            <div><dt>p95</dt><dd>&lt; {{ p95Ms() }} ms</dd></div>
+            @if (mode() === 'observability') {<div><dt>Namespace</dt><dd>{{ observabilityNamespace() || '—' }}</dd></div>}
+          </dl>
+          <button class="button button--primary launch-button" type="button" [disabled]="!canSubmit() || isSubmitting()" (click)="submit()">
+            @if (isSubmitting()) {<span class="loader loader--small"></span> Création…} @else {Créer et lancer <span>→</span>}
+          </button>
+          @if (!canSubmit()) {<p class="validation-help">Complétez les champs requis et vérifiez p99 ≥ p95.</p>} @else {<p class="validation-help">Le backend créera un job durable pris en charge par le futur <code>k6-worker</code>.</p>}
+        </section>
+
+        <section class="panel security-card"><span>⚿</span><div><strong>Sécurité prévue côté backend</strong><p>Validation des URLs autorisées, limites de VUs/durée, isolation du runner et contrôle RBAC avant tout provisioning Grafana/Prometheus.</p></div></section>
+      </aside>
+    </div>
+  }
+</section>

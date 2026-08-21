@@ -1,0 +1,67 @@
+<section class="run-page">
+  <nav class="breadcrumb" aria-label="Fil d’Ariane"><a routerLink="/performance">Performance</a><span>›</span><strong>Run #{{ run()?.id ?? '—' }}</strong></nav>
+
+  @if (errorMessage()) {<section class="message message--error"><span>!</span><p>{{ errorMessage() }}</p></section>}
+  @if (isLoading()) {
+    <section class="loading-card"><span class="loader"></span><p>Chargement du résultat k6…</p></section>
+  } @else if (run(); as current) {
+    <header class="run-header">
+      <div class="run-header__identity"><span class="run-id">#{{ current.id }}</span><div><div class="title-row"><h1>{{ current.testName }}</h1><span [class]="'status-pill status-pill--' + current.status">{{ statusLabel(current.status) }}</span></div><p>{{ current.projectName }} · {{ typeLabel(current.testType) }} · {{ modeLabel(current.mode) }}</p></div></div>
+      <div class="header-actions">
+        <button class="button button--secondary" type="button" (click)="loadRun()">↻ Actualiser</button>
+        @if (current.deploymentId) {<a class="button button--secondary" [routerLink]="['/deployments', current.deploymentId]">Deployment #{{ current.deploymentId }}</a>}
+        @if (current.grafanaDashboardUrl) {<button class="button button--grafana" type="button" (click)="openGrafana()">◎ Ouvrir Grafana ↗</button>}
+        @if (canCancel()) {<button class="button button--danger" type="button" [disabled]="isWorking()" (click)="cancel()">Annuler</button>}
+      </div>
+    </header>
+
+    @if (demoMode) {<section class="demo-banner"><span>◈</span><p>Résultat de démonstration. Les mêmes composants afficheront ensuite les vraies métriques k6.</p></section>}
+
+    <section class="context-grid">
+      <article><span>Mode</span><strong>{{ modeLabel(current.mode) }}</strong><small>{{ current.mode === 'basic' ? 'PostgreSQL + UI plateforme' : 'PostgreSQL + Prometheus + Grafana' }}</small></article>
+      <article><span>Cible</span><strong class="truncate">{{ current.targetUrl }}</strong><small>URL testée par k6</small></article>
+      <article><span>Charge</span><strong>{{ current.maxVirtualUsers }} VUs max</strong><small>{{ current.durationSeconds }} secondes</small></article>
+      <article><span>Démarrage</span><strong>{{ current.startedAt ? (current.startedAt | date:'dd/MM/yyyy HH:mm:ss') : 'En attente' }}</strong><small>{{ current.finishedAt ? 'Terminé ' + (current.finishedAt | date:'HH:mm:ss') : 'Run actif' }}</small></article>
+    </section>
+
+    @if (current.metrics; as metrics) {
+      <section class="metric-grid">
+        <article class="metric-card"><span>Requêtes</span><strong>{{ metrics.requests | number:'1.0-0' }}</strong><small>{{ metrics.rps | number:'1.0-1' }} req/s</small></article>
+        <article class="metric-card"><span>Moyenne</span><strong>{{ metrics.avgMs }} ms</strong><small>min {{ metrics.minMs }} · max {{ metrics.maxMs }}</small></article>
+        <article class="metric-card"><span>p95</span><strong>{{ metrics.p95Ms }} ms</strong><small>p90 {{ metrics.p90Ms }} ms</small></article>
+        <article class="metric-card"><span>p99</span><strong>{{ metrics.p99Ms }} ms</strong><small>latence de queue</small></article>
+        <article class="metric-card" [class.metric-card--failed]="metrics.errorRatePercent >= 1"><span>Erreurs</span><strong>{{ metrics.errorRatePercent | number:'1.0-2' }} %</strong><small>{{ metrics.checksRatePercent | number:'1.0-2' }} % checks</small></article>
+      </section>
+
+      <div class="content-grid">
+        <section class="panel threshold-panel">
+          <header class="panel-heading"><div><p class="eyebrow">Quality gate</p><h2>Thresholds k6</h2></div><span [class]="'gate-result gate-result--' + current.status">{{ current.status === 'passed' ? 'PASS' : current.status === 'failed' ? 'FAIL' : statusLabel(current.status) }}</span></header>
+          <div class="threshold-list">
+            @for (threshold of current.thresholds; track threshold.key) {
+              <article [class.threshold-row--failed]="!threshold.passed"><span>{{ threshold.passed ? '✓' : '×' }}</span><div><strong>{{ threshold.label }}</strong><small>Requis {{ threshold.expected }}</small></div><b>{{ threshold.actual }}</b></article>
+            }
+          </div>
+        </section>
+
+        <section class="panel details-panel">
+          <header class="panel-heading"><div><p class="eyebrow">Résumé k6</p><h2>Volume transféré</h2></div></header>
+          <dl><div><dt>Iterations</dt><dd>{{ metrics.iterations | number:'1.0-0' }}</dd></div><div><dt>Données reçues</dt><dd>{{ formatBytes(metrics.dataReceivedBytes) }}</dd></div><div><dt>Données envoyées</dt><dd>{{ formatBytes(metrics.dataSentBytes) }}</dd></div><div><dt>Erreur technique</dt><dd>{{ current.errorCode ?? 'Aucune' }}</dd></div></dl>
+        </section>
+      </div>
+    } @else {
+      <section class="waiting-panel"><span class="loader"></span><div><strong>Le worker n’a pas encore produit de métriques</strong><p>Le run est {{ statusLabel(current.status).toLowerCase() }}. Le backend remplira ce panneau pendant et après l’exécution.</p></div></section>
+    }
+
+    @if (current.mode === 'observability') {
+      @if (current.observability; as observability) {
+        <section class="panel observability-panel">
+          <header><div><p class="eyebrow">Mode avancé</p><h2>Prometheus + Grafana</h2><p>Le résumé reste dans notre plateforme. Prometheus conserve la série temporelle et Grafana fournit l’exploration détaillée.</p></div>@if (current.grafanaDashboardUrl) {<button class="button button--grafana" type="button" (click)="openGrafana()">Ouvrir le dashboard ↗</button>}</header>
+          <div class="observability-flow"><article><span>1</span><strong>k6</strong><small>génère la charge</small></article><i>→</i><article><span>2</span><strong>Prometheus</strong><small>stocke les métriques</small></article><i>→</i><article><span>3</span><strong>Grafana</strong><small>visualise le run</small></article></div>
+          <div class="observability-meta"><div><span>Namespace</span><strong>{{ observability.namespace }}</strong></div><div><span>Rétention</span><strong>{{ observability.retentionDays }} jours</strong></div><div><span>Grafana</span><strong>{{ observability.grafanaIngressHost ?? 'Cluster interne' }}</strong></div></div>
+        </section>
+      }
+    }
+
+    <section class="panel logs-panel"><header class="panel-heading"><div><p class="eyebrow">Exécution</p><h2>Journal du run</h2></div></header><div class="logs">@for (log of current.logs; track log.id) {<article><time>{{ log.createdAt | date:'HH:mm:ss' }}</time><span [class]="'log-level log-level--' + log.level">{{ log.level }}</span><p>{{ log.message }}</p></article>}</div></section>
+  }
+</section>

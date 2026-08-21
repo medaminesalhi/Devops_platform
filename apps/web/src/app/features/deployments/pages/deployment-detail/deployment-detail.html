@@ -31,6 +31,15 @@
         <button class="button button--secondary" type="button" [disabled]="isRefreshing()" (click)="refresh()">
           <span [class.spinning]="isRefreshing()">↻</span> Actualiser
         </button>
+        @if (current.status === 'succeeded') {
+          <a
+            class="button button--performance"
+            routerLink="/performance/new"
+            [queryParams]="{ projectId: current.projectId, deploymentId: current.id }"
+          >
+            ⌁ Tester les performances
+          </a>
+        }
         @if (canConfirmSync()) {
           <button class="button button--warning" type="button" [disabled]="isWorking()" (click)="confirmSync()">Confirmer Argo CD</button>
         }
