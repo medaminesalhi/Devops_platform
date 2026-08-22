@@ -404,7 +404,7 @@ export class Infrastructure
 
             Validators.pattern(
               (
-                /^[a-z0-9]+ (?:[-a-z0-9]*[a-z0-9])?$/
+                /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/
               )
             ),
           ],

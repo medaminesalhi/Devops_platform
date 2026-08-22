@@ -135,6 +135,7 @@ class DeploymentPipeline:
             connection=self.argocd_connection,
             source_connection=source_connection,
             contract=self.contract,
+            kubernetes_connection=self.kubernetes_connection,
         )
         self.kubernetes_provider = KubernetesProvider(
             deployment=deployment,
@@ -175,6 +176,17 @@ class DeploymentPipeline:
 
     def run(self) -> None:
         try:
+            # Un vrai préflight est exécuté avant les étapes coûteuses.
+            # En mode prepare_only, Argo CD/Kubernetes ne seront pas utilisés.
+            if self.deployment.get("sync_mode") != "prepare_only":
+                self.logger.write(
+                    "system",
+                    "info",
+                    "Vérification réelle des prérequis Argo CD et Kubernetes…",
+                    stage="prepare",
+                )
+                self.argocd_provider.preflight()
+                self.kubernetes_provider.preflight()
             self._run_steps()
         except DeploymentCancelled:
             self._mark_cancelled()

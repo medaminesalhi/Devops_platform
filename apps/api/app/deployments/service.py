@@ -3,8 +3,11 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from collections import OrderedDict
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+from flask import current_app
 
 from app.deployments import repository
 from app.deployments.diagnostics import chat_with_ai, diagnose_with_ai
@@ -953,7 +956,37 @@ def retry_deployment(deployment_id: int) -> dict[str, Any]:
             409,
         )
 
-    stage = incident.get("stage") or "prepare"
+    stage = str(incident.get("stage") or "prepare")
+
+    # Les étapes GitOps/Argo/Kubernetes dépendent de fichiers temporaires du
+    # workspace. Après un redémarrage du worker/container, ces fichiers peuvent
+    # avoir disparu alors que les étapes précédentes sont toujours marquées
+    # succeeded en base. Dans ce cas on repart de `source` afin de recharger
+    # les artefacts approuvés depuis PostgreSQL.
+    configured_root = Path(
+        str(
+            current_app.config.get(
+                "DEPLOYMENT_WORKSPACE_ROOT",
+                Path(current_app.root_path).parent / "var" / "deployments",
+            )
+        )
+    )
+    workspace_root = configured_root / str(deployment_id)
+    source_path = workspace_root / "source"
+    gitops_content_path = workspace_root / "gitops-content"
+
+    workspace_dependent_stages = {"gitops", "argocd", "kubernetes", "health"}
+    fallback_to_source = False
+    if stage in workspace_dependent_stages:
+        has_source = source_path.exists() and any(source_path.iterdir())
+        has_gitops_content = (
+            gitops_content_path.exists()
+            and any(gitops_content_path.rglob("*.y*ml"))
+        )
+        if not has_source or not has_gitops_content:
+            stage = "source"
+            fallback_to_source = True
+
     repository.reset_steps_from_stage(deployment_id, stage)
     repository.resolve_incidents(deployment_id)
     repository.save_diagnostic(
@@ -979,7 +1012,12 @@ def retry_deployment(deployment_id: int) -> dict[str, Any]:
         scope="system",
         level="info",
         stage=stage,
-        message="Nouvelle tentative lancée depuis l’étape échouée.",
+        message=(
+            "Workspace local incomplet après la tentative précédente ; "
+            "rechargement de la source et des artefacts approuvés avant le retry."
+            if fallback_to_source
+            else "Nouvelle tentative lancée depuis l’étape échouée."
+        ),
     )
     return get_deployment(deployment_id)
 

@@ -1266,6 +1266,7 @@ class ArgoCdProvider:
         connection: dict[str, Any],
         source_connection: dict[str, Any],
         contract: dict[str, Any],
+        kubernetes_connection: dict[str, Any] | None = None,
     ) -> None:
         self.deployment = deployment
         self.workspace = workspace
@@ -1273,10 +1274,12 @@ class ArgoCdProvider:
         self.connection = connection
         self.source_connection = source_connection
         self.contract = contract
+        self.kubernetes_connection = kubernetes_connection or {}
         self.base_url = str(connection.get("base_url") or "").rstrip("/")
         self.verify_ssl = bool(connection.get("verify_ssl", True))
         self.secret = decrypt_credential(connection.get("secret_ciphertext"))
         self.timeout = int(current_app.config.get("DEPLOYMENT_HTTP_TIMEOUT_SECONDS", 30))
+        self.destination_server: str | None = None
 
     def _headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -1333,7 +1336,11 @@ class ArgoCdProvider:
             )
         return response
 
-    def _ensure_source_repository(self) -> None:
+    @staticmethod
+    def _normalize_server(value: Any) -> str:
+        return str(value or "").strip().rstrip("/")
+
+    def _source_repository_body(self) -> tuple[str, dict[str, Any]]:
         delivery = ((self.contract.get("target") or {}).get("delivery") or {})
         repository_url = str(delivery.get("repositoryUrl") or "").strip()
         if not repository_url:
@@ -1344,20 +1351,6 @@ class ArgoCdProvider:
                 title="Source Argo CD absente",
                 requires_new_generation=True,
             )
-
-        response = self._request("GET", "/api/v1/repositories", expected=(200,))
-        try:
-            payload = response.json()
-        except ValueError:
-            payload = {}
-        items = payload.get("items") if isinstance(payload, dict) else []
-        if isinstance(items, list) and any(
-            str(item.get("repo") or item.get("url") or "").rstrip("/")
-            == repository_url.rstrip("/")
-            for item in items
-            if isinstance(item, dict)
-        ):
-            return
 
         source_secret = decrypt_credential(self.source_connection.get("secret_ciphertext"))
         username = str(self.source_connection.get("username") or "").strip()
@@ -1375,23 +1368,182 @@ class ArgoCdProvider:
             body["password"] = source_secret
         if mode == "helm":
             body["name"] = str(delivery.get("repositoryName") or "sapixi-helm")
+        return repository_url, body
 
+    def _ensure_source_repository(self) -> None:
+        """
+        Crée ou met à jour la source Argo CD.
+
+        L'ancien code quittait immédiatement si l'URL existait déjà. Cela
+        conservait d'anciens identifiants dans Argo CD et pouvait provoquer
+        des 401 même après correction des credentials dans SApixi.
+        """
+        repository_url, body = self._source_repository_body()
+
+        # RepoCreateRequest expose le champ `upsert`; grpc-gateway l'accepte
+        # comme query parameter tandis que le corps HTTP reste l'objet repo.
         self._request(
             "POST",
-            "/api/v1/repositories",
+            "/api/v1/repositories?upsert=true",
             json_body=body,
-            expected=(200, 201, 409),
+            expected=(200, 201),
         )
         self.logger.write(
             "argocd",
             "success",
-            f"Source Argo CD enregistrée : {repository_url}",
+            f"Source Argo CD vérifiée/mise à jour : {repository_url}",
             stage="argocd",
         )
+
+    def _list_clusters(self) -> list[dict[str, Any]]:
+        response = self._request("GET", "/api/v1/clusters", expected=(200,))
+        try:
+            payload = response.json()
+        except ValueError as error:
+            raise DeploymentExecutionError(
+                "ARGOCD_CLUSTERS_INVALID_RESPONSE",
+                "Argo CD a renvoyé une réponse invalide pour la liste des clusters.",
+                stage="argocd",
+                title="Liste des clusters Argo CD invalide",
+                retryable=True,
+                integration_name=self.connection.get("name"),
+            ) from error
+
+        items = payload.get("items") if isinstance(payload, dict) else None
+        if not isinstance(items, list):
+            return []
+        return [item for item in items if isinstance(item, dict)]
+
+    def _resolve_destination_server(self) -> str:
+        """
+        Retourne exactement le `server` connu par Argo CD.
+
+        L'adresse utilisée par SApixi pour joindre directement l'API
+        Kubernetes peut être différente de celle enregistrée dans Argo CD
+        (ex.: https://172.16.0.11:6443 vs https://kubernetes.default.svc).
+        """
+        clusters = self._list_clusters()
+        available = [
+            self._normalize_server(item.get("server"))
+            for item in clusters
+            if self._normalize_server(item.get("server"))
+        ]
+        available = list(dict.fromkeys(available))
+
+        target = self.contract.get("target") or {}
+        argocd = target.get("argocd") or {}
+        kubernetes = target.get("kubernetes") or {}
+
+        candidates = [
+            self._normalize_server(argocd.get("destinationServer")),
+            self._normalize_server(self.kubernetes_connection.get("base_url")),
+            self._normalize_server(kubernetes.get("server")),
+        ]
+        candidates = [item for item in dict.fromkeys(candidates) if item]
+
+        for candidate in candidates:
+            if candidate in available:
+                self.destination_server = candidate
+                return candidate
+
+        # Cas fréquent : Argo CD gère uniquement son cluster local sous
+        # kubernetes.default.svc alors que SApixi l'atteint via l'IP du master.
+        in_cluster = "https://kubernetes.default.svc"
+        if in_cluster in available and len(available) == 1:
+            self.destination_server = in_cluster
+            self.logger.write(
+                "argocd",
+                "warning",
+                (
+                    "La destination Kubernetes configurée n'est pas enregistrée "
+                    "telle quelle dans Argo CD. Utilisation du seul cluster "
+                    f"disponible : {in_cluster}."
+                ),
+                stage="argocd",
+            )
+            return in_cluster
+
+        if len(available) == 1:
+            self.destination_server = available[0]
+            self.logger.write(
+                "argocd",
+                "warning",
+                (
+                    "La destination Kubernetes configurée ne correspond pas "
+                    "exactement à Argo CD. Utilisation du seul cluster enregistré : "
+                    f"{available[0]}."
+                ),
+                stage="argocd",
+            )
+            return available[0]
+
+        configured = candidates[0] if candidates else "non définie"
+        known = ", ".join(available) if available else "aucun cluster"
+        raise DeploymentExecutionError(
+            "ARGOCD_DESTINATION_CLUSTER_NOT_FOUND",
+            (
+                f"La destination Kubernetes {configured!r} n'est pas enregistrée "
+                f"dans Argo CD. Clusters connus : {known}. Configurez "
+                "target.argocd.destinationServer ou enregistrez le cluster dans Argo CD."
+            ),
+            stage="argocd",
+            title="Cluster Argo CD introuvable",
+            retryable=True,
+            integration_name=self.connection.get("name"),
+        )
+
+    @staticmethod
+    def _rewrite_destination_server(
+        projects: list[dict[str, Any]],
+        applications: list[dict[str, Any]],
+        destination_server: str,
+    ) -> int:
+        changed = 0
+        for project in projects:
+            spec = project.get("spec")
+            if not isinstance(spec, dict):
+                continue
+            destinations = spec.get("destinations")
+            if not isinstance(destinations, list):
+                continue
+            for destination in destinations:
+                if not isinstance(destination, dict):
+                    continue
+                if destination.get("server") != destination_server:
+                    destination["server"] = destination_server
+                    changed += 1
+
+        for application in applications:
+            spec = application.get("spec")
+            if not isinstance(spec, dict):
+                continue
+            destination = spec.get("destination")
+            if not isinstance(destination, dict):
+                destination = {}
+                spec["destination"] = destination
+            if destination.get("server") != destination_server:
+                destination["server"] = destination_server
+                changed += 1
+        return changed
+
+    def preflight(self) -> dict[str, Any]:
+        """Vérifie Argo CD, ses credentials, la source et la destination avant le build."""
+        self._request("GET", "/api/version", expected=(200,))
+        self._ensure_source_repository()
+        destination_server = self._resolve_destination_server()
+        self.logger.write(
+            "argocd",
+            "success",
+            f"Préflight Argo CD réussi. Destination : {destination_server}",
+            stage="argocd",
+        )
+        return {"destinationServer": destination_server}
 
     def _manifests(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         projects: list[dict[str, Any]] = []
         applications: list[dict[str, Any]] = []
+        if not self.workspace.gitops_content.exists():
+            return projects, applications
         for path in self.workspace.gitops_content.rglob("*.y*ml"):
             try:
                 documents = list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
@@ -1407,10 +1559,34 @@ class ArgoCdProvider:
                     applications.append(document)
         return projects, applications
 
+    def _generation_contains_application(self) -> bool:
+        generation_id = self.deployment.get("generation_run_id")
+        if not generation_id:
+            return False
+        artifacts = repository.list_generation_artifacts(int(generation_id))
+        return any(
+            str(item.get("artifact_type") or "") == "argocd_application"
+            for item in artifacts
+        )
+
     def apply_and_sync(self) -> dict[str, Any]:
         self._ensure_source_repository()
+        destination_server = self._resolve_destination_server()
         projects, applications = self._manifests()
         if not applications:
+            if self._generation_contains_application():
+                raise DeploymentExecutionError(
+                    "DEPLOYMENT_WORKSPACE_INCOMPLETE",
+                    (
+                        "Les manifests Argo CD existent dans la génération, mais "
+                        "le workspace local du worker est incomplet. Relancez le "
+                        "déploiement : SApixi rechargera la source et les artefacts."
+                    ),
+                    stage="argocd",
+                    title="Workspace de déploiement incomplet",
+                    retryable=True,
+                    requires_new_generation=False,
+                )
             raise DeploymentExecutionError(
                 "ARGOCD_APPLICATION_MISSING",
                 "Aucun manifeste Application Argo CD n’a été généré.",
@@ -1420,6 +1596,22 @@ class ArgoCdProvider:
                 requires_new_generation=True,
             )
 
+        changed = self._rewrite_destination_server(
+            projects,
+            applications,
+            destination_server,
+        )
+        if changed:
+            self.logger.write(
+                "argocd",
+                "info",
+                (
+                    f"Destination Argo CD normalisée vers {destination_server} "
+                    f"dans {changed} manifeste(s)."
+                ),
+                stage="argocd",
+            )
+
         for project in projects:
             name = str((project.get("metadata") or {}).get("name") or "")
             if not name:
@@ -1427,7 +1619,7 @@ class ArgoCdProvider:
             response = self._request(
                 "POST",
                 "/api/v1/projects",
-                 json_body={
+                json_body={
                     "project": project,
                     "upsert": True,
                 },
@@ -1472,7 +1664,10 @@ class ArgoCdProvider:
                 f"Synchronisation demandée : {name}",
                 stage="argocd",
             )
-        return {"applications": names}
+        return {
+            "applications": names,
+            "destinationServer": destination_server,
+        }
 
     def application_resources(self) -> list[dict[str, Any]]:
         _projects, applications = self._manifests()
@@ -1584,6 +1779,20 @@ class KubernetesProvider:
             )
         body = response.json()
         return body if isinstance(body, dict) else {}
+
+    def preflight(self) -> dict[str, Any]:
+        """Vérifie que l'API Kubernetes configurée est réellement joignable."""
+        payload = self._get("/version")
+        version = str(payload.get("gitVersion") or payload.get("git_version") or "").strip()
+        self.logger.write(
+            "kubernetes",
+            "success",
+            (
+                f"Préflight Kubernetes réussi{f' : {version}' if version else ''}."
+            ),
+            stage="kubernetes",
+        )
+        return {"version": version or None}
 
     @staticmethod
     def _age(timestamp: str | None) -> str:
