@@ -1964,115 +1964,226 @@ input:checked
 
 
 /* =========================================================
-   ÉDITEUR COMPACT + REPOSITORIES DÉTECTÉS
+   ÉDITEUR : CONTENU COMPACT
+
+   Le panneau conserve EXACTEMENT ses dimensions originales.
+   On réduit uniquement typographie, espacements, champs,
+   cartes d'aide et boutons à l'intérieur.
    ========================================================= */
 
-.integrations-page .editor-backdrop {
-  align-items: center;
+/* En-tête */
+.editor-panel .editor-header {
+  gap: 12px;
+  padding: 16px 24px;
 }
 
-.integrations-page .editor-panel {
-  width: min(720px, 94vw);
-  height: min(92dvh, 860px);
-  margin-block: 4dvh;
-  border-radius: 16px 0 0 16px;
-}
-
-.integrations-page .editor-header {
-  gap: 14px;
-  padding: 15px 20px;
-}
-
-.integrations-page .editor-header h2 {
+.editor-panel .editor-header h2 {
   margin-top: 2px;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+.editor-panel .editor-header p {
+  margin-top: 4px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.editor-panel .editor-header .eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+
+.editor-panel .icon-button {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
   font-size: 20px;
 }
 
-.integrations-page .editor-header p {
-  margin-top: 3px;
-  font-size: 11px;
+/* Sections du formulaire */
+.editor-panel .form-section,
+.editor-panel .provider-guide {
+  margin: 12px 24px 0;
 }
 
-.integrations-page .form-section,
-.integrations-page .provider-guide {
-  margin: 12px 20px 0;
-}
-
-.integrations-page .form-section {
-  padding: 14px;
+.editor-panel .form-section {
+  padding: 14px 16px;
   border-radius: 11px;
 }
 
-.integrations-page .section-title {
-  gap: 10px;
-  margin-bottom: 12px;
+.editor-panel .section-title {
+  gap: 9px;
+  margin-bottom: 11px;
 }
 
-.integrations-page .section-title > span {
-  width: 26px;
-  height: 26px;
+.editor-panel .section-title > span {
+  width: 25px;
+  height: 25px;
   border-radius: 7px;
+  font-size: 12px;
 }
 
-.integrations-page .section-title h3,
-.integrations-page .provider-guide h3 {
+.editor-panel .section-title h3,
+.editor-panel .provider-guide h3 {
   font-size: 14px;
+  line-height: 1.25;
 }
 
-.integrations-page .section-title p,
-.integrations-page .provider-guide p {
-  font-size: 11px;
+.editor-panel .section-title p,
+.editor-panel .provider-guide p {
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.4;
 }
 
-.integrations-page .form-grid {
+/* Champs */
+.editor-panel .form-grid {
   gap: 11px;
 }
 
-.integrations-page .form-field {
+.editor-panel .compact-grid {
+  margin-top: 11px;
+}
+
+.editor-panel .form-field {
   gap: 5px;
   font-size: 11px;
 }
 
-.integrations-page .form-field input,
-.integrations-page .form-field select {
-  min-height: 38px;
-  padding-inline: 10px;
+.editor-panel .form-field input,
+.editor-panel .form-field select {
+  min-height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
 }
 
-.integrations-page .form-field textarea {
-  min-height: 64px;
-  padding: 9px 10px;
+.editor-panel .form-field textarea {
+  min-height: 62px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 11.5px;
 }
 
-.integrations-page .provider-guide {
-  max-height: 150px;
-  overflow: auto;
+.editor-panel .form-field small {
+  font-size: 9.5px;
+  line-height: 1.35;
+}
+
+/* Bloc d'aide fournisseur / Nexus */
+.editor-panel .provider-guide {
   padding: 12px 14px;
   border-radius: 11px;
 }
 
-.integrations-page .guide-heading {
-  gap: 10px;
+.editor-panel .guide-heading {
+  gap: 9px;
 }
 
-.integrations-page .guide-content {
+.editor-panel .guide-content {
   gap: 10px;
   margin-top: 10px;
 }
 
-.integrations-page .guide-content > div {
-  padding: 9px;
+.editor-panel .guide-content > div {
+  padding: 10px 11px;
+  border-radius: 9px;
 }
 
-.integrations-page .guide-content ul,
-.integrations-page .port-list {
+.editor-panel .guide-content ul {
+  gap: 4px;
+  margin-top: 6px;
+  padding-left: 15px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.editor-panel .port-list {
   gap: 5px;
   margin-top: 6px;
+}
+
+.editor-panel .port-item {
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 7px;
+}
+
+.editor-panel .port-item > span {
+  padding: 5px 6px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.editor-panel .port-item strong {
+  font-size: 11px;
+}
+
+.editor-panel .port-item small {
+  margin-top: 1px;
+  font-size: 9px;
+}
+
+/* Aperçu URL, toggles et résultat de test */
+.editor-panel .url-preview {
+  gap: 7px;
+  margin: 11px 0;
+  padding: 10px;
+}
+
+.editor-panel .url-preview span {
+  font-size: 9px;
+}
+
+.editor-panel .url-preview strong,
+.editor-panel .url-preview code {
+  font-size: 10.5px;
+}
+
+.editor-panel .toggle-card {
+  gap: 9px;
+  margin-top: 11px;
+  padding: 10px;
+}
+
+.editor-panel .toggle-card strong {
+  font-size: 11px;
+}
+
+.editor-panel .toggle-card small {
+  font-size: 9.5px;
+}
+
+.editor-panel .test-result {
+  gap: 6px;
+  margin: 12px 24px 0;
+  padding: 11px 12px;
+  font-size: 10.5px;
+}
+
+.editor-panel .test-result code {
+  padding: 6px 8px;
   font-size: 10px;
 }
 
-.integrations-page .editor-footer {
-  padding: 12px 20px;
+/* Footer / boutons */
+.editor-panel .editor-footer {
+  gap: 10px;
+  margin-top: 14px;
+  padding: 11px 24px;
+}
+
+.editor-panel .editor-footer > div {
+  gap: 8px;
+}
+
+.editor-panel .editor-footer .primary-button,
+.editor-panel .editor-footer .secondary-button,
+.editor-panel .editor-footer .danger-button {
+  min-height: 36px;
+  padding: 0 13px;
+  border-radius: 8px;
+  font-size: 11.5px;
 }
 
 .detected-repositories {
@@ -2157,15 +2268,8 @@ input:checked
 }
 
 @media (max-width: 720px) {
-  .integrations-page .editor-panel {
-    width: 100vw;
-    height: 100dvh;
-    margin: 0;
-    border-radius: 0;
-  }
-
-  .integrations-page .guide-content,
-  .integrations-page .two-columns {
+  .editor-panel .guide-content,
+  .editor-panel .two-columns {
     grid-template-columns: 1fr;
   }
 }
@@ -2173,4 +2277,357 @@ input:checked
 .repository-state--error {
   background: #fde9ea;
   color: #b83d46;
+}
+
+/* =========================================================
+   NORMALISATION VISUELLE — PAGE INTÉGRATIONS
+
+   Objectif : aligner la TYPOGRAPHIE et la densité visuelle
+   sur la page Infrastructure, sans modifier la taille de
+   la fenêtre latérale .editor-panel déjà validée.
+   ========================================================= */
+
+.integrations-page {
+  gap: 1.4rem;
+
+  width: 100%;
+  max-width: 100rem;
+
+  margin-inline: auto;
+  padding: 30px;
+}
+
+/* En-tête principal — mêmes dimensions que Infrastructure */
+.integrations-page .page-header {
+  align-items: flex-end;
+  gap: 1.5rem;
+}
+
+.integrations-page .eyebrow {
+  margin: 0 0 0.4rem;
+
+  font-size: 0.82rem;
+  letter-spacing: 0.1em;
+}
+
+.integrations-page .page-header h1 {
+  margin: 0;
+
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.04em;
+}
+
+.integrations-page .page-header p {
+  max-width: 68rem;
+
+  margin: 0.5rem 0 0;
+
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+/* Boutons de la page */
+.integrations-page .primary-button,
+.integrations-page .secondary-button,
+.integrations-page .danger-button {
+  min-height: 2.8rem;
+  padding-inline: 1rem;
+
+  border-radius: 0.75rem;
+
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+/* Cartes statistiques — mêmes proportions que Infrastructure */
+.integrations-page .summary-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.integrations-page .summary-card {
+  min-height: 5.4rem;
+
+  gap: 0.35rem;
+  padding: 1.1rem;
+
+  border-radius: 1rem;
+
+  box-shadow:
+    0 0.45rem 1.3rem
+    rgba(28, 48, 54, 0.05);
+}
+
+.integrations-page .summary-label,
+.integrations-page .summary-card small {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.integrations-page .summary-card strong {
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+
+/* Zone tableau + panneau de détails */
+.integrations-page .content-grid {
+  grid-template-columns: minmax(0, 1fr) 21rem;
+  gap: 1rem;
+}
+
+.integrations-page .connections-panel,
+.integrations-page .details-panel {
+  min-width: 0;
+
+  border-radius: 1rem;
+
+  box-shadow:
+    0 0.45rem 1.3rem
+    rgba(28, 48, 54, 0.05);
+}
+
+/* Entête du tableau */
+.integrations-page .panel-heading {
+  gap: 1rem;
+  padding: 1.2rem 1.3rem;
+}
+
+.integrations-page .panel-heading h2,
+.integrations-page .details-header h2 {
+  font-size: 1.15rem;
+  line-height: 1.3;
+}
+
+.integrations-page .panel-heading p {
+  margin-top: 0.3rem;
+
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+/* Tableau — même niveau typographique que Infrastructure */
+.integrations-page .connections-table-wrapper {
+  width: 100%;
+  min-width: 0;
+
+  overflow-x: auto;
+}
+
+.integrations-page .connections-table {
+  width: 100%;
+  min-width: 72rem;
+}
+
+.integrations-page .connections-table th,
+.integrations-page .connections-table td {
+  padding: 0.95rem 1rem;
+}
+
+.integrations-page .connections-table th {
+  font-size: 0.76rem;
+  letter-spacing: 0.055em;
+}
+
+.integrations-page .connections-table td {
+  font-size: 0.88rem;
+}
+
+.integrations-page .connection-identity {
+  gap: 0.7rem;
+  min-width: 11rem;
+}
+
+.integrations-page .provider-avatar {
+  width: 2.4rem;
+  height: 2.4rem;
+
+  flex: 0 0 2.4rem;
+
+  border-radius: 0.7rem;
+
+  font-size: 0.85rem;
+}
+
+.integrations-page .provider-avatar.large {
+  width: 2.7rem;
+  height: 2.7rem;
+
+  flex: 0 0 2.7rem;
+
+  border-radius: 0.75rem;
+
+  font-size: 1rem;
+}
+
+.integrations-page .connection-identity strong,
+.integrations-page .provider-name {
+  font-size: 0.92rem;
+}
+
+.integrations-page .connection-identity small,
+.integrations-page .address-cell small,
+.integrations-page .date-value,
+.integrations-page .muted-value {
+  font-size: 0.76rem;
+}
+
+.integrations-page .connection-identity small {
+  margin-top: 0.2rem;
+}
+
+.integrations-page .address-cell {
+  gap: 0.2rem;
+}
+
+.integrations-page .address-cell code,
+.integrations-page .details-list code {
+  font-size: 0.82rem;
+}
+
+.integrations-page .status-badge {
+  min-height: 1.85rem;
+  padding-inline: 0.65rem;
+
+  font-size: 0.76rem;
+}
+
+.integrations-page .status-dot {
+  width: 0.38rem;
+  height: 0.38rem;
+}
+
+/* Panneau de détails */
+.integrations-page .details-panel {
+  top: 1rem;
+}
+
+.integrations-page .details-header {
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 1.2rem 1.3rem;
+}
+
+.integrations-page .details-list {
+  padding: 0.25rem 1.3rem;
+}
+
+.integrations-page .details-list > div {
+  grid-template-columns: 7.2rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.85rem 0;
+}
+
+.integrations-page .details-list dt {
+  font-size: 0.75rem;
+}
+
+.integrations-page .details-list dd {
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.integrations-page .last-error {
+  margin: 0.8rem 1.3rem;
+  padding: 0.9rem;
+
+  border-radius: 0.8rem;
+
+  font-size: 0.82rem;
+}
+
+.integrations-page .last-error p {
+  margin-top: 0.35rem;
+
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.integrations-page .details-actions {
+  gap: 0.7rem;
+  padding: 1rem 1.3rem 1.3rem;
+}
+
+/* Messages */
+.integrations-page .message {
+  padding: 0.95rem 1rem;
+
+  border-radius: 0.8rem;
+
+  font-size: 0.88rem;
+}
+
+/* États vides */
+.integrations-page .empty-state,
+.integrations-page .empty-details {
+  min-height: 19rem;
+
+  padding: 3rem 2rem;
+
+  border-radius: 1rem;
+}
+
+.integrations-page .empty-state h3,
+.integrations-page .empty-details h3 {
+  margin-top: 1rem;
+
+  font-size: 1.2rem;
+}
+
+.integrations-page .empty-state p,
+.integrations-page .empty-details p {
+  font-size: 0.92rem;
+}
+
+.integrations-page .empty-icon,
+.integrations-page .empty-details > span {
+  width: 3.5rem;
+  height: 3.5rem;
+
+  border-radius: 0.9rem;
+
+  font-size: 1.4rem;
+}
+
+/* Responsive */
+@media (max-width: 1180px) {
+  .integrations-page .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .integrations-page .details-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 1100px) {
+  .integrations-page .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .integrations-page {
+    gap: 1rem;
+    padding: 1rem;
+  }
+
+  .integrations-page .page-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .integrations-page .page-header h1 {
+    font-size: 1.65rem;
+  }
+
+  .integrations-page .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .integrations-page .page-header .primary-button,
+  .integrations-page .page-header .secondary-button {
+    width: 100%;
+  }
 }

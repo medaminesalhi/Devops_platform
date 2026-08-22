@@ -355,6 +355,24 @@ def _validate_request(payload: dict[str, Any]) -> dict[str, Any]:
             "Le seuil p99 doit être supérieur ou égal au seuil p95.",
         )
 
+    observability_stack_id: int | None = None
+    if mode == "observability":
+        raw_stack_id = payload.get("observabilityStackId")
+        if raw_stack_id in (None, "") and isinstance(payload.get("observability"), dict):
+            raw_stack_id = payload["observability"].get("stackId")
+        try:
+            observability_stack_id = int(raw_stack_id)
+        except (TypeError, ValueError) as error:
+            raise PerformanceServiceError(
+                "OBSERVABILITY_STACK_REQUIRED",
+                "Sélectionnez une stack Prometheus/Grafana prête avant de lancer le test.",
+            ) from error
+        if observability_stack_id <= 0:
+            raise PerformanceServiceError(
+                "OBSERVABILITY_STACK_REQUIRED",
+                "Sélectionnez une stack Prometheus/Grafana prête avant de lancer le test.",
+            )
+
     return {
         "project_id": project_id,
         "deployment_id": deployment_id,
@@ -369,7 +387,7 @@ def _validate_request(payload: dict[str, Any]) -> dict[str, Any]:
             "durationSeconds": duration_seconds,
         },
         "thresholds": thresholds,
-        "observability": _validate_observability(mode, payload.get("observability")),
+        "observability_stack_id": observability_stack_id,
     }
 
 
@@ -540,7 +558,11 @@ def _serialize_test(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def create_and_run(payload: dict[str, Any], created_by: int) -> dict[str, Any]:
+def create_and_run(
+    payload: dict[str, Any],
+    created_by: int,
+    owner_user_id: int | None,
+) -> dict[str, Any]:
     values = _validate_request(payload)
 
     project = repository.find_project(values["project_id"])
@@ -562,6 +584,21 @@ def create_and_run(payload: dict[str, Any], created_by: int) -> dict[str, Any]:
                 "Un test lié à un déploiement nécessite un déploiement réussi.",
                 409,
             )
+
+    observability_stack_id = values.pop("observability_stack_id", None)
+    if values["mode"] == "observability":
+        from app.performance.observability_service import (
+            resolve_stack_observability_config,
+        )
+
+        assert observability_stack_id is not None
+        values["observability"] = resolve_stack_observability_config(
+            observability_stack_id,
+            owner_user_id=owner_user_id,
+            project_id=values["project_id"],
+        )
+    else:
+        values["observability"] = None
 
     run = repository.create_test_and_run(created_by=created_by, **values)
     return serialize_run(run)
@@ -708,7 +745,9 @@ def get_performance_config() -> dict[str, Any]:
         },
         "observability": {
             "configuredFromInterface": True,
-            "prometheusRemoteWriteUrlRequired": True,
+            "managedProvisioning": True,
+            "stackRequired": True,
+            "prometheusRemoteWriteUrlRequired": False,
             "grafanaBaseUrlRequired": False,
         },
     }

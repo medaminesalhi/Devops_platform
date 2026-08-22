@@ -1,0 +1,88 @@
+---
+- name: Provision Sapixi k6 observability stack
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    prometheus_repo_name: prometheus-community
+    prometheus_repo_url: https://prometheus-community.github.io/helm-charts
+    grafana_repo_name: grafana-community
+    grafana_repo_url: https://grafana-community.github.io/helm-charts
+
+  tasks:
+    - name: Verify access to the target namespace without cluster-scoped RBAC
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: ConfigMap
+        namespace: "{{ namespace }}"
+      register: namespace_access
+
+    - name: Add Prometheus Helm repository
+      kubernetes.core.helm_repository:
+        name: "{{ prometheus_repo_name }}"
+        repo_url: "{{ prometheus_repo_url }}"
+
+    - name: Add Grafana Community Helm repository
+      kubernetes.core.helm_repository:
+        name: "{{ grafana_repo_name }}"
+        repo_url: "{{ grafana_repo_url }}"
+
+    - name: Install or upgrade Prometheus for k6
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig_path }}"
+        release_name: "{{ prometheus_release_name }}"
+        chart_ref: "{{ prometheus_repo_name }}/prometheus"
+        chart_version: "{{ prometheus_chart_version }}"
+        release_namespace: "{{ namespace }}"
+        create_namespace: false
+        update_repo_cache: true
+        wait: true
+        wait_timeout: 10m
+        atomic: true
+        values: "{{ prometheus_values }}"
+
+    - name: Install or upgrade Grafana for k6
+      kubernetes.core.helm:
+        kubeconfig: "{{ kubeconfig_path }}"
+        release_name: "{{ grafana_release_name }}"
+        chart_ref: "{{ grafana_repo_name }}/grafana"
+        chart_version: "{{ grafana_chart_version }}"
+        release_namespace: "{{ namespace }}"
+        create_namespace: false
+        update_repo_cache: true
+        wait: true
+        wait_timeout: 10m
+        atomic: true
+        values: "{{ grafana_values }}"
+
+    - name: Read Prometheus service
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Service
+        namespace: "{{ namespace }}"
+        name: "{{ prometheus_service_name }}"
+      register: prometheus_service
+
+    - name: Verify Prometheus service exists
+      ansible.builtin.assert:
+        that:
+          - prometheus_service.resources | length == 1
+        fail_msg: "Le Service Prometheus attendu n'a pas été créé."
+
+    - name: Read Grafana service
+      kubernetes.core.k8s_info:
+        kubeconfig: "{{ kubeconfig_path }}"
+        api_version: v1
+        kind: Service
+        namespace: "{{ namespace }}"
+        name: "{{ grafana_service_name }}"
+      register: grafana_service
+
+    - name: Verify Grafana service exists
+      ansible.builtin.assert:
+        that:
+          - grafana_service.resources | length == 1
+        fail_msg: "Le Service Grafana attendu n'a pas été créé."

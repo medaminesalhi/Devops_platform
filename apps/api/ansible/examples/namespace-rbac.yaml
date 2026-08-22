@@ -1,0 +1,45 @@
+# Replace NAMESPACE before applying this manifest.
+# The namespace itself must already exist.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sapixi-observability-provisioner
+  namespace: NAMESPACE
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: sapixi-observability-provisioner
+  namespace: NAMESPACE
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - services
+      - configmaps
+      - secrets
+      - persistentvolumeclaims
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: sapixi-observability-provisioner
+  namespace: NAMESPACE
+subjects:
+  - kind: ServiceAccount
+    name: sapixi-observability-provisioner
+    namespace: NAMESPACE
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: sapixi-observability-provisioner

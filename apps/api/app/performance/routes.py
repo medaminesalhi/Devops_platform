@@ -5,9 +5,17 @@ from typing import Any
 from flask import Blueprint, g, jsonify, request
 
 from app.auth.decorators import (
+    current_user_can_access_integration,
     current_user_can_access_project,
     current_user_is_admin,
     require_auth,
+)
+from app.performance.observability_service import (
+    create_observability_stack,
+    get_grafana_credentials,
+    get_observability_stack,
+    list_observability_stacks,
+    retry_observability_stack,
 )
 from app.performance.service import (
     PerformanceServiceError,
@@ -121,7 +129,7 @@ def create_and_run_route():
                 404,
             )
 
-        run = create_and_run(payload, _current_user_id())
+        run = create_and_run(payload, _current_user_id(), _owner_filter())
         return _success({"run": run}, 201)
     except Exception as error:
         return _handle_error(error)
@@ -179,6 +187,101 @@ def rerun_run_route(run_id: int):
                 )
             },
             201,
+        )
+    except Exception as error:
+        return _handle_error(error)
+
+
+@performance_blueprint.get("/observability/stacks")
+@require_auth
+def list_observability_stacks_route():
+    try:
+        raw_project_id = request.args.get("projectId")
+        project_id = int(raw_project_id) if raw_project_id else None
+        if project_id is not None and not current_user_can_access_project(project_id):
+            return _error_response("PROJECT_NOT_FOUND", "Le projet est introuvable.", 404)
+        return _success(
+            {
+                "stacks": list_observability_stacks(
+                    owner_user_id=_owner_filter(),
+                    project_id=project_id,
+                )
+            }
+        )
+    except Exception as error:
+        return _handle_error(error)
+
+
+@performance_blueprint.post("/observability/stacks")
+@require_auth
+def create_observability_stack_route():
+    try:
+        payload = _json_payload()
+        try:
+            project_id = int(payload.get("projectId"))
+            connection_id = int(payload.get("kubernetesConnectionId"))
+        except (TypeError, ValueError):
+            project_id = 0
+            connection_id = 0
+
+        if project_id <= 0 or not current_user_can_access_project(project_id):
+            return _error_response("PROJECT_NOT_FOUND", "Le projet est introuvable.", 404)
+        if connection_id <= 0 or not current_user_can_access_integration(connection_id):
+            return _error_response(
+                "KUBERNETES_CONNECTION_NOT_FOUND",
+                "La connexion Kubernetes est introuvable.",
+                404,
+            )
+
+        stack = create_observability_stack(payload, _current_user_id())
+        return _success({"stack": stack}, 201)
+    except Exception as error:
+        return _handle_error(error)
+
+
+@performance_blueprint.get("/observability/stacks/<int:stack_id>")
+@require_auth
+def get_observability_stack_route(stack_id: int):
+    try:
+        return _success(
+            {
+                "stack": get_observability_stack(
+                    stack_id,
+                    owner_user_id=_owner_filter(),
+                )
+            }
+        )
+    except Exception as error:
+        return _handle_error(error)
+
+
+@performance_blueprint.post("/observability/stacks/<int:stack_id>/retry")
+@require_auth
+def retry_observability_stack_route(stack_id: int):
+    try:
+        return _success(
+            {
+                "stack": retry_observability_stack(
+                    stack_id,
+                    owner_user_id=_owner_filter(),
+                )
+            }
+        )
+    except Exception as error:
+        return _handle_error(error)
+
+
+@performance_blueprint.get("/observability/stacks/<int:stack_id>/credentials")
+@require_auth
+def grafana_credentials_route(stack_id: int):
+    try:
+        return _success(
+            {
+                "credentials": get_grafana_credentials(
+                    stack_id,
+                    owner_user_id=_owner_filter(),
+                )
+            }
         )
     except Exception as error:
         return _handle_error(error)

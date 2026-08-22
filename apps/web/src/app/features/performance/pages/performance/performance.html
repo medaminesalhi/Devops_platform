@@ -1,117 +1,300 @@
 <section class="performance-page">
   <header class="page-heading">
-    <div>
+    <div class="page-heading__copy">
       <p class="eyebrow">Validation après déploiement</p>
       <h1>Performance</h1>
-      <p>Exécutez des tests k6 en mode Basic ou ajoutez Prometheus et Grafana pour conserver et explorer les métriques détaillées.</p>
+      <p class="page-subtitle">
+        Suivez la santé des tests k6, les dernières exécutions et les configurations disponibles.
+      </p>
     </div>
 
     <div class="page-heading__actions">
-      <button class="button button--secondary" type="button" [disabled]="isRefreshing()" (click)="loadData(true)">
-        <span [class.spinning]="isRefreshing()">↻</span>
+      <button
+        class="button button--secondary"
+        type="button"
+        [disabled]="isRefreshing()"
+        (click)="loadData(true)"
+      >
+        <span class="button__icon" [class.spinning]="isRefreshing()">↻</span>
         Actualiser
       </button>
+
       <a class="button button--primary" routerLink="/performance/new">
-        <span>＋</span>
+        <span class="button__icon">＋</span>
         Nouveau test
       </a>
     </div>
   </header>
 
   @if (errorMessage()) {
-    <section class="message message--error"><span>!</span><p>{{ errorMessage() }}</p></section>
+    <section class="message message--error" role="alert">
+      <span class="message__icon">!</span>
+      <p>{{ errorMessage() }}</p>
+    </section>
   }
 
-  <section class="mode-grid" aria-label="Modes d'exécution k6">
-    <article class="mode-card">
-      <div class="mode-card__icon">k6</div>
-      <div class="mode-card__content">
-        <div class="mode-card__title"><h2>Basic</h2><span>Simple</span></div>
-        <p>Le worker exécute k6, récupère le résumé JSON et notre plateforme affiche directement les résultats.</p>
-        <ul>
-          <li>k6 uniquement</li>
-          <li>Résultats conservés dans PostgreSQL</li>
-          <li>p95, p99, RPS, erreurs et thresholds</li>
-        </ul>
-      </div>
-    </article>
+  <section class="summary-panel" aria-label="Résumé Performance">
+    <div class="health-summary">
+      <div class="health-summary__topline">
+        <div>
+          <span class="summary-label">Taux de réussite</span>
+          <div class="health-summary__value">
+            <strong>{{ successRate() }}%</strong>
+            <span>{{ finishedRuns() }} runs terminés</span>
+          </div>
+        </div>
 
-    <article class="mode-card mode-card--observability">
-      <div class="mode-card__icon">◎</div>
-      <div class="mode-card__content">
-        <div class="mode-card__title"><h2>Observabilité</h2><span>Grafana + Prometheus</span></div>
-        <p>L’utilisateur saisit directement l’URL Prometheus Remote Write et, si disponible, l’URL Grafana. Le provisioning Ansible viendra ensuite automatiser cette configuration.</p>
-        <ul>
-          <li>Résumé également conservé dans PostgreSQL</li>
-          <li>Métriques k6 envoyées vers Prometheus</li>
-          <li>Dashboard Grafana filtré par run</li>
-        </ul>
+        <span
+          class="health-badge"
+          [class.health-badge--good]="successRate() >= 80"
+          [class.health-badge--warning]="successRate() >= 50 && successRate() < 80"
+          [class.health-badge--danger]="successRate() < 50"
+        >
+          {{ successRate() >= 80 ? 'Stable' : successRate() >= 50 ? 'À surveiller' : 'À améliorer' }}
+        </span>
       </div>
-    </article>
+
+      <div class="success-progress" aria-hidden="true">
+        <span [style.width.%]="successRate()"></span>
+      </div>
+
+      <div class="health-summary__footer">
+        <span><b>{{ overview().passedRuns }}</b> réussis</span>
+        <span><b>{{ overview().failedRuns }}</b> échoués</span>
+        <span><b>{{ failureRate() }}%</b> d'échec</span>
+      </div>
+    </div>
+
+    <div class="summary-metrics">
+      <article class="summary-metric">
+        <span class="summary-metric__icon">⌁</span>
+        <div>
+          <span>Tests</span>
+          <strong>{{ overview().totalTests }}</strong>
+          <small>configurations</small>
+        </div>
+      </article>
+
+      <article class="summary-metric">
+        <span class="summary-metric__icon">▶</span>
+        <div>
+          <span>Runs</span>
+          <strong>{{ overview().totalRuns }}</strong>
+          <small>exécutions</small>
+        </div>
+      </article>
+
+      <article class="summary-metric summary-metric--active">
+        <span class="summary-metric__icon">↻</span>
+        <div>
+          <span>Actifs</span>
+          <strong>{{ overview().runningRuns }}</strong>
+          <small>file + en cours</small>
+        </div>
+      </article>
+    </div>
+
+    <aside class="mode-summary" aria-label="Modes disponibles">
+      <div class="mode-summary__heading">
+        <span class="summary-label">Modes</span>
+        <span class="mode-summary__total">{{ overview().totalTests }} tests</span>
+      </div>
+
+      <div class="mode-line">
+        <span class="mode-line__icon">k6</span>
+        <div>
+          <strong>Basic</strong>
+          <small>Résultats dans la plateforme</small>
+        </div>
+        <b>{{ basicTestsCount() }}</b>
+      </div>
+
+      <div class="mode-line mode-line--observability">
+        <span class="mode-line__icon">◎</span>
+        <div>
+          <strong>Observabilité</strong>
+          <small>Prometheus + Grafana</small>
+        </div>
+        <b>{{ observabilityTestsCount() }}</b>
+      </div>
+    </aside>
   </section>
 
-  <section class="metric-grid" aria-label="Résumé Performance">
-    <article><span>Tests</span><strong>{{ overview().totalTests }}</strong><small>configurations</small></article>
-    <article><span>Runs</span><strong>{{ overview().totalRuns }}</strong><small>exécutions</small></article>
-    <article class="metric-running"><span>Actifs</span><strong>{{ overview().runningRuns }}</strong><small>queued / running</small></article>
-    <article class="metric-success"><span>Réussis</span><strong>{{ overview().passedRuns }}</strong><small>{{ successRate() }} % de réussite</small></article>
-    <article class="metric-failed"><span>Échoués</span><strong>{{ overview().failedRuns }}</strong><small>quality gate</small></article>
+  <section class="panel recent-runs-panel">
+    <header class="panel-heading panel-heading--compact">
+      <div>
+        <p class="eyebrow">Activité récente</p>
+        <h2>Dernières exécutions</h2>
+      </div>
+      <span class="panel-heading__meta">{{ recentRuns().length }} affichées</span>
+    </header>
+
+    @if (isLoading()) {
+      <div class="loading-card">
+        <span class="loader"></span>
+        <p>Chargement des exécutions…</p>
+      </div>
+    } @else if (!recentRuns().length) {
+      <div class="empty-state empty-state--compact">
+        <span>▶</span>
+        <div>
+          <h3>Aucune exécution</h3>
+          <p>Créez un test puis lancez-le pour voir son résultat ici.</p>
+        </div>
+        <a class="button button--primary" routerLink="/performance/new">Créer un test</a>
+      </div>
+    } @else {
+      <div class="run-table">
+        <div class="run-table__header" aria-hidden="true">
+          <span>Run</span>
+          <span>Cible</span>
+          <span>p95</span>
+          <span>Erreurs</span>
+          <span>Statut</span>
+          <span>Date</span>
+          <span></span>
+        </div>
+
+        @for (run of recentRuns(); track run.id) {
+          <a class="run-row" [routerLink]="['/performance/runs', run.id]">
+            <div class="run-identity">
+              <span [class]="'run-status run-status--' + run.status">
+                {{ statusIcon(run.status) }}
+              </span>
+              <div>
+                <strong>#{{ run.id }} · {{ run.testName }}</strong>
+                <span>{{ run.projectName }} · {{ typeLabel(run.testType) }} · {{ modeLabel(run.mode) }}</span>
+              </div>
+            </div>
+
+            <div class="run-target" [title]="run.targetUrl">
+              <code>{{ run.targetUrl }}</code>
+              <small>{{ run.maxVirtualUsers }} VUs · {{ formatDuration(run.durationSeconds) }}</small>
+            </div>
+
+            <div class="run-value">
+              <strong>{{ run.metrics ? (run.metrics.p95Ms + ' ms') : '—' }}</strong>
+              <span>latence</span>
+            </div>
+
+            <div class="run-value">
+              <strong>{{ run.metrics ? ((run.metrics.errorRatePercent | number:'1.0-2') + ' %') : '—' }}</strong>
+              <span>taux</span>
+            </div>
+
+            <span [class]="'status-pill status-pill--' + run.status">
+              {{ statusLabel(run.status) }}
+            </span>
+
+            <time>{{ run.createdAt | date:'dd/MM HH:mm' }}</time>
+            <span class="row-arrow">→</span>
+          </a>
+        }
+      </div>
+    }
   </section>
 
   <section class="panel tests-panel">
     <header class="panel-heading">
-      <div><p class="eyebrow">Configurations</p><h2>Tests enregistrés</h2></div>
+      <div>
+        <p class="eyebrow">Catalogue</p>
+        <h2>Tests enregistrés</h2>
+        <p class="panel-description">Configurations réutilisables pour vos prochains runs.</p>
+      </div>
+
       <form class="filters" [formGroup]="filterForm" (ngSubmit)="loadData()">
-        <input type="search" formControlName="search" placeholder="Projet, test ou URL…" />
-        <select formControlName="mode">
+        <label class="search-field">
+          <span>⌕</span>
+          <input
+            type="search"
+            formControlName="search"
+            placeholder="Rechercher un test, projet ou URL…"
+          />
+        </label>
+
+        <select formControlName="mode" aria-label="Filtrer par mode">
           <option value="">Tous les modes</option>
           <option value="basic">Basic</option>
-          <option value="observability">Grafana + Prometheus</option>
+          <option value="observability">Observabilité</option>
         </select>
+
         <button class="button button--secondary" type="submit">Filtrer</button>
-        <button class="button button--ghost" type="button" (click)="resetFilters()">Effacer</button>
+        <button class="button button--ghost" type="button" (click)="resetFilters()">Réinitialiser</button>
       </form>
     </header>
 
     @if (isLoading()) {
-      <div class="loading-card"><span class="loader"></span><p>Chargement des tests k6…</p></div>
+      <div class="loading-card">
+        <span class="loader"></span>
+        <p>Chargement des tests k6…</p>
+      </div>
     } @else if (!tests().length) {
-      <div class="empty-state"><span>k6</span><h3>Aucun test</h3><p>Créez votre premier test de performance.</p><a class="button button--primary" routerLink="/performance/new">Créer un test</a></div>
+      <div class="empty-state">
+        <span>k6</span>
+        <h3>Aucun test enregistré</h3>
+        <p>Créez votre première configuration de performance.</p>
+        <a class="button button--primary" routerLink="/performance/new">Créer un test</a>
+      </div>
     } @else {
       <div class="table-scroll">
         <table>
-          <thead><tr><th>Test</th><th>Mode</th><th>Profil</th><th>Cible</th><th>Seuil p95</th><th>Dernière mise à jour</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Test</th>
+              <th>Mode</th>
+              <th>Profil</th>
+              <th>Cible</th>
+              <th>Quality gate</th>
+              <th>Mise à jour</th>
+            </tr>
+          </thead>
           <tbody>
             @for (test of tests(); track test.id) {
               <tr>
-                <td><div class="test-name"><strong>{{ test.name }}</strong><span>{{ test.projectName }} @if (test.deploymentId) { · deployment #{{ test.deploymentId }}}</span></div></td>
-                <td><span [class]="'mode-pill mode-pill--' + test.mode">{{ modeLabel(test.mode) }}</span></td>
-                <td><strong>{{ typeLabel(test.testType) }}</strong><small>{{ test.loadProfile.maxVirtualUsers }} VUs · {{ formatDuration(test.loadProfile.durationSeconds) }}</small></td>
-                <td><code>{{ test.targetUrl }}</code></td>
-                <td>&lt; {{ test.thresholds.p95Ms }} ms</td>
-                <td>{{ test.updatedAt | date:'dd/MM/yyyy HH:mm' }}</td>
+                <td>
+                  <div class="test-name">
+                    <strong>{{ test.name }}</strong>
+                    <span>
+                      {{ test.projectName }}
+                      @if (test.deploymentId) {
+                        · deployment #{{ test.deploymentId }}
+                      }
+                    </span>
+                  </div>
+                </td>
+
+                <td>
+                  <span [class]="'mode-pill mode-pill--' + test.mode">
+                    {{ modeLabel(test.mode) }}
+                  </span>
+                </td>
+
+                <td>
+                  <div class="profile-cell">
+                    <strong>{{ typeLabel(test.testType) }}</strong>
+                    <span>{{ test.loadProfile.maxVirtualUsers }} VUs · {{ formatDuration(test.loadProfile.durationSeconds) }}</span>
+                  </div>
+                </td>
+
+                <td>
+                  <code class="target-code" [title]="test.targetUrl">{{ test.targetUrl }}</code>
+                </td>
+
+                <td>
+                  <div class="quality-cell">
+                    <strong>p95 &lt; {{ test.thresholds.p95Ms }} ms</strong>
+                    <span>erreurs &lt; {{ test.thresholds.errorRatePercent }}%</span>
+                  </div>
+                </td>
+
+                <td>
+                  <time class="updated-at">{{ test.updatedAt | date:'dd/MM/yyyy HH:mm' }}</time>
+                </td>
               </tr>
             }
           </tbody>
         </table>
       </div>
     }
-  </section>
-
-  <section class="panel runs-panel">
-    <header class="panel-heading"><div><p class="eyebrow">Historique</p><h2>Dernières exécutions</h2></div></header>
-    <div class="run-list">
-      @for (run of runs(); track run.id) {
-        <a class="run-row" [routerLink]="['/performance/runs', run.id]">
-          <span [class]="'run-status run-status--' + run.status">{{ run.status === 'passed' ? '✓' : run.status === 'failed' ? '!' : run.status === 'running' ? '↻' : '·' }}</span>
-          <div class="run-main"><strong>#{{ run.id }} · {{ run.testName }}</strong><span>{{ run.projectName }} · {{ typeLabel(run.testType) }} · {{ modeLabel(run.mode) }}</span></div>
-          <div class="run-metric"><span>p95</span><strong>{{ run.metrics ? (run.metrics.p95Ms + ' ms') : '—' }}</strong></div>
-          <div class="run-metric"><span>Erreurs</span><strong>{{ run.metrics ? ((run.metrics.errorRatePercent | number:'1.0-2') + ' %') : '—' }}</strong></div>
-          <span [class]="'status-pill status-pill--' + run.status">{{ statusLabel(run.status) }}</span>
-          <time>{{ run.createdAt | date:'dd/MM HH:mm' }}</time>
-          <b>→</b>
-        </a>
-      }
-    </div>
   </section>
 </section>

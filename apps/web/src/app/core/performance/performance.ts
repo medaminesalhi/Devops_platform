@@ -22,6 +22,7 @@ export interface PerformanceLoadProfile {
 }
 
 export interface PerformanceObservabilityConfig {
+  stackId: number | null;
   namespace: string | null;
   retentionDays: number;
   prometheusRemoteWriteUrl: string;
@@ -136,6 +137,8 @@ export interface PerformanceRuntimeConfig {
   };
   observability: {
     configuredFromInterface: boolean;
+    managedProvisioning: boolean;
+    stackRequired: boolean;
     prometheusRemoteWriteUrlRequired: boolean;
     grafanaBaseUrlRequired: boolean;
   };
@@ -153,6 +156,74 @@ export interface CreatePerformanceTestRequest {
   loadProfile: PerformanceLoadProfile;
   thresholds: PerformanceThresholds;
   observability: PerformanceObservabilityConfig | null;
+  observabilityStackId: number | null;
+}
+
+export type ObservabilityStackStatus =
+  | 'queued'
+  | 'provisioning'
+  | 'ready'
+  | 'failed'
+  | 'deleting'
+  | 'deleted';
+
+export interface ObservabilityStackLog {
+  id: number;
+  level: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  createdAt: string;
+}
+
+export interface ObservabilityStack {
+  id: number;
+  projectId: number;
+  projectName: string;
+  kubernetesConnectionId: number;
+  kubernetesConnectionName: string;
+  namespace: string;
+  status: ObservabilityStackStatus;
+  retentionDays: number;
+  prometheusStorageSize: string;
+  grafanaStorageSize: string;
+  storageClassName: string | null;
+  ingressEnabled: boolean;
+  ingressClassName: string | null;
+  grafanaHost: string | null;
+  grafanaTlsEnabled: boolean;
+  grafanaTlsSecretName: string | null;
+  prometheusRemoteWriteUrl: string | null;
+  prometheusQueryUrl: string | null;
+  grafanaBaseUrl: string | null;
+  grafanaDashboardUid: string;
+  grafanaAdminUser: string;
+  credentialsConfigured: boolean;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  logs?: ObservabilityStackLog[];
+}
+
+export interface CreateObservabilityStackRequest {
+  projectId: number;
+  kubernetesConnectionId: number;
+  namespace: string;
+  retentionDays: number;
+  prometheusStorageSize: string;
+  grafanaStorageSize: string;
+  storageClassName: string | null;
+  ingressEnabled: boolean;
+  ingressClassName: string | null;
+  grafanaHost: string | null;
+  grafanaTlsEnabled: boolean;
+  grafanaTlsSecretName: string | null;
+}
+
+export interface GrafanaCredentials {
+  username: string;
+  password: string;
+  grafanaBaseUrl: string | null;
 }
 
 export interface PerformanceListFilters {
@@ -257,6 +328,56 @@ export class PerformanceService {
         { headers: this.headers() },
       )
       .pipe(map(response => response.data.run));
+  }
+
+  listObservabilityStacks(projectId?: number | null): Observable<ObservabilityStack[]> {
+    let params = new HttpParams();
+    if (projectId) params = params.set('projectId', projectId);
+
+    return this.http
+      .get<ApiResponse<{ stacks: ObservabilityStack[] }>>(
+        '/api/performance/observability/stacks',
+        { headers: this.headers(), params },
+      )
+      .pipe(map(response => response.data.stacks));
+  }
+
+  createObservabilityStack(request: CreateObservabilityStackRequest): Observable<ObservabilityStack> {
+    return this.http
+      .post<ApiResponse<{ stack: ObservabilityStack }>>(
+        '/api/performance/observability/stacks',
+        request,
+        { headers: this.headers() },
+      )
+      .pipe(map(response => response.data.stack));
+  }
+
+  getObservabilityStack(stackId: number): Observable<ObservabilityStack> {
+    return this.http
+      .get<ApiResponse<{ stack: ObservabilityStack }>>(
+        `/api/performance/observability/stacks/${stackId}`,
+        { headers: this.headers() },
+      )
+      .pipe(map(response => response.data.stack));
+  }
+
+  retryObservabilityStack(stackId: number): Observable<ObservabilityStack> {
+    return this.http
+      .post<ApiResponse<{ stack: ObservabilityStack }>>(
+        `/api/performance/observability/stacks/${stackId}/retry`,
+        {},
+        { headers: this.headers() },
+      )
+      .pipe(map(response => response.data.stack));
+  }
+
+  getGrafanaCredentials(stackId: number): Observable<GrafanaCredentials> {
+    return this.http
+      .get<ApiResponse<{ credentials: GrafanaCredentials }>>(
+        `/api/performance/observability/stacks/${stackId}/credentials`,
+        { headers: this.headers() },
+      )
+      .pipe(map(response => response.data.credentials));
   }
 
   private headers(): HttpHeaders {

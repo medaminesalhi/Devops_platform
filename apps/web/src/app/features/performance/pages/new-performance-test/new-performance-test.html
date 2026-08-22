@@ -1,148 +1,351 @@
-<section class="new-performance-page">
+<section class="performance-create">
   <nav class="breadcrumb" aria-label="Fil d’Ariane">
-    <a routerLink="/performance">Performance</a><span>›</span><strong>Nouveau test</strong>
+    <a routerLink="/performance">Performance</a>
+    <span aria-hidden="true">›</span>
+    <strong>Nouveau test</strong>
   </nav>
 
-  <header class="page-heading">
-    <div>
-      <p class="eyebrow">k6</p>
-      <h1>Créer un test de performance</h1>
-      <p>La cible et les URLs d’observabilité sont saisies ici. Aucun paramètre PERFORMANCE_* n’est nécessaire dans le fichier .env.</p>
+  <header class="page-header">
+    <div class="page-header__copy">
+      <span class="page-kicker">TEST DE PERFORMANCE</span>
+      <h1>Créer un test k6</h1>
+      <p>Définissez la cible et la charge. Ajoutez une stack Prometheus + Grafana uniquement si vous avez besoin d’observabilité avancée.</p>
     </div>
-    <a class="button button--secondary" routerLink="/performance">Annuler</a>
+    <a class="button button--ghost" routerLink="/performance">Annuler</a>
   </header>
 
   @if (errorMessage()) {
-    <section class="message message--error">
-      <span>!</span><p>{{ errorMessage() }}</p>
-    </section>
+    <div class="alert alert--error" role="alert">
+      <span class="alert__icon">!</span>
+      <div>
+        <strong>Impossible de continuer</strong>
+        <p>{{ errorMessage() }}</p>
+      </div>
+    </div>
   }
 
   @if (isLoading()) {
-    <section class="loading-card">
-      <span class="loader"></span><p>Chargement du contexte et des limites k6…</p>
+    <section class="loading-state">
+      <span class="loader"></span>
+      <div>
+        <strong>Préparation du formulaire</strong>
+        <p>Chargement des projets, intégrations et limites k6…</p>
+      </div>
     </section>
   } @else {
-    <div class="workspace">
-      <main class="form-column">
-        <section class="panel section-card">
-          <header class="section-heading">
-            <span>01</span>
+    <div class="layout">
+      <main class="content">
+        <section class="card section-card">
+          <header class="section-title">
+            <span class="section-index">01</span>
             <div>
-              <h2>Mode d’exécution</h2>
-              <p>Basic affiche les résultats dans la plateforme. Observability ajoute Prometheus et Grafana.</p>
+              <h2>Choisissez le niveau d’observabilité</h2>
+              <p>Le test k6 est identique dans les deux modes. Seule la collecte avancée des métriques change.</p>
             </div>
           </header>
 
-          <div class="mode-choice-grid">
-            <button type="button" class="mode-choice" [class.mode-choice--active]="mode() === 'basic'" (click)="setMode('basic')">
-              <span class="mode-choice__radio"></span>
-              <div>
-                <div class="mode-choice__title"><strong>Basic</strong><b>Recommandé</b></div>
-                <p>k6 exécute le test, le backend sauvegarde le résumé dans PostgreSQL et notre interface affiche les résultats.</p>
-                <ul>
-                  <li>Aucune URL Grafana/Prometheus à fournir</li>
-                  <li>RPS, p90, p95, p99, erreurs, checks et quality gate</li>
-                </ul>
-              </div>
+          <div class="mode-selector" role="radiogroup" aria-label="Mode d'exécution">
+            <button
+              type="button"
+              class="mode-option"
+              [class.mode-option--active]="mode() === 'basic'"
+              (click)="setMode('basic')"
+            >
+              <span class="mode-option__indicator"></span>
+              <span class="mode-option__body">
+                <span class="mode-option__line">
+                  <strong>Basic</strong>
+                  <em>Recommandé</em>
+                </span>
+                <span>Résultats, courbes et quality gate directement dans PixiMind.</span>
+              </span>
             </button>
 
-            <button type="button" class="mode-choice mode-choice--advanced" [class.mode-choice--active]="mode() === 'observability'" (click)="setMode('observability')">
-              <span class="mode-choice__radio"></span>
-              <div>
-                <div class="mode-choice__title"><strong>Grafana + Prometheus</strong><b>Avancé</b></div>
-                <p>Vous fournissez directement l’URL Prometheus Remote Write et, si disponible, l’URL Grafana.</p>
-                <ul>
-                  <li>Le résumé reste sauvegardé dans PostgreSQL</li>
-                  <li>Les métriques détaillées sont envoyées à Prometheus</li>
-                  <li>Le bouton Grafana est généré automatiquement</li>
-                </ul>
-              </div>
+            <button
+              type="button"
+              class="mode-option"
+              [class.mode-option--active]="mode() === 'observability'"
+              (click)="setMode('observability')"
+            >
+              <span class="mode-option__indicator"></span>
+              <span class="mode-option__body">
+                <span class="mode-option__line">
+                  <strong>Prometheus + Grafana</strong>
+                  <em>Avancé</em>
+                </span>
+                <span>Ajoute les séries temporelles Prometheus et un dashboard Grafana par run.</span>
+              </span>
             </button>
           </div>
 
           @if (mode() === 'observability') {
-            <div class="advanced-config">
-              <div class="advanced-config__intro">
-                <span>◎</span>
+            <div class="observability-block">
+              <div class="observability-header">
+                <div class="observability-header__icon">◎</div>
                 <div>
-                  <strong>Configuration directement depuis la plateforme</strong>
-                  <p>Ces valeurs sont enregistrées avec le test. Plus tard, notre playbook Ansible pourra remplir automatiquement les mêmes informations après installation dans le namespace choisi.</p>
+                  <h3>Stack d’observabilité</h3>
+                  <p>Utilisez une stack déjà prête ou installez-en une dans un namespace Kubernetes existant.</p>
+                </div>
+                <div class="tech-pills" aria-label="Technologies utilisées">
+                  <span>Kubernetes</span>
+                  <span>Ansible</span>
+                  <span>Helm</span>
                 </div>
               </div>
 
-              <div class="form-grid">
-                <label class="field">
-                  <span>Namespace Kubernetes <i>facultatif pour une stack externe</i></span>
-                  <input type="text" [ngModel]="observabilityNamespace()" (ngModelChange)="observabilityNamespace.set($event)" placeholder="performance-observability" />
-                  <small>À renseigner si Prometheus/Grafana se trouvent dans Kubernetes.</small>
-                </label>
-
-                <label class="field">
-                  <span>Rétention souhaitée</span>
-                  <div class="input-suffix">
-                    <input type="number" min="1" [max]="maxRetentionDaysLimit()" [ngModel]="retentionDays()" (ngModelChange)="retentionDays.set(+$event)" />
-                    <i>jours</i>
+              @if (observabilityStacks().length) {
+                <div class="stack-section">
+                  <div class="subsection-heading">
+                    <div>
+                      <strong>Stacks du projet</strong>
+                      <small>{{ readyObservabilityStacks().length }} prête(s)</small>
+                    </div>
                   </div>
-                  <small>Conservée dans la configuration du test et utilisée plus tard par le provisioning Ansible.</small>
-                </label>
 
-                <label class="field field--full">
-                  <span>URL Prometheus Remote Write</span>
-                  <input type="url" [ngModel]="prometheusRemoteWriteUrl()" (ngModelChange)="prometheusRemoteWriteUrl.set($event)" placeholder="http://prometheus.monitoring.svc.cluster.local:9090/api/v1/write" />
-                  <small>Obligatoire en mode avancé. Le worker k6 enverra directement ses métriques vers cette URL.</small>
-                </label>
+                  <div class="stack-grid">
+                    @for (stack of observabilityStacks(); track stack.id) {
+                      <article
+                        class="stack-item"
+                        [class.stack-item--selected]="selectedObservabilityStackId() === stack.id"
+                        [attr.data-status]="stack.status"
+                      >
+                        <div class="stack-item__main">
+                          <div class="stack-item__topline">
+                            <strong>{{ stack.namespace }}</strong>
+                            <span class="status-pill" [attr.data-status]="stack.status">{{ stackStatusLabel(stack) }}</span>
+                          </div>
+                          <p>{{ stack.kubernetesConnectionName }} · {{ stack.retentionDays }} jours de rétention</p>
+                          @if (stack.grafanaBaseUrl) {
+                            <small class="stack-item__url">{{ stack.grafanaBaseUrl }}</small>
+                          }
+                          @if (stack.errorMessage) {
+                            <small class="stack-item__error">{{ stack.errorMessage }}</small>
+                          }
+                        </div>
 
-                <label class="field">
-                  <span>URL Grafana <i>facultatif</i></span>
-                  <input type="url" [ngModel]="grafanaBaseUrl()" (ngModelChange)="grafanaBaseUrl.set($event)" placeholder="https://grafana.example.com" />
-                  <small>Si renseignée, le détail du run affichera « Ouvrir Grafana ».</small>
-                </label>
+                        <div class="stack-item__actions">
+                          @if (stack.status === 'ready') {
+                            <button type="button" class="button button--small button--primary-soft" (click)="useObservabilityStack(stack)">
+                              {{ selectedObservabilityStackId() === stack.id ? 'Sélectionnée' : 'Utiliser' }}
+                            </button>
+                            <button type="button" class="icon-button" [disabled]="isLoadingCredentials()" (click)="showGrafanaCredentials(stack)" title="Afficher les identifiants Grafana">
+                              ⋯
+                            </button>
+                          } @else if (stack.status === 'failed') {
+                            <button type="button" class="button button--small button--danger-soft" (click)="retryObservability(stack)">Relancer</button>
+                          } @else {
+                            <span class="inline-progress"><span class="loader loader--tiny"></span> Installation</span>
+                          }
+                        </div>
+                      </article>
 
-                <label class="field">
-                  <span>Dashboard UID Grafana</span>
-                  <input type="text" [ngModel]="grafanaDashboardUid()" (ngModelChange)="grafanaDashboardUid.set($event)" placeholder="k6-performance" />
-                  <small>UID du dashboard paramétré par testid/project/deployment.</small>
-                </label>
-              </div>
+                      @if (credentialsStackId() === stack.id && grafanaCredentials(); as credentials) {
+                        <div class="credentials-panel">
+                          <div>
+                            <span>Utilisateur</span>
+                            <code>{{ credentials.username }}</code>
+                          </div>
+                          <div>
+                            <span>Mot de passe</span>
+                            <code>{{ credentials.password }}</code>
+                          </div>
+                          @if (credentials.grafanaBaseUrl) {
+                            <a [href]="credentials.grafanaBaseUrl" target="_blank" rel="noopener noreferrer">Ouvrir Grafana ↗</a>
+                          }
+                        </div>
+                      }
+                    }
+                  </div>
+                </div>
+              }
+
+              @if (kubernetesConnections().length === 0) {
+                <div class="empty-integration">
+                  <div class="empty-integration__icon">K8s</div>
+                  <div>
+                    <strong>Aucune connexion Kubernetes disponible</strong>
+                    <p>Ajoutez une intégration Kubernetes avant d’installer Prometheus et Grafana.</p>
+                  </div>
+                  <a class="button button--secondary" routerLink="/integrations">Configurer</a>
+                </div>
+              } @else {
+                <div class="provision-card">
+                  <div class="provision-card__header">
+                    <div>
+                      <span class="mini-kicker">NOUVELLE STACK</span>
+                      <h3>Installer Prometheus + Grafana</h3>
+                      <p>Le namespace doit déjà exister et la connexion Kubernetes doit avoir les droits nécessaires dans ce namespace.</p>
+                    </div>
+                    <span class="managed-badge">Géré par PixiMind</span>
+                  </div>
+
+                  <div class="essential-grid">
+                    <label class="field">
+                      <span>Connexion Kubernetes</span>
+                      <select [ngModel]="kubernetesConnectionId()" (ngModelChange)="kubernetesConnectionId.set(+$event)">
+                        @for (connection of kubernetesConnections(); track connection.id) {
+                          <option [value]="connection.id">{{ connection.name }} · {{ connection.environment }}</option>
+                        }
+                      </select>
+                      <small>Credentials conservés côté backend.</small>
+                    </label>
+
+                    <label class="field">
+                      <span>Namespace</span>
+                      <input type="text" [ngModel]="observabilityNamespace()" (ngModelChange)="observabilityNamespace.set($event)" placeholder="performance-observability" />
+                      <small>Doit exister avant l’installation.</small>
+                    </label>
+
+                    <label class="field">
+                      <span>Rétention Prometheus</span>
+                      <div class="input-with-unit">
+                        <input type="number" min="1" max="365" [ngModel]="retentionDays()" (ngModelChange)="retentionDays.set(+$event)" />
+                        <span>jours</span>
+                      </div>
+                    </label>
+                  </div>
+
+                  <details class="advanced-details">
+                    <summary>
+                      <span>
+                        <strong>Stockage & accès Grafana</strong>
+                        <small>Volumes, StorageClass, Ingress et TLS</small>
+                      </span>
+                      <em>Options avancées</em>
+                    </summary>
+
+                    <div class="advanced-details__body">
+                      <div class="form-grid form-grid--3">
+                        <label class="field">
+                          <span>StorageClass <i>facultatif</i></span>
+                          <input type="text" [ngModel]="storageClassName()" (ngModelChange)="storageClassName.set($event)" placeholder="standard" />
+                          <small>Vide = classe par défaut du cluster.</small>
+                        </label>
+
+                        <label class="field">
+                          <span>Volume Prometheus</span>
+                          <input type="text" [ngModel]="prometheusStorageSize()" (ngModelChange)="prometheusStorageSize.set($event)" placeholder="8Gi" />
+                        </label>
+
+                        <label class="field">
+                          <span>Volume Grafana</span>
+                          <input type="text" [ngModel]="grafanaStorageSize()" (ngModelChange)="grafanaStorageSize.set($event)" placeholder="2Gi" />
+                        </label>
+                      </div>
+
+                      <label class="switch-row">
+                        <input type="checkbox" [ngModel]="ingressEnabled()" (ngModelChange)="ingressEnabled.set($event)" />
+                        <span class="switch-row__control" aria-hidden="true"></span>
+                        <span>
+                          <strong>Exposer Grafana par Ingress</strong>
+                          <small>Prometheus reste privé dans le cluster.</small>
+                        </span>
+                      </label>
+
+                      @if (ingressEnabled()) {
+                        <div class="nested-config">
+                          <div class="form-grid">
+                            <label class="field">
+                              <span>IngressClass</span>
+                              <input type="text" [ngModel]="ingressClassName()" (ngModelChange)="ingressClassName.set($event)" placeholder="nginx" />
+                            </label>
+                            <label class="field">
+                              <span>Hostname Grafana</span>
+                              <input type="text" [ngModel]="grafanaHost()" (ngModelChange)="grafanaHost.set($event)" placeholder="grafana.example.com" />
+                            </label>
+                          </div>
+
+                          <label class="switch-row switch-row--nested">
+                            <input type="checkbox" [ngModel]="grafanaTlsEnabled()" (ngModelChange)="grafanaTlsEnabled.set($event)" />
+                            <span class="switch-row__control" aria-hidden="true"></span>
+                            <span>
+                              <strong>Activer TLS</strong>
+                              <small>Le Secret TLS doit déjà exister dans le namespace.</small>
+                            </span>
+                          </label>
+
+                          @if (grafanaTlsEnabled()) {
+                            <label class="field field--narrow">
+                              <span>Secret TLS Grafana</span>
+                              <input type="text" [ngModel]="grafanaTlsSecretName()" (ngModelChange)="grafanaTlsSecretName.set($event)" placeholder="grafana-tls" />
+                            </label>
+                          }
+                        </div>
+                      }
+                    </div>
+                  </details>
+
+                  <div class="provision-actions">
+                    <div class="provision-hint">
+                      <span>1</span><p>Vérification RBAC</p>
+                      <i></i>
+                      <span>2</span><p>Ansible + Helm</p>
+                      <i></i>
+                      <span>3</span><p>Stack prête</p>
+                    </div>
+                    <button
+                      type="button"
+                      class="button button--provision"
+                      [disabled]="!canProvisionObservability() || isProvisioning()"
+                      (click)="provisionObservability()"
+                    >
+                      @if (isProvisioning()) {
+                        <span class="loader loader--tiny loader--light"></span> Préparation…
+                      } @else {
+                        Installer la stack <span aria-hidden="true">→</span>
+                      }
+                    </button>
+                  </div>
+                </div>
+              }
+
+              @if (selectedObservabilityStack(); as stack) {
+                <div class="selected-stack-banner">
+                  <span class="selected-stack-banner__check">✓</span>
+                  <div>
+                    <strong>{{ stack.namespace }}</strong>
+                    <p>Stack sélectionnée · {{ stackStatusLabel(stack) }} · dashboard {{ stack.grafanaDashboardUid }}</p>
+                  </div>
+                </div>
+              }
             </div>
           }
         </section>
 
-        <section class="panel section-card">
-          <header class="section-heading">
-            <span>02</span>
+        <section class="card section-card">
+          <header class="section-title">
+            <span class="section-index">02</span>
             <div>
-              <h2>Cible</h2>
-              <p>Saisissez directement l’URL HTTP/HTTPS à tester. Elle sera enregistrée dans PostgreSQL avec ce test.</p>
+              <h2>Cible du test</h2>
+              <p>Choisissez le projet et l’URL HTTP/HTTPS sur laquelle k6 générera la charge.</p>
             </div>
           </header>
 
           @if (linkedDeployment(); as deployment) {
-            <div class="deployment-context">
-              <span>✓</span>
+            <div class="deployment-banner">
+              <span class="deployment-banner__check">✓</span>
               <div>
                 <strong>Deployment #{{ deployment.id }} · {{ deployment.projectName }}</strong>
                 <p>{{ deployment.version }} · {{ deployment.environmentName }} · {{ deployment.namespace }}</p>
               </div>
-              <a [routerLink]="['/deployments', deployment.id]">Voir ↗</a>
+              <a [routerLink]="['/deployments', deployment.id]">Voir le deployment ↗</a>
             </div>
           }
 
           <div class="form-grid">
             <label class="field">
               <span>Projet</span>
-              <select [ngModel]="projectId()" (ngModelChange)="projectId.set(+$event)" [disabled]="!!linkedDeployment()">
+              <select [ngModel]="projectId()" (ngModelChange)="selectProject($event)" [disabled]="!!linkedDeployment()">
                 @for (project of projects(); track project.id) {
                   <option [value]="project.id">{{ project.name }}</option>
                 }
               </select>
             </label>
 
-            <label class="field">
+            <label class="field field--target">
               <span>URL cible</span>
               <input type="url" [ngModel]="targetUrl()" (ngModelChange)="targetUrl.set($event)" placeholder="https://app.example.com/api/health" />
-              <small>La cible vient du formulaire : aucune allowlist PERFORMANCE_ALLOWED_TARGETS n’est utilisée.</small>
+              <small>HTTP ou HTTPS. Utilisez uniquement une cible que vous êtes autorisé à tester.</small>
             </label>
 
             <label class="field">
@@ -156,117 +359,189 @@
             </label>
           </div>
 
-          <label class="authorization-check">
+          <label class="authorization-row">
             <input type="checkbox" [ngModel]="authorizationConfirmed()" (ngModelChange)="authorizationConfirmed.set($event)" />
+            <span class="authorization-row__check" aria-hidden="true">✓</span>
             <span>
-              <strong>Je confirme être autorisé à tester cette cible.</strong>
-              <small>Le test de charge ne doit être lancé que sur une application ou une infrastructure que vous êtes autorisé à tester.</small>
+              <strong>Je confirme être autorisé à tester cette cible</strong>
+              <small>Les tests de charge doivent uniquement viser vos systèmes ou des systèmes pour lesquels vous disposez d’une autorisation.</small>
             </span>
           </label>
         </section>
 
-        <section class="panel section-card">
-          <header class="section-heading">
-            <span>03</span>
+        <section class="card section-card">
+          <header class="section-title section-title--inline">
+            <span class="section-index">03</span>
             <div>
               <h2>Profil de charge</h2>
-              <p>Les presets remplissent les valeurs. Le backend impose au maximum {{ maxVirtualUsersLimit() }} VUs et {{ formatDuration(maxDurationSecondsLimit()) }}.</p>
+              <p>Choisissez un scénario puis ajustez les paramètres si nécessaire.</p>
             </div>
+            <span class="limit-badge">Max {{ maxVirtualUsersLimit() }} VUs · {{ formatDuration(maxDurationSecondsLimit()) }}</span>
           </header>
 
-          <div class="preset-grid">
+          <div class="preset-tabs">
             @for (preset of [
-              { key: 'smoke', label: 'Smoke', desc: 'Validation rapide' },
-              { key: 'load', label: 'Load', desc: 'Charge normale' },
-              { key: 'stress', label: 'Stress', desc: 'Limites du service' },
-              { key: 'spike', label: 'Spike', desc: 'Pic brutal' },
-              { key: 'soak', label: 'Soak', desc: 'Charge longue' }
+              { key: 'smoke', label: 'Smoke', desc: 'Rapide' },
+              { key: 'load', label: 'Load', desc: 'Normal' },
+              { key: 'stress', label: 'Stress', desc: 'Limites' },
+              { key: 'spike', label: 'Spike', desc: 'Pic' },
+              { key: 'soak', label: 'Soak', desc: 'Longue durée' }
             ]; track preset.key) {
               <button type="button" [class.active]="testType() === preset.key" (click)="setTestType($any(preset.key))">
-                <strong>{{ preset.label }}</strong><span>{{ preset.desc }}</span>
+                <strong>{{ preset.label }}</strong>
+                <span>{{ preset.desc }}</span>
               </button>
             }
           </div>
 
-          <div class="form-grid load-fields">
-            <label class="field">
-              <span>VUs de départ</span>
+          <div class="load-config">
+            <label class="metric-input">
+              <span>VUs départ</span>
               <input type="number" min="1" [max]="maxVirtualUsersLimit()" [ngModel]="virtualUsers()" (ngModelChange)="virtualUsers.set(+$event)" />
+              <small>Utilisateurs virtuels initiaux</small>
             </label>
-            <label class="field">
+
+            <label class="metric-input">
               <span>VUs maximum</span>
               <input type="number" min="1" [max]="maxVirtualUsersLimit()" [ngModel]="maxVirtualUsers()" (ngModelChange)="maxVirtualUsers.set(+$event)" />
+              <small>Pic du scénario</small>
             </label>
-            <label class="field">
+
+            <label class="metric-input">
               <span>Durée</span>
-              <div class="input-suffix">
+              <div class="metric-input__unit">
                 <input type="number" min="10" [max]="maxDurationSecondsLimit()" [ngModel]="durationSeconds()" (ngModelChange)="durationSeconds.set(+$event)" />
-                <i>sec</i>
+                <b>sec</b>
               </div>
               <small>{{ formatDuration(durationSeconds()) }}</small>
             </label>
           </div>
         </section>
 
-        <section class="panel section-card">
-          <header class="section-heading">
-            <span>04</span>
+        <section class="card section-card">
+          <header class="section-title">
+            <span class="section-index">04</span>
             <div>
               <h2>Quality gate</h2>
-              <p>Ces thresholds décident si le run est PASS ou FAIL.</p>
+              <p>Le run sera considéré comme réussi uniquement si ces quatre règles sont respectées.</p>
             </div>
           </header>
 
-          <div class="threshold-grid">
-            <label class="threshold-field"><span>Error rate</span><div><b>&lt;</b><input type="number" min="0" max="100" step="0.1" [ngModel]="errorRatePercent()" (ngModelChange)="errorRatePercent.set(+$event)" /><i>%</i></div></label>
-            <label class="threshold-field"><span>p95</span><div><b>&lt;</b><input type="number" min="1" [ngModel]="p95Ms()" (ngModelChange)="p95Ms.set(+$event)" /><i>ms</i></div></label>
-            <label class="threshold-field"><span>p99</span><div><b>&lt;</b><input type="number" min="1" [ngModel]="p99Ms()" (ngModelChange)="p99Ms.set(+$event)" /><i>ms</i></div></label>
-            <label class="threshold-field"><span>Checks</span><div><b>&gt;</b><input type="number" min="1" max="100" step="0.1" [ngModel]="checksRatePercent()" (ngModelChange)="checksRatePercent.set(+$event)" /><i>%</i></div></label>
+          <div class="quality-grid">
+            <label class="quality-rule">
+              <span class="quality-rule__name">Taux d’erreur</span>
+              <div><b>&lt;</b><input type="number" min="0" max="100" step="0.1" [ngModel]="errorRatePercent()" (ngModelChange)="errorRatePercent.set(+$event)" /><em>%</em></div>
+            </label>
+
+            <label class="quality-rule">
+              <span class="quality-rule__name">Latence p95</span>
+              <div><b>&lt;</b><input type="number" min="1" [ngModel]="p95Ms()" (ngModelChange)="p95Ms.set(+$event)" /><em>ms</em></div>
+            </label>
+
+            <label class="quality-rule">
+              <span class="quality-rule__name">Latence p99</span>
+              <div><b>&lt;</b><input type="number" min="1" [ngModel]="p99Ms()" (ngModelChange)="p99Ms.set(+$event)" /><em>ms</em></div>
+            </label>
+
+            <label class="quality-rule">
+              <span class="quality-rule__name">Checks réussis</span>
+              <div><b>&gt;</b><input type="number" min="1" max="100" step="0.1" [ngModel]="checksRatePercent()" (ngModelChange)="checksRatePercent.set(+$event)" /><em>%</em></div>
+            </label>
           </div>
         </section>
       </main>
 
-      <aside class="summary-column">
-        <section class="panel summary-card">
-          <p class="eyebrow">Résumé</p>
-          <h2>{{ name() || 'Nouveau test' }}</h2>
-          <dl>
-            <div><dt>Mode</dt><dd>{{ mode() === 'basic' ? 'Basic' : 'Grafana + Prometheus' }}</dd></div>
-            <div><dt>Projet</dt><dd>{{ selectedProject()?.name ?? '—' }}</dd></div>
-            <div><dt>Deployment</dt><dd>{{ deploymentId() ? '#' + deploymentId() : 'Indépendant' }}</dd></div>
-            <div><dt>Cible</dt><dd>{{ targetUrl() || '—' }}</dd></div>
-            <div><dt>Type</dt><dd>{{ testType() }}</dd></div>
-            <div><dt>VUs max</dt><dd>{{ maxVirtualUsers() }}</dd></div>
-            <div><dt>Durée</dt><dd>{{ formatDuration(durationSeconds()) }}</dd></div>
-            <div><dt>p95</dt><dd>&lt; {{ p95Ms() }} ms</dd></div>
-            @if (mode() === 'observability') {
-              <div><dt>Prometheus</dt><dd>{{ prometheusRemoteWriteUrl() || '—' }}</dd></div>
-              <div><dt>Grafana</dt><dd>{{ grafanaBaseUrl() || 'Non configuré' }}</dd></div>
-            }
-          </dl>
+      <aside class="sidebar-summary">
+        <section class="summary-card card">
+          <div class="summary-card__header">
+            <div>
+              <span class="mini-kicker">CONFIGURATION DU RUN</span>
+              <h2>{{ name() || 'Nouveau test' }}</h2>
+            </div>
+            <span class="mode-badge" [attr.data-mode]="mode()">{{ mode() === 'basic' ? 'Basic' : 'Observability' }}</span>
+          </div>
 
-          <button class="button button--primary launch-button" type="button" [disabled]="!canSubmit() || isSubmitting()" (click)="submit()">
+          <div class="summary-metrics">
+            <div><strong>{{ maxVirtualUsers() }}</strong><span>VUs max</span></div>
+            <div><strong>{{ formatDuration(durationSeconds()) }}</strong><span>Durée</span></div>
+            <div><strong>{{ p95Ms() }} ms</strong><span>p95 max</span></div>
+          </div>
+
+          <div class="summary-details">
+            <div>
+              <span>Projet</span>
+              <strong>{{ selectedProject()?.name ?? 'Non sélectionné' }}</strong>
+            </div>
+            <div>
+              <span>Cible</span>
+              <strong class="truncate">{{ targetUrl() || 'À renseigner' }}</strong>
+            </div>
+            <div>
+              <span>Scénario</span>
+              <strong>{{ testType() }}</strong>
+            </div>
+            @if (deploymentId()) {
+              <div>
+                <span>Deployment</span>
+                <strong>#{{ deploymentId() }}</strong>
+              </div>
+            }
+            @if (mode() === 'observability') {
+              <div>
+                <span>Stack</span>
+                <strong>{{ selectedObservabilityStack()?.namespace || 'À sélectionner' }}</strong>
+              </div>
+            }
+          </div>
+
+          <div class="readiness">
+            <p>Prêt à lancer</p>
+            <div [class.ok]="!!projectId() && !!name().trim() && !!targetUrl().trim()">
+              <span>{{ !!projectId() && !!name().trim() && !!targetUrl().trim() ? '✓' : '1' }}</span>
+              <strong>Cible configurée</strong>
+            </div>
+            <div [class.ok]="authorizationConfirmed()">
+              <span>{{ authorizationConfirmed() ? '✓' : '2' }}</span>
+              <strong>Autorisation confirmée</strong>
+            </div>
+            @if (mode() === 'observability') {
+              <div [class.ok]="selectedObservabilityStack()?.status === 'ready'">
+                <span>{{ selectedObservabilityStack()?.status === 'ready' ? '✓' : '3' }}</span>
+                <strong>Stack observabilité prête</strong>
+              </div>
+            }
+          </div>
+
+          <button
+            class="button button--launch"
+            type="button"
+            [disabled]="!canSubmit() || isSubmitting()"
+            (click)="submit()"
+          >
             @if (isSubmitting()) {
-              <span class="loader loader--small"></span> Création…
+              <span class="loader loader--tiny loader--light"></span>
+              Création du run…
             } @else {
-              Créer et lancer <span>→</span>
+              Créer et lancer <span aria-hidden="true">→</span>
             }
           </button>
 
           @if (!authorizationConfirmed()) {
-            <p class="validation-help validation-help--warning">Confirmez l’autorisation de tester la cible.</p>
+            <p class="summary-help summary-help--warning">Confirmez l’autorisation pour activer le lancement.</p>
+          } @else if (mode() === 'observability' && selectedObservabilityStack()?.status !== 'ready') {
+            <p class="summary-help">Sélectionnez une stack Prometheus + Grafana prête.</p>
           } @else if (!canSubmit()) {
-            <p class="validation-help">Complétez les champs requis et vérifiez les limites.</p>
+            <p class="summary-help">Vérifiez les champs requis et les limites du scénario.</p>
           } @else {
-            <p class="validation-help">Le run sera ajouté à PostgreSQL puis exécuté par <code>flask k6-worker</code>.</p>
+            <p class="summary-help summary-help--ready">La configuration est valide.</p>
           }
         </section>
 
-        <section class="panel security-card">
-          <span>⌁</span>
+        <section class="info-card card">
+          <div class="info-card__icon">i</div>
           <div>
-            <strong>Configuration sans PERFORMANCE_* dans .env</strong>
-            <p>La cible et les URLs Prometheus/Grafana viennent du formulaire. Le backend garde seulement des limites serveur fixes pour éviter les charges excessives.</p>
+            <strong>Architecture claire</strong>
+            <p>Le mode Basic reste autonome. En mode avancé, Prometheus collecte les séries k6 et Grafana les visualise.</p>
           </div>
         </section>
       </aside>

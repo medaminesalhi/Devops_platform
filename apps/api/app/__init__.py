@@ -71,6 +71,7 @@ from app.projects.routes import (
 
 from app.performance import (
     performance_blueprint,
+    register_observability_commands,
     register_performance_commands,
 )
 
@@ -243,6 +244,7 @@ def create_app() -> Flask:
     register_deployment_commands(app)
 
     register_performance_commands(app)
+    register_observability_commands(app)
 
 
     @app.errorhandler(

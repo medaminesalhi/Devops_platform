@@ -3,7 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { forkJoin, finalize } from 'rxjs';
+import { finalize, forkJoin } from 'rxjs';
 
 import {
   PerformanceMode,
@@ -28,6 +28,7 @@ export class Performance implements OnInit {
   readonly isLoading = signal(true);
   readonly isRefreshing = signal(false);
   readonly errorMessage = signal<string | null>(null);
+
   readonly overview = signal<PerformanceOverview>({
     totalTests: 0,
     totalRuns: 0,
@@ -35,6 +36,7 @@ export class Performance implements OnInit {
     passedRuns: 0,
     failedRuns: 0,
   });
+
   readonly tests = signal<PerformanceTest[]>([]);
   readonly runs = signal<PerformanceRunSummary[]>([]);
 
@@ -43,11 +45,34 @@ export class Performance implements OnInit {
     mode: '',
   });
 
-  readonly successRate = computed(() => {
+  readonly finishedRuns = computed(() => {
     const data = this.overview();
-    const finished = data.passedRuns + data.failedRuns;
-    return finished > 0 ? Math.round((data.passedRuns / finished) * 100) : 0;
+    return data.passedRuns + data.failedRuns;
   });
+
+  readonly successRate = computed(() => {
+    const finished = this.finishedRuns();
+    return finished > 0
+      ? Math.round((this.overview().passedRuns / finished) * 100)
+      : 0;
+  });
+
+  readonly failureRate = computed(() => {
+    const finished = this.finishedRuns();
+    return finished > 0
+      ? Math.round((this.overview().failedRuns / finished) * 100)
+      : 0;
+  });
+
+  readonly recentRuns = computed(() => this.runs().slice(0, 6));
+
+  readonly basicTestsCount = computed(
+    () => this.tests().filter(test => test.mode === 'basic').length,
+  );
+
+  readonly observabilityTestsCount = computed(
+    () => this.tests().filter(test => test.mode === 'observability').length,
+  );
 
   ngOnInit(): void {
     this.loadData();
@@ -55,7 +80,11 @@ export class Performance implements OnInit {
 
   loadData(refresh = false): void {
     const filters = this.filterForm.getRawValue();
-    refresh ? this.isRefreshing.set(true) : this.isLoading.set(true);
+
+    refresh
+      ? this.isRefreshing.set(true)
+      : this.isLoading.set(true);
+
     this.errorMessage.set(null);
 
     forkJoin({
@@ -66,17 +95,21 @@ export class Performance implements OnInit {
       }),
       runs: this.performanceService.listRuns(),
     })
-      .pipe(finalize(() => {
-        this.isLoading.set(false);
-        this.isRefreshing.set(false);
-      }))
+      .pipe(
+        finalize(() => {
+          this.isLoading.set(false);
+          this.isRefreshing.set(false);
+        }),
+      )
       .subscribe({
         next: result => {
           this.overview.set(result.overview);
           this.tests.set(result.tests);
           this.runs.set(result.runs);
         },
-        error: error => this.errorMessage.set(this.resolveError(error)),
+        error: error => {
+          this.errorMessage.set(this.resolveError(error));
+        },
       });
   }
 
@@ -86,7 +119,7 @@ export class Performance implements OnInit {
   }
 
   modeLabel(mode: PerformanceMode): string {
-    return mode === 'basic' ? 'Basic' : 'Grafana + Prometheus';
+    return mode === 'basic' ? 'Basic' : 'Observabilité';
   }
 
   typeLabel(type: PerformanceTestType): string {
@@ -98,6 +131,7 @@ export class Performance implements OnInit {
       soak: 'Soak',
       custom: 'Custom',
     };
+
     return labels[type];
   }
 
@@ -109,26 +143,58 @@ export class Performance implements OnInit {
       failed: 'Échoué',
       cancelled: 'Annulé',
     };
+
     return labels[status];
   }
 
+  statusIcon(status: PerformanceRunStatus): string {
+    const icons: Record<PerformanceRunStatus, string> = {
+      queued: '•',
+      running: '↻',
+      passed: '✓',
+      failed: '!',
+      cancelled: '×',
+    };
+
+    return icons[status];
+  }
+
   formatDuration(seconds: number): string {
-    if (seconds < 60) return `${seconds} s`;
+    if (seconds < 60) {
+      return `${seconds} s`;
+    }
+
     const minutes = Math.floor(seconds / 60);
     const rest = seconds % 60;
-    return rest ? `${minutes} min ${rest} s` : `${minutes} min`;
+
+    return rest
+      ? `${minutes} min ${rest} s`
+      : `${minutes} min`;
   }
 
   private toMode(value: string): PerformanceMode | null {
-    return value === 'basic' || value === 'observability' ? value : null;
+    return value === 'basic' || value === 'observability'
+      ? value
+      : null;
   }
 
   private resolveError(error: unknown): string {
     if (error instanceof HttpErrorResponse) {
-      if (error.status === 0) return 'Le backend Flask est inaccessible.';
-      const body = error.error as { error?: { message?: string } } | null;
+      if (error.status === 0) {
+        return 'Le backend Flask est inaccessible.';
+      }
+
+      const body = error.error as {
+        error?: {
+          message?: string;
+        };
+      } | null;
+
       return body?.error?.message || `Erreur HTTP ${error.status}.`;
     }
-    return error instanceof Error ? error.message : 'Impossible de charger le module Performance.';
+
+    return error instanceof Error
+      ? error.message
+      : 'Impossible de charger le module Performance.';
   }
 }
