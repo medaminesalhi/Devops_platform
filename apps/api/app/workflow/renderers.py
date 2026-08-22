@@ -2018,6 +2018,15 @@ def build_values(
     ).strip()
 
 
+    ingress_annotations = dict(ingress.get("annotations") or {})
+    cert_manager_issuer = str(ingress.get("certManagerIssuer") or "").strip()
+    if cert_manager_issuer:
+        ingress_annotations.setdefault(
+            "cert-manager.io/cluster-issuer",
+            cert_manager_issuer,
+        )
+
+
     return {
         "nameOverride":
             component_slug,
@@ -2209,12 +2218,7 @@ def build_values(
                 ),
 
             "annotations":
-                dict(
-                    ingress.get(
-                        "annotations"
-                    )
-                    or {}
-                ),
+                ingress_annotations,
 
             "host":
                 str(
@@ -2244,25 +2248,17 @@ def build_values(
                 [
                     {
                         "secretName":
-                            str(
-                                ingress.get(
-                                    "tlsSecretName"
-                                )
-                            ),
+                            str(ingress.get("tlsSecretName") or ""),
 
                         "hosts": [
-                            str(
-                                ingress.get(
-                                    "host"
-                                )
-                                or ""
-                            ),
+                            str(ingress.get("host") or ""),
                         ],
                     }
                 ]
 
-                if ingress.get(
-                    "tlsSecretName"
+                if (
+                    bool(ingress.get("tlsEnabled", False))
+                    and ingress.get("tlsSecretName")
                 )
 
                 else []
@@ -2513,7 +2509,9 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
+  {{- if .Values.ingress.className }}
   ingressClassName: {{ .Values.ingress.className | quote }}
+  {{- end }}
   {{- with .Values.ingress.tls }}
   tls:
     {{- toYaml . | nindent 4 }}

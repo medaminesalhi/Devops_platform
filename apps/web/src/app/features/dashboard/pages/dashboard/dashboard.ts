@@ -7,6 +7,7 @@ import {
 
 import {
   DatePipe,
+  DecimalPipe,
 } from '@angular/common';
 
 import {
@@ -19,12 +20,21 @@ import {
 
 import {
   finalize,
+  forkJoin,
 } from 'rxjs';
 
 import {
   DashboardOverview,
   DashboardService,
 } from '../../../../core/dashboard/dashboard';
+
+import {
+  PerformanceOverview,
+  PerformanceRunStatus,
+  PerformanceRunSummary,
+  PerformanceService,
+  PerformanceTestType,
+} from '../../../../core/performance/performance';
 
 
 @Component({
@@ -33,6 +43,7 @@ import {
   imports: [
     RouterLink,
     DatePipe,
+    DecimalPipe,
   ],
 
   templateUrl: './dashboard.html',
@@ -41,6 +52,9 @@ import {
 export class Dashboard implements OnInit {
   private readonly dashboardService =
     inject(DashboardService);
+
+  private readonly performanceService =
+    inject(PerformanceService);
 
   readonly overview =
     signal<DashboardOverview | null>(
@@ -53,9 +67,24 @@ export class Dashboard implements OnInit {
   readonly errorMessage =
     signal<string | null>(null);
 
+  readonly performanceOverview =
+    signal<PerformanceOverview | null>(
+      null,
+    );
+
+  readonly recentPerformanceRuns =
+    signal<PerformanceRunSummary[]>([]);
+
+  readonly isPerformanceLoading =
+    signal(true);
+
+  readonly performanceErrorMessage =
+    signal<string | null>(null);
+
 
   ngOnInit(): void {
     this.loadOverview();
+    this.loadPerformanceActivity();
   }
 
 
@@ -102,6 +131,44 @@ export class Dashboard implements OnInit {
   }
 
 
+  loadPerformanceActivity(): void {
+    this.isPerformanceLoading.set(true);
+    this.performanceErrorMessage.set(null);
+
+    forkJoin({
+      overview: this.performanceService.getOverview(),
+      runs: this.performanceService.listRuns(),
+    })
+      .pipe(
+        finalize(() => {
+          this.isPerformanceLoading.set(false);
+        }),
+      )
+      .subscribe({
+        next: ({ overview, runs }) => {
+          this.performanceOverview.set(overview);
+          this.recentPerformanceRuns.set(
+            runs.slice(0, 5),
+          );
+        },
+
+        error: (error: HttpErrorResponse) => {
+          if (error.status === 0) {
+            this.performanceErrorMessage.set(
+              'Le service Performance est inaccessible.',
+            );
+
+            return;
+          }
+
+          this.performanceErrorMessage.set(
+            'Impossible de charger l’activité Performance.',
+          );
+        },
+      });
+  }
+
+
   deploymentStatusLabel(
     status: string,
   ): string {
@@ -115,6 +182,39 @@ export class Dashboard implements OnInit {
       };
 
     return labels[status] ?? status;
+  }
+
+
+  performanceStatusLabel(
+    status: PerformanceRunStatus,
+  ): string {
+    const labels:
+      Record<PerformanceRunStatus, string> = {
+        queued: 'En attente',
+        running: 'En cours',
+        passed: 'Réussi',
+        failed: 'Échoué',
+        cancelled: 'Annulé',
+      };
+
+    return labels[status];
+  }
+
+
+  performanceTypeLabel(
+    type: PerformanceTestType,
+  ): string {
+    const labels:
+      Record<PerformanceTestType, string> = {
+        smoke: 'Smoke',
+        load: 'Load',
+        stress: 'Stress',
+        spike: 'Spike',
+        soak: 'Soak',
+        custom: 'Custom',
+      };
+
+    return labels[type];
   }
 
 

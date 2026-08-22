@@ -141,6 +141,7 @@ class DeploymentPipeline:
             deployment=deployment,
             logger=self.logger,
             connection=self.kubernetes_connection,
+            contract=self.contract,
         )
 
     @staticmethod

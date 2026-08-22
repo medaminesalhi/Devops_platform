@@ -1720,10 +1720,12 @@ class KubernetesProvider:
         deployment: dict[str, Any],
         logger: DeploymentLogger,
         connection: dict[str, Any],
+        contract: dict[str, Any] | None = None,
     ) -> None:
         self.deployment = deployment
         self.logger = logger
         self.connection = connection
+        self.contract = contract or {}
         self.base_url = str(connection.get("base_url") or "").rstrip("/")
         self.verify_ssl = bool(connection.get("verify_ssl", True))
         self.secret = decrypt_credential(connection.get("secret_ciphertext"))
@@ -1810,6 +1812,45 @@ class KubernetesProvider:
         if seconds < 86400:
             return f"{seconds // 3600} h"
         return f"{seconds // 86400} j"
+
+    def _expected_ingresses(self) -> dict[str, dict[str, str]]:
+        """Retourne les Ingress que le contrat confirmé demande réellement."""
+        project = self.contract.get("project") or {}
+        project_slug = slug(
+            str(
+                project.get("slug")
+                or self.deployment.get("project_slug")
+                or "application"
+            )
+        )
+
+        expected: dict[str, dict[str, str]] = {}
+
+        for component in self.contract.get("components") or []:
+            if not isinstance(component, dict):
+                continue
+
+            ingress = component.get("ingress") or {}
+            if not isinstance(ingress, dict) or not bool(ingress.get("enabled")):
+                continue
+
+            component_slug = slug(
+                str(
+                    component.get("slug")
+                    or component.get("name")
+                    or "application"
+                )
+            )
+
+            # Même convention que le fullname Helm généré par SApixi.
+            name = f"{project_slug}-{component_slug}"[:63].rstrip("-")
+
+            expected[name] = {
+                "host": str(ingress.get("host") or "").strip(),
+                "className": str(ingress.get("className") or "").strip(),
+            }
+
+        return expected
 
     def observe(self) -> list[dict[str, Any]]:
         namespace = str(self.deployment.get("namespace") or "default")
@@ -1924,18 +1965,38 @@ class KubernetesProvider:
             2,
             int(current_app.config.get("DEPLOYMENT_HEALTH_POLL_SECONDS", 5)),
         )
+
+        expected_ingresses = self._expected_ingresses()
+
         started = time.monotonic()
         latest: list[dict[str, Any]] = []
+        last_missing_ingresses: list[str] = []
+        last_progressing_ingresses: list[str] = []
+
         while time.monotonic() - started < timeout_seconds:
             if repository.deployment_cancel_requested(int(self.deployment["id"])):
                 raise DeploymentCancelled("Annulation demandée par l’utilisateur.")
+
             latest = self.observe()
             repository.replace_resources(int(self.deployment["id"]), latest)
+
+            # Les workloads restent la base de la santé applicative.
             workloads = [
-                item for item in latest if item["kind"] in {"deployment", "pod", "job"}
+                item
+                for item in latest
+                if item["kind"] in {"deployment", "pod", "job"}
             ]
-            degraded = [item for item in workloads if item["health"] == "degraded"]
-            progressing = [item for item in workloads if item["health"] == "progressing"]
+            degraded = [
+                item
+                for item in workloads
+                if item["health"] == "degraded"
+            ]
+            progressing = [
+                item
+                for item in workloads
+                if item["health"] == "progressing"
+            ]
+
             if degraded:
                 names = ", ".join(item["name"] for item in degraded[:5])
                 raise DeploymentExecutionError(
@@ -1946,15 +2007,102 @@ class KubernetesProvider:
                     retryable=False,
                     requires_new_generation=True,
                 )
-            if workloads and not progressing:
-                return latest
-            self.logger.write(
-                "kubernetes",
-                "info",
-                "Les ressources Kubernetes progressent encore…",
-                stage="health",
+
+            # Un Ingress demandé dans le contrat doit réellement exister
+            # après la synchronisation Argo CD.
+            actual_ingresses = {
+                str(item.get("name") or ""): item
+                for item in latest
+                if item.get("kind") == "ingress"
+            }
+
+            last_missing_ingresses = sorted(
+                set(expected_ingresses) - set(actual_ingresses)
             )
+
+            last_progressing_ingresses = sorted(
+                name
+                for name in expected_ingresses
+                if name in actual_ingresses
+                and actual_ingresses[name].get("health") != "healthy"
+            )
+
+            if (
+                workloads
+                and not progressing
+                and not last_missing_ingresses
+                and not last_progressing_ingresses
+            ):
+                for name, expected in expected_ingresses.items():
+                    resource = actual_ingresses.get(name)
+                    if resource is None:
+                        continue
+
+                    url = str(resource.get("url") or "").strip()
+                    host = str(expected.get("host") or "").strip()
+
+                    destination = (
+                        url
+                        or (f"http://{host}" if host else "")
+                    )
+
+                    self.logger.write(
+                        "kubernetes",
+                        "success",
+                        (
+                            f"Ingress appliqué : {name}"
+                            + (f" → {destination}" if destination else "")
+                        ),
+                        stage="health",
+                    )
+
+                return latest
+
+            if last_missing_ingresses:
+                self.logger.write(
+                    "kubernetes",
+                    "info",
+                    (
+                        "En attente de l’application des Ingress par Argo CD : "
+                        + ", ".join(last_missing_ingresses)
+                    ),
+                    stage="health",
+                )
+            elif last_progressing_ingresses:
+                self.logger.write(
+                    "kubernetes",
+                    "info",
+                    (
+                        "Les Ingress sont présents mais progressent encore : "
+                        + ", ".join(last_progressing_ingresses)
+                    ),
+                    stage="health",
+                )
+            else:
+                self.logger.write(
+                    "kubernetes",
+                    "info",
+                    "Les ressources Kubernetes progressent encore…",
+                    stage="health",
+                )
+
             time.sleep(poll_seconds)
+
+        if last_missing_ingresses or last_progressing_ingresses:
+            pending = sorted(
+                set(last_missing_ingresses)
+                | set(last_progressing_ingresses)
+            )
+            raise DeploymentExecutionError(
+                "INGRESS_NOT_APPLIED",
+                (
+                    "Argo CD n’a pas rendu disponibles les Ingress attendus : "
+                    + ", ".join(pending)
+                ),
+                stage="health",
+                title="Ingress non appliqué",
+                retryable=True,
+            )
 
         raise DeploymentExecutionError(
             "HEALTH_TIMEOUT",
@@ -1963,3 +2111,4 @@ class KubernetesProvider:
             title="Délai de santé dépassé",
             retryable=True,
         )
+

@@ -28,6 +28,7 @@ MIGRATION_CHOICES = {"automatic", "enabled", "disabled"}
 DELIVERY_MODES = {"git", "helm"}
 GIT_REFRESH_MODES = {"polling", "webhook"}
 SERVICE_TYPES = {"ClusterIP", "NodePort", "LoadBalancer"}
+INGRESS_PATH_TYPES = {"Prefix", "Exact", "ImplementationSpecific"}
 
 # GitLab GitOps n'est plus obligatoire : un environnement peut utiliser
 # un repository Helm Nexus comme source Argo CD.
@@ -221,6 +222,13 @@ def _normalize_probe_path(value: Any, fallback: str) -> str:
     return path
 
 
+def _normalize_ingress_path(value: Any, fallback: str = "/") -> str:
+    path = _safe_text(value, fallback, 255) or fallback
+    if not path.startswith("/"):
+        raise ProposalError("INVALID_INGRESS_PATH", "Le chemin Ingress doit commencer par /.")
+    return path
+
+
 def _validate_decisions(
     value: Any,
     context: ProposalContext,
@@ -364,6 +372,30 @@ def _validate_decisions(
     port_value = advanced_raw.get("port")
     port = None if port_value in (None, "", 0, "0") else _safe_int(port_value, 8080, 1, 65535)
 
+    ingress_class_name = _safe_text(advanced_raw.get("ingressClassName"), "nginx", 253) or "nginx"
+    ingress_path = _normalize_ingress_path(advanced_raw.get("ingressPath"), "/")
+    ingress_path_type = _safe_text(advanced_raw.get("ingressPathType"), "Prefix", 40) or "Prefix"
+    if ingress_path_type not in INGRESS_PATH_TYPES:
+        raise ProposalError("INVALID_INGRESS_PATH_TYPE", "Le pathType de l'Ingress est invalide.")
+
+    ingress_tls_enabled = bool(advanced_raw.get("ingressTlsEnabled", False))
+    ingress_tls_secret_name = _safe_text(advanced_raw.get("ingressTlsSecretName"), maximum=253) or None
+    ingress_cert_manager_issuer = _safe_text(advanced_raw.get("ingressCertManagerIssuer"), maximum=253) or None
+
+    if exposure_mode == "public" and not ingress_class_name:
+        raise ProposalError("INGRESS_CLASS_REQUIRED", "Une IngressClass est requise pour l'exposition publique.")
+
+    if (
+        exposure_mode == "public"
+        and ingress_tls_enabled
+        and not ingress_tls_secret_name
+        and not ingress_cert_manager_issuer
+    ):
+        raise ProposalError(
+            "INGRESS_TLS_CONFIGURATION_REQUIRED",
+            "Pour activer TLS, indiquez un Secret TLS existant ou un ClusterIssuer cert-manager.",
+        )
+
     return {
         "namespace": _normalize_namespace(
             raw.get("namespace"),
@@ -392,6 +424,12 @@ def _validate_decisions(
             "startCommand": _safe_text(advanced_raw.get("startCommand"), maximum=1000) or None,
             "port": port,
             "serviceType": service_type,
+            "ingressClassName": ingress_class_name,
+            "ingressPath": ingress_path,
+            "ingressPathType": ingress_path_type,
+            "ingressTlsEnabled": ingress_tls_enabled,
+            "ingressTlsSecretName": ingress_tls_secret_name,
+            "ingressCertManagerIssuer": ingress_cert_manager_issuer,
             "readinessPath": _normalize_probe_path(advanced_raw.get("readinessPath"), "/health"),
             "livenessPath": _normalize_probe_path(advanced_raw.get("livenessPath"), "/health"),
             "cpuRequest": _safe_text(advanced_raw.get("cpuRequest"), "100m", 50),
@@ -728,7 +766,9 @@ def _host_for_component(
     if decisions["exposureMode"] != "public" or not decisions.get("domain"):
         return None
     domain = decisions["domain"]
-    component_type = _safe_text(component.get("component_type")).lower()
+    component_type = _safe_text(
+        component.get("component_type") or component.get("componentType")
+    ).lower()
     framework = _safe_text(component.get("framework")).lower()
     if component_count == 1 or component_type in {"frontend", "web"} or any(
         token in framework for token in ("angular", "react", "vue")
@@ -807,6 +847,12 @@ def _build_default_components(
                     "serviceType": advanced.get("serviceType") or "ClusterIP",
                     "ingressEnabled": host is not None,
                     "host": host,
+                    "ingressClassName": advanced.get("ingressClassName") or "nginx",
+                    "ingressPath": advanced.get("ingressPath") or "/",
+                    "ingressPathType": advanced.get("ingressPathType") or "Prefix",
+                    "ingressTlsEnabled": bool(advanced.get("ingressTlsEnabled", False)),
+                    "ingressTlsSecretName": advanced.get("ingressTlsSecretName"),
+                    "ingressCertManagerIssuer": advanced.get("ingressCertManagerIssuer"),
                     "replicas": decisions["replicas"],
                     "readinessPath": advanced.get("readinessPath") or ("/health" if "api" in _safe_text(component.get("component_type")).lower() else "/"),
                     "livenessPath": advanced.get("livenessPath") or ("/health" if "api" in _safe_text(component.get("component_type")).lower() else "/"),
@@ -1132,7 +1178,11 @@ def _apply_answers(
         if question["id"] == "public-domain" and question.get("answer"):
             decisions["domain"] = _normalize_domain(question["answer"])
             for component in components:
-                component["kubernetes"]["host"] = decisions["domain"]
+                component["kubernetes"]["host"] = _host_for_component(
+                    component=component,
+                    decisions=decisions,
+                    component_count=len(components),
+                )
                 component["kubernetes"]["ingressEnabled"] = True
         if question["id"].startswith("migration-") and question.get("componentId"):
             component = by_component.get(int(question["componentId"]))
@@ -1485,6 +1535,25 @@ def _contract_from_proposal(
         port = _safe_int(docker.get("port"), 8080, 1, 65535)
         service_enabled = _safe_text(source.get("component_type")).lower() not in {"worker", "job", "library"}
 
+        component_slug = _slug(source["name"])
+        ingress_enabled = bool(kube.get("ingressEnabled")) and service_enabled
+        ingress_host = _normalize_domain(kube.get("host")) or ""
+        ingress_class_name = _safe_text(kube.get("ingressClassName"), "nginx", 253) or "nginx"
+        ingress_path = _normalize_ingress_path(kube.get("ingressPath"), "/")
+        ingress_path_type = _safe_text(kube.get("ingressPathType"), "Prefix", 40) or "Prefix"
+        if ingress_path_type not in INGRESS_PATH_TYPES:
+            ingress_path_type = "Prefix"
+
+        ingress_tls_enabled = bool(kube.get("ingressTlsEnabled", False)) and ingress_enabled
+        ingress_cert_manager_issuer = _safe_text(kube.get("ingressCertManagerIssuer"), maximum=253) or ""
+        ingress_tls_secret_name = _safe_text(kube.get("ingressTlsSecretName"), maximum=253) or ""
+        if ingress_tls_enabled and not ingress_tls_secret_name and ingress_cert_manager_issuer:
+            ingress_tls_secret_name = f"{context.project['slug']}-{component_slug}-tls"
+
+        ingress_annotations: dict[str, str] = {}
+        if ingress_tls_enabled and ingress_cert_manager_issuer:
+            ingress_annotations["cert-manager.io/cluster-issuer"] = ingress_cert_manager_issuer
+
         def probe(path: str | None, enabled: bool) -> dict[str, Any]:
             return {
                 "enabled": enabled and bool(path),
@@ -1512,7 +1581,7 @@ def _contract_from_proposal(
             {
                 "id": component_id,
                 "name": source["name"],
-                "slug": _slug(source["name"]),
+                "slug": component_slug,
                 "rootPath": source.get("root_path") or ".",
                 "componentType": source.get("component_type") or "unknown",
                 "runtime": {"name": runtime_name, "version": runtime_version},
@@ -1542,13 +1611,15 @@ def _contract_from_proposal(
                     "targetPort": port,
                 },
                 "ingress": {
-                    "enabled": bool(kube.get("ingressEnabled")),
-                    "className": "nginx",
-                    "host": kube.get("host") or "",
-                    "path": "/",
-                    "pathType": "Prefix",
-                    "tlsSecretName": "",
-                    "annotations": {},
+                    "enabled": ingress_enabled,
+                    "className": ingress_class_name,
+                    "host": ingress_host,
+                    "path": ingress_path,
+                    "pathType": ingress_path_type,
+                    "tlsEnabled": ingress_tls_enabled,
+                    "tlsSecretName": ingress_tls_secret_name,
+                    "certManagerIssuer": ingress_cert_manager_issuer,
+                    "annotations": ingress_annotations,
                 },
                 "resources": {
                     "requests": {
@@ -1632,6 +1703,18 @@ def _contract_from_proposal(
                 "path": f"components.{index}.ingress.host",
                 "code": "INGRESS_HOST_REQUIRED",
                 "message": f"Le domaine de {item['name']} est absent.",
+            })
+        if item["ingress"]["enabled"] and not item["service"]["enabled"]:
+            errors.append({
+                "path": f"components.{index}.service.enabled",
+                "code": "INGRESS_SERVICE_REQUIRED",
+                "message": f"L'Ingress de {item['name']} nécessite un Service Kubernetes.",
+            })
+        if item["ingress"]["tlsEnabled"] and not item["ingress"]["tlsSecretName"]:
+            errors.append({
+                "path": f"components.{index}.ingress.tlsSecretName",
+                "code": "INGRESS_TLS_SECRET_REQUIRED",
+                "message": f"Le Secret TLS de {item['name']} est absent.",
             })
     validation = {
         "valid": not errors,

@@ -182,7 +182,9 @@ export interface DeploymentContractComponent {
     host: string;
     path: string;
     pathType: 'Prefix' | 'Exact' | 'ImplementationSpecific';
+    tlsEnabled: boolean;
     tlsSecretName: string;
+    certManagerIssuer: string;
     annotations: Record<string, string>;
   };
   resources: {
@@ -282,6 +284,12 @@ export interface DeploymentProposalAdvancedDecisions {
   startCommand: string | null;
   port: number | null;
   serviceType: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
+  ingressClassName: string;
+  ingressPath: string;
+  ingressPathType: 'Prefix' | 'Exact' | 'ImplementationSpecific';
+  ingressTlsEnabled: boolean;
+  ingressTlsSecretName: string | null;
+  ingressCertManagerIssuer: string | null;
   readinessPath: string;
   livenessPath: string;
   cpuRequest: string;
@@ -365,6 +373,12 @@ export interface DeploymentProposalComponent {
     serviceType: string;
     ingressEnabled: boolean;
     host: string | null;
+    ingressClassName: string;
+    ingressPath: string;
+    ingressPathType: 'Prefix' | 'Exact' | 'ImplementationSpecific';
+    ingressTlsEnabled: boolean;
+    ingressTlsSecretName: string | null;
+    ingressCertManagerIssuer: string | null;
     replicas: number;
     readinessPath: string | null;
     livenessPath: string | null;

@@ -11,7 +11,8 @@
 
       <p>
         Consultez l’état des projets,
-        des déploiements et des services.
+        des déploiements, des performances
+        et des services.
       </p>
     </div>
 
@@ -164,7 +165,8 @@
     </section>
 
     <section class="dashboard-grid">
-      <article class="dashboard-card recent-card">
+      <div class="dashboard-main">
+        <article class="dashboard-card recent-card">
         <header class="card-heading">
           <div>
             <p class="eyebrow">
@@ -301,6 +303,172 @@
           </div>
         }
       </article>
+
+        <article class="dashboard-card performance-activity-card">
+          <header class="card-heading performance-card-heading">
+            <div>
+              <p class="eyebrow">
+                Validation
+              </p>
+
+              <h3>
+                Tests de performance récents
+              </h3>
+            </div>
+
+            <a routerLink="/performance">
+              Voir Performance
+              <span>→</span>
+            </a>
+          </header>
+
+          @if (performanceOverview(); as performance) {
+            <div class="performance-summary">
+              <div>
+                <span>Runs</span>
+                <strong>{{ performance.totalRuns }}</strong>
+              </div>
+
+              <div>
+                <span>Actifs</span>
+                <strong>{{ performance.runningRuns }}</strong>
+              </div>
+
+              <div>
+                <span>Réussis</span>
+                <strong>{{ performance.passedRuns }}</strong>
+              </div>
+
+              <div>
+                <span>Échoués</span>
+                <strong>{{ performance.failedRuns }}</strong>
+              </div>
+            </div>
+          }
+
+          @if (isPerformanceLoading()) {
+            <div class="performance-loading">
+              <span class="loading-spinner"></span>
+
+              <div>
+                <strong>Chargement de l’activité k6</strong>
+                <small>Lecture des derniers runs…</small>
+              </div>
+            </div>
+          } @else if (performanceErrorMessage()) {
+            <div class="performance-error">
+              <div>
+                <strong>Activité Performance indisponible</strong>
+                <small>{{ performanceErrorMessage() }}</small>
+              </div>
+
+              <button
+                type="button"
+                (click)="loadPerformanceActivity()"
+              >
+                Réessayer
+              </button>
+            </div>
+          } @else if (recentPerformanceRuns().length > 0) {
+            <div class="table-container">
+              <table class="performance-table">
+                <thead>
+                  <tr>
+                    <th>Run</th>
+                    <th>Projet</th>
+                    <th>Profil</th>
+                    <th>p95</th>
+                    <th>Erreurs</th>
+                    <th>Statut</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  @for (run of recentPerformanceRuns(); track run.id) {
+                    <tr>
+                      <td>
+                        <a
+                          class="run-link"
+                          [routerLink]="['/performance/runs', run.id]"
+                        >
+                          <span>#{{ run.id }}</span>
+
+                          <div>
+                            <strong>{{ run.testName }}</strong>
+                            <small>{{ run.targetUrl }}</small>
+                          </div>
+                        </a>
+                      </td>
+
+                      <td>
+                        <strong class="performance-project">
+                          {{ run.projectName }}
+                        </strong>
+                      </td>
+
+                      <td>
+                        <div class="profile-cell">
+                          <strong>{{ performanceTypeLabel(run.testType) }}</strong>
+                          <small>
+                            {{ run.maxVirtualUsers }} VUs ·
+                            {{ run.durationSeconds }} s
+                          </small>
+                        </div>
+                      </td>
+
+                      <td>
+                        @if (run.metrics) {
+                          <strong class="metric-inline">
+                            {{ run.metrics.p95Ms | number:'1.0-0' }} ms
+                          </strong>
+                        } @else {
+                          <span class="metric-empty">—</span>
+                        }
+                      </td>
+
+                      <td>
+                        @if (run.metrics) {
+                          <strong class="metric-inline">
+                            {{ run.metrics.errorRatePercent | number:'1.0-2' }} %
+                          </strong>
+                        } @else {
+                          <span class="metric-empty">—</span>
+                        }
+                      </td>
+
+                      <td>
+                        <span
+                          [class]="
+                            'performance-status performance-status--' +
+                            run.status
+                          "
+                        >
+                          {{ performanceStatusLabel(run.status) }}
+                        </span>
+                      </td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          } @else {
+            <div class="performance-empty">
+              <span aria-hidden="true">⌁</span>
+
+              <div>
+                <strong>Aucun test de performance</strong>
+                <p>
+                  Les prochains runs k6 apparaîtront ici.
+                </p>
+              </div>
+
+              <a routerLink="/performance/new">
+                Nouveau test
+              </a>
+            </div>
+          }
+        </article>
+      </div>
 
       <aside class="dashboard-side">
         <article class="dashboard-card">

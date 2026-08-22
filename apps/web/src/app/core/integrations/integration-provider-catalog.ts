@@ -229,7 +229,7 @@ export const PROVIDER_DEFINITIONS:
         'https://nexus.example.com',
 
       endpointPath:
-        '/service/rest/v1/status',
+        '/service/rest/v1/repositories',
 
       exactUrl:
         false,

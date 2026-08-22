@@ -426,6 +426,75 @@
                     </select>
                   </label>
 
+                  @if (proposalDecisions().exposureMode === 'public') {
+                    <label class="field">
+                      <span>IngressClass</span>
+                      <input
+                        type="text"
+                        [ngModel]="proposalDecisions().advanced.ingressClassName"
+                        (ngModelChange)="updateProposalAdvancedDecision('ingressClassName', $event)"
+                        placeholder="nginx"
+                      />
+                      <small>Nom exact de l'IngressClass installée dans le cluster.</small>
+                    </label>
+
+                    <label class="field">
+                      <span>Chemin Ingress</span>
+                      <input
+                        type="text"
+                        [ngModel]="proposalDecisions().advanced.ingressPath"
+                        (ngModelChange)="updateProposalAdvancedDecision('ingressPath', $event)"
+                        placeholder="/"
+                      />
+                    </label>
+
+                    <label class="field">
+                      <span>Path type</span>
+                      <select
+                        [ngModel]="proposalDecisions().advanced.ingressPathType"
+                        (ngModelChange)="updateProposalAdvancedDecision('ingressPathType', $event)"
+                      >
+                        <option value="Prefix">Prefix</option>
+                        <option value="Exact">Exact</option>
+                        <option value="ImplementationSpecific">ImplementationSpecific</option>
+                      </select>
+                    </label>
+
+                    <label class="field">
+                      <span>HTTPS / TLS</span>
+                      <select
+                        [ngModel]="proposalDecisions().advanced.ingressTlsEnabled"
+                        (ngModelChange)="updateProposalAdvancedDecision('ingressTlsEnabled', $event)"
+                      >
+                        <option [ngValue]="false">Désactivé</option>
+                        <option [ngValue]="true">Activé</option>
+                      </select>
+                    </label>
+
+                    @if (proposalDecisions().advanced.ingressTlsEnabled) {
+                      <label class="field">
+                        <span>Secret TLS existant (optionnel)</span>
+                        <input
+                          type="text"
+                          [ngModel]="proposalDecisions().advanced.ingressTlsSecretName"
+                          (ngModelChange)="updateProposalAdvancedDecision('ingressTlsSecretName', $event || null)"
+                          placeholder="mon-app-tls"
+                        />
+                        <small>Laissez vide si cert-manager doit créer le Secret.</small>
+                      </label>
+
+                      <label class="field">
+                        <span>cert-manager ClusterIssuer (optionnel)</span>
+                        <input
+                          type="text"
+                          [ngModel]="proposalDecisions().advanced.ingressCertManagerIssuer"
+                          (ngModelChange)="updateProposalAdvancedDecision('ingressCertManagerIssuer', $event || null)"
+                          placeholder="letsencrypt-prod"
+                        />
+                      </label>
+                    }
+                  }
+
                   <label class="field">
                     <span>Readiness probe</span>
                     <input type="text" [ngModel]="proposalDecisions().advanced.readinessPath" (ngModelChange)="updateProposalAdvancedDecision('readinessPath', $event)" placeholder="/health" />
@@ -507,6 +576,8 @@
                     <article><span>Port</span><strong>{{ component.docker.port }}</strong></article>
                     <article><span>Service</span><strong>{{ component.kubernetes.serviceType }}</strong></article>
                     <article><span>Ingress</span><strong>{{ component.kubernetes.ingressEnabled ? component.kubernetes.host : 'Interne' }}</strong></article>
+                    <article><span>IngressClass</span><strong>{{ component.kubernetes.ingressEnabled ? component.kubernetes.ingressClassName : '—' }}</strong></article>
+                    <article><span>TLS</span><strong>{{ component.kubernetes.ingressEnabled && component.kubernetes.ingressTlsEnabled ? (component.kubernetes.ingressTlsSecretName || 'cert-manager') : 'Désactivé' }}</strong></article>
                     <article><span>Ressources</span><strong>{{ component.kubernetes.cpuRequest }} / {{ component.kubernetes.memoryRequest }}</strong></article>
                     <article><span>Probes</span><strong>{{ component.kubernetes.readinessPath ?? 'À confirmer' }}</strong></article>
                     <article><span>Migration</span><strong>{{ component.migration.enabled ? component.migration.command : 'Désactivée' }}</strong></article>
