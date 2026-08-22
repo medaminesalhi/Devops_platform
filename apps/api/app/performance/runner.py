@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 import math
 import os
-import selectors
+import queue
 import shutil
 import signal
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
@@ -21,6 +23,7 @@ class K6RunResult:
     exit_code: int
     elapsed_seconds: float
     metrics: dict[str, Any]
+    samples: list[dict[str, Any]]
     threshold_results: list[dict[str, Any]]
     summary: dict[str, Any]
     grafana_dashboard_url: str | None
@@ -159,41 +162,6 @@ export default function () {{
 """
 
 
-def _metric_map(summary: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    # Format k6 v2 machine-readable : results.metrics est une liste.
-    results = summary.get("results")
-    if isinstance(results, dict) and isinstance(results.get("metrics"), list):
-        mapped: dict[str, dict[str, Any]] = {}
-        for metric in results["metrics"]:
-            if isinstance(metric, dict) and metric.get("name"):
-                mapped[str(metric["name"])] = metric
-
-        checks = results.get("checks")
-        if isinstance(checks, dict) and isinstance(checks.get("metrics"), list):
-            for metric in checks["metrics"]:
-                if isinstance(metric, dict) and metric.get("name"):
-                    mapped[str(metric["name"])] = metric
-        return mapped
-
-    # Format historique : metrics est un objet indexé par nom.
-    legacy = summary.get("metrics")
-    if isinstance(legacy, dict):
-        return {
-            str(name): metric
-            for name, metric in legacy.items()
-            if isinstance(metric, dict)
-        }
-    return {}
-
-
-def _values(metrics: dict[str, dict[str, Any]], name: str) -> dict[str, Any]:
-    metric = metrics.get(name)
-    if not isinstance(metric, dict):
-        return {}
-    values = metric.get("values")
-    return values if isinstance(values, dict) else {}
-
-
 def _number(value: Any, default: float = 0.0) -> float:
     try:
         parsed = float(value)
@@ -202,51 +170,241 @@ def _number(value: Any, default: float = 0.0) -> float:
     return parsed if math.isfinite(parsed) else default
 
 
-def _counter(values: dict[str, Any]) -> int:
-    return int(round(_number(values.get("count", values.get("value", 0)))))
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+
+    rank = (len(ordered) - 1) * percentile
+    lower = int(math.floor(rank))
+    upper = int(math.ceil(rank))
+    if lower == upper:
+        return ordered[lower]
+
+    weight = rank - lower
+    return ordered[lower] * (1.0 - weight) + ordered[upper] * weight
 
 
-def _rate(values: dict[str, Any]) -> float:
-    if "rate" in values:
-        return _number(values.get("rate"))
-    total = _number(values.get("total"))
-    matches = _number(values.get("matches"))
-    return (matches / total) if total > 0 else 0.0
+def _parse_timestamp(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    normalized = value.strip()
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
-def _extract_metrics(summary: dict[str, Any], elapsed_seconds: float) -> dict[str, Any]:
-    metrics = _metric_map(summary)
-    http_reqs = _values(metrics, "http_reqs")
-    duration = _values(metrics, "http_req_duration")
-    failed = _values(metrics, "http_req_failed")
-    iterations = _values(metrics, "iterations")
-    received = _values(metrics, "data_received")
-    sent = _values(metrics, "data_sent")
+def _read_k6_points(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        raise K6ExecutionError(
+            "K6_METRICS_MISSING",
+            "k6 n'a pas produit le fichier de métriques JSON.",
+        )
 
-    checks = _values(metrics, "checks")
-    if not checks:
-        checks = _values(metrics, "checks_succeeded")
+    points: list[dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as stream:
+            for raw_line in stream:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    item = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(item, dict) or item.get("type") != "Point":
+                    continue
+                metric = item.get("metric")
+                data = item.get("data")
+                if not isinstance(metric, str) or not isinstance(data, dict):
+                    continue
+                timestamp = _parse_timestamp(data.get("time"))
+                if timestamp is None:
+                    continue
+                points.append(
+                    {
+                        "metric": metric,
+                        "time": timestamp,
+                        "value": _number(data.get("value")),
+                    }
+                )
+    except OSError as error:
+        raise K6ExecutionError(
+            "K6_METRICS_INVALID",
+            "Impossible de lire le fichier de métriques produit par k6.",
+        ) from error
 
-    request_count = _counter(http_reqs)
-    rps = _number(http_reqs.get("rate"))
-    if rps <= 0 and elapsed_seconds > 0:
-        rps = request_count / elapsed_seconds
+    return points
 
-    return {
+
+def _aggregate_points(
+    points: list[dict[str, Any]],
+    *,
+    configured_duration_seconds: int,
+    sample_interval_seconds: int = 2,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+    relevant = [
+        point
+        for point in points
+        if point["metric"]
+        in {
+            "http_reqs",
+            "http_req_duration",
+            "http_req_failed",
+            "checks",
+            "iterations",
+            "data_received",
+            "data_sent",
+            "vus",
+        }
+    ]
+
+    if not relevant:
+        raise K6ExecutionError(
+            "K6_NO_METRICS",
+            "k6 s'est terminé sans produire de métriques exploitables.",
+        )
+
+    first_time = min(point["time"] for point in relevant)
+    last_time = max(point["time"] for point in relevant)
+    observed_span = max(0.001, (last_time - first_time).total_seconds())
+
+    grouped_values: dict[str, list[float]] = {}
+    for point in relevant:
+        grouped_values.setdefault(point["metric"], []).append(float(point["value"]))
+
+    durations = grouped_values.get("http_req_duration", [])
+    failed_values = grouped_values.get("http_req_failed", [])
+    checks_values = grouped_values.get("checks", [])
+
+    request_count = int(round(sum(grouped_values.get("http_reqs", []))))
+    iteration_count = int(round(sum(grouped_values.get("iterations", []))))
+    received_bytes = int(round(sum(grouped_values.get("data_received", []))))
+    sent_bytes = int(round(sum(grouped_values.get("data_sent", []))))
+
+    effective_duration = max(
+        0.001,
+        min(
+            float(max(1, configured_duration_seconds)),
+            observed_span + float(sample_interval_seconds),
+        ),
+    )
+
+    metrics = {
         "requests": request_count,
-        "rps": round(rps, 3),
-        "avgMs": round(_number(duration.get("avg")), 3),
-        "minMs": round(_number(duration.get("min")), 3),
-        "maxMs": round(_number(duration.get("max")), 3),
-        "p90Ms": round(_number(duration.get("p(90)")), 3),
-        "p95Ms": round(_number(duration.get("p(95)")), 3),
-        "p99Ms": round(_number(duration.get("p(99)")), 3),
-        "errorRatePercent": round(_rate(failed) * 100.0, 4),
-        "checksRatePercent": round(_rate(checks) * 100.0, 4),
-        "dataReceivedBytes": _counter(received),
-        "dataSentBytes": _counter(sent),
-        "iterations": _counter(iterations),
+        "rps": round(request_count / effective_duration, 3),
+        "avgMs": round(sum(durations) / len(durations), 3) if durations else 0.0,
+        "minMs": round(min(durations), 3) if durations else 0.0,
+        "maxMs": round(max(durations), 3) if durations else 0.0,
+        "p90Ms": round(_percentile(durations, 0.90), 3),
+        "p95Ms": round(_percentile(durations, 0.95), 3),
+        "p99Ms": round(_percentile(durations, 0.99), 3),
+        "errorRatePercent": round(
+            (sum(failed_values) / len(failed_values) * 100.0) if failed_values else 0.0,
+            4,
+        ),
+        "checksRatePercent": round(
+            (sum(checks_values) / len(checks_values) * 100.0) if checks_values else 0.0,
+            4,
+        ),
+        "dataReceivedBytes": received_bytes,
+        "dataSentBytes": sent_bytes,
+        "iterations": iteration_count,
     }
+
+    interval = max(1, int(sample_interval_seconds))
+    buckets: dict[int, dict[str, Any]] = {}
+    for point in relevant:
+        elapsed = max(0.0, (point["time"] - first_time).total_seconds())
+        bucket_index = int(elapsed // interval)
+        bucket = buckets.setdefault(
+            bucket_index,
+            {
+                "sampledAt": point["time"],
+                "http_reqs": [],
+                "http_req_duration": [],
+                "http_req_failed": [],
+                "checks": [],
+                "iterations": [],
+                "vus": [],
+            },
+        )
+        if point["time"] > bucket["sampledAt"]:
+            bucket["sampledAt"] = point["time"]
+        metric = point["metric"]
+        if metric in bucket:
+            bucket[metric].append(float(point["value"]))
+
+    samples: list[dict[str, Any]] = []
+    cumulative_requests = 0
+    cumulative_iterations = 0
+    last_vus = 0
+
+    for bucket_index in sorted(buckets):
+        bucket = buckets[bucket_index]
+        requests_in_bucket = int(round(sum(bucket["http_reqs"])))
+        iterations_in_bucket = int(round(sum(bucket["iterations"])))
+        cumulative_requests += requests_in_bucket
+        cumulative_iterations += iterations_in_bucket
+
+        if bucket["vus"]:
+            last_vus = max(0, int(round(bucket["vus"][-1])))
+
+        latency_values = bucket["http_req_duration"]
+        failed_bucket = bucket["http_req_failed"]
+        checks_bucket = bucket["checks"]
+
+        samples.append(
+            {
+                "sampledAt": bucket["sampledAt"],
+                "elapsedSeconds": bucket_index * interval,
+                "vus": last_vus,
+                "requests": requests_in_bucket,
+                "requestsTotal": cumulative_requests,
+                "iterationsTotal": cumulative_iterations,
+                "rps": round(requests_in_bucket / interval, 3),
+                "avgMs": round(
+                    sum(latency_values) / len(latency_values), 3
+                ) if latency_values else 0.0,
+                "p95Ms": round(_percentile(latency_values, 0.95), 3),
+                "p99Ms": round(_percentile(latency_values, 0.99), 3),
+                "errorRatePercent": round(
+                    (sum(failed_bucket) / len(failed_bucket) * 100.0)
+                    if failed_bucket
+                    else 0.0,
+                    4,
+                ),
+                "checksRatePercent": round(
+                    (sum(checks_bucket) / len(checks_bucket) * 100.0)
+                    if checks_bucket
+                    else 0.0,
+                    4,
+                ),
+            }
+        )
+
+    summary = {
+        "source": "k6-json-output",
+        "observedSpanSeconds": round(observed_span, 3),
+        "configuredDurationSeconds": int(configured_duration_seconds),
+        "pointCount": len(relevant),
+        "sampleIntervalSeconds": interval,
+        "sampleCount": len(samples),
+        "metrics": metrics,
+    }
+    return metrics, samples, summary
 
 
 def _threshold_results(
@@ -300,20 +458,13 @@ def prometheus_remote_write_url(run: dict[str, Any]) -> str | None:
         return None
 
     observability = run.get("observability") or {}
-    namespace = str(observability.get("namespace") or "").strip()
-    if not namespace:
+    url = str(observability.get("prometheusRemoteWriteUrl") or "").strip()
+    if not url:
         raise K6ExecutionError(
-            "OBSERVABILITY_NAMESPACE_MISSING",
-            "Le namespace Prometheus/Grafana est absent.",
+            "PROMETHEUS_REMOTE_WRITE_URL_MISSING",
+            "L'URL Prometheus Remote Write est absente du run.",
         )
-
-    template = str(
-        current_app.config.get(
-            "PERFORMANCE_PROMETHEUS_REMOTE_WRITE_URL_TEMPLATE",
-            "http://sapixi-k6-prometheus.{namespace}.svc.cluster.local:9090/api/v1/write",
-        )
-    )
-    return template.format(namespace=namespace)
+    return url
 
 
 def grafana_dashboard_url(run: dict[str, Any]) -> str | None:
@@ -321,20 +472,16 @@ def grafana_dashboard_url(run: dict[str, Any]) -> str | None:
         return None
 
     observability = run.get("observability") or {}
-    if not bool(observability.get("installGrafana", True)):
+    base_url = str(observability.get("grafanaBaseUrl") or "").strip().rstrip("/")
+    if not base_url:
         return None
 
-    host = str(observability.get("grafanaIngressHost") or "").strip()
-    if not host:
-        return None
-
-    scheme = str(current_app.config.get("PERFORMANCE_GRAFANA_SCHEME", "https")).strip() or "https"
     dashboard_uid = str(
-        current_app.config.get("PERFORMANCE_GRAFANA_DASHBOARD_UID", "k6-performance")
+        observability.get("grafanaDashboardUid") or "k6-performance"
     ).strip() or "k6-performance"
 
     return (
-        f"{scheme}://{host}/d/{quote(dashboard_uid, safe='')}"
+        f"{base_url}/d/{quote(dashboard_uid, safe='')}"
         f"?var-testid={quote(str(run['id']), safe='')}"
         f"&var-project={quote(str(run['project_id']), safe='')}"
         f"&var-deployment={quote(str(run.get('deployment_id') or 'none'), safe='')}"
@@ -357,7 +504,8 @@ class K6Runner:
         heartbeat: Callable[[], None],
         log_line: Callable[[str], None],
     ) -> K6RunResult:
-        if shutil.which(self.binary) is None:
+        binary_path = shutil.which(self.binary)
+        if binary_path is None:
             raise K6ExecutionError(
                 "K6_UNAVAILABLE",
                 f"Le binaire k6 '{self.binary}' est introuvable dans le worker.",
@@ -368,14 +516,23 @@ class K6Runner:
         workspace.mkdir(parents=True, exist_ok=True)
 
         script_path = workspace / "script.js"
-        summary_path = workspace / "summary.json"
+        raw_metrics_path = workspace / "metrics.json"
         script_path.write_text(_build_script(run), encoding="utf-8")
 
+        try:
+            raw_metrics_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+        # On utilise l'output JSON stable de k6 comme source de vérité.
+        # Contrairement à --summary-export, son format Point/Metric conserve
+        # chaque mesure avec timestamp et permet aussi de construire les courbes.
         command = [
-            self.binary,
+            binary_path,
             "run",
             "--summary-mode=compact",
-            f"--summary-export={summary_path}",
+            "--out",
+            "json=metrics.json",
         ]
 
         remote_write_url = prometheus_remote_write_url(run)
@@ -385,31 +542,74 @@ class K6Runner:
         if remote_write_url:
             command.extend(["--out", "experimental-prometheus-rw"])
             environment["K6_PROMETHEUS_RW_SERVER_URL"] = remote_write_url
-            environment["K6_PROMETHEUS_RW_TREND_STATS"] = "p(90),p(95),p(99),min,max,avg"
+            environment["K6_PROMETHEUS_RW_TREND_STATS"] = (
+                "p(90),p(95),p(99),min,max,avg"
+            )
 
         command.append(str(script_path))
 
-        timeout_seconds = (
-            int((run.get("load_profile") or {}).get("durationSeconds") or 1)
-            + int(current_app.config.get("PERFORMANCE_RUN_GRACE_SECONDS", 120))
+        configured_duration = int(
+            (run.get("load_profile") or {}).get("durationSeconds") or 1
         )
+        timeout_seconds = configured_duration + int(
+            current_app.config.get("PERFORMANCE_RUN_GRACE_SECONDS", 120)
+        )
+
+        output_queue: queue.Queue[str | None] = queue.Queue()
+        popen_kwargs: dict[str, Any] = {
+            "cwd": str(workspace),
+            "env": environment,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "bufsize": 1,
+            "shell": False,
+        }
+
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            popen_kwargs["start_new_session"] = True
 
         started = time.monotonic()
-        process = subprocess.Popen(
-            command,
-            cwd=str(workspace),
-            env=environment,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            shell=False,
-            start_new_session=True,
-        )
+        process: subprocess.Popen[str] = subprocess.Popen(command, **popen_kwargs)
 
-        selector = selectors.DefaultSelector()
-        if process.stdout is not None:
-            selector.register(process.stdout, selectors.EVENT_READ)
+        def read_output() -> None:
+            try:
+                if process.stdout is None:
+                    return
+                for line in process.stdout:
+                    output_queue.put(line)
+            finally:
+                output_queue.put(None)
+
+        output_thread = threading.Thread(
+            target=read_output,
+            name=f"k6-output-{run_id}",
+            daemon=True,
+        )
+        output_thread.start()
+
+        def flush_output(wait_seconds: float = 0.0) -> None:
+            first = True
+            while True:
+                try:
+                    if first and wait_seconds > 0:
+                        line = output_queue.get(timeout=wait_seconds)
+                    else:
+                        line = output_queue.get_nowait()
+                except queue.Empty:
+                    return
+
+                first = False
+                if line is None:
+                    return
+
+                cleaned = line.strip()
+                if cleaned:
+                    log_line(cleaned[:2000])
 
         try:
             last_heartbeat = 0.0
@@ -431,54 +631,58 @@ class K6Runner:
                     heartbeat()
                     last_heartbeat = now
 
-                for key, _ in selector.select(timeout=0.5):
-                    line = key.fileobj.readline()
-                    if line:
-                        cleaned = line.strip()
-                        if cleaned:
-                            log_line(cleaned[:2000])
+                flush_output(wait_seconds=0.25)
 
-            if process.stdout is not None:
-                for line in process.stdout:
-                    cleaned = line.strip()
-                    if cleaned:
-                        log_line(cleaned[:2000])
+            output_thread.join(timeout=2.0)
+            flush_output()
         finally:
-            selector.close()
             if process.poll() is None:
                 self._terminate(process)
+            try:
+                if process.stdout is not None:
+                    process.stdout.close()
+            except OSError:
+                pass
 
         elapsed = max(0.001, time.monotonic() - started)
         exit_code = int(process.returncode or 0)
 
-        if not summary_path.exists():
+        points = _read_k6_points(raw_metrics_path)
+        metrics, samples, summary = _aggregate_points(
+            points,
+            configured_duration_seconds=configured_duration,
+            sample_interval_seconds=2,
+        )
+
+        if int(metrics.get("requests") or 0) <= 0:
             raise K6ExecutionError(
-                "K6_SUMMARY_MISSING",
-                "k6 n'a pas produit le fichier summary.json.",
+                "K6_NO_REQUESTS",
+                "k6 n'a exécuté aucune requête HTTP exploitable.",
             )
 
-        try:
-            summary = json.loads(summary_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise K6ExecutionError(
-                "K6_SUMMARY_INVALID",
-                "Le fichier summary.json produit par k6 est invalide.",
-            ) from error
-
-        if not isinstance(summary, dict):
-            raise K6ExecutionError(
-                "K6_SUMMARY_INVALID",
-                "Le résumé k6 ne contient pas un objet JSON valide.",
-            )
-
-        metrics = _extract_metrics(summary, elapsed)
         threshold_results = _threshold_results(metrics, run.get("thresholds") or {})
         threshold_failed = any(not item["passed"] for item in threshold_results)
+
+        summary.update(
+            {
+                "exitCode": exit_code,
+                "processElapsedSeconds": round(elapsed, 3),
+                "k6Binary": binary_path,
+            }
+        )
+
+        # Le fichier brut peut devenir volumineux sur un long test. Une fois les
+        # métriques et snapshots agrégés, il n'est plus nécessaire à l'interface.
+        try:
+            raw_metrics_path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
         return K6RunResult(
             exit_code=exit_code,
             elapsed_seconds=elapsed,
             metrics=metrics,
+            samples=samples,
             threshold_results=threshold_results,
             summary=summary,
             grafana_dashboard_url=grafana_dashboard_url(run),
@@ -489,10 +693,22 @@ class K6Runner:
     def _terminate(process: subprocess.Popen[str]) -> None:
         if process.poll() is not None:
             return
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            return
+
+        if os.name == "nt":
+            try:
+                process.terminate()
+            except OSError:
+                return
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                return
+            except OSError:
+                try:
+                    process.terminate()
+                except OSError:
+                    return
 
         try:
             process.wait(timeout=5)
@@ -500,8 +716,23 @@ class K6Runner:
         except subprocess.TimeoutExpired:
             pass
 
+        if os.name == "nt":
+            try:
+                process.kill()
+            except OSError:
+                return
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                return
+            except OSError:
+                try:
+                    process.kill()
+                except OSError:
+                    return
+
         try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
             return
-        process.wait(timeout=5)

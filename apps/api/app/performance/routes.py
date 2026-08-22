@@ -13,10 +13,12 @@ from app.performance.service import (
     PerformanceServiceError,
     cancel_performance_run,
     create_and_run,
+    get_performance_config,
     get_performance_overview,
     get_performance_run,
     list_performance_runs,
     list_performance_tests,
+    rerun_performance_run,
 )
 
 
@@ -64,6 +66,15 @@ def _json_payload() -> dict[str, Any]:
             "Le corps JSON est invalide.",
         )
     return payload
+
+
+@performance_blueprint.get("/config")
+@require_auth
+def config_route():
+    try:
+        return _success(get_performance_config())
+    except Exception as error:
+        return _handle_error(error)
 
 
 @performance_blueprint.get("/overview")
@@ -150,6 +161,24 @@ def cancel_run_route(run_id: int):
     try:
         return _success(
             {"run": cancel_performance_run(run_id, _owner_filter())}
+        )
+    except Exception as error:
+        return _handle_error(error)
+
+
+@performance_blueprint.post("/runs/<int:run_id>/rerun")
+@require_auth
+def rerun_run_route(run_id: int):
+    try:
+        return _success(
+            {
+                "run": rerun_performance_run(
+                    run_id,
+                    _owner_filter(),
+                    _current_user_id(),
+                )
+            },
+            201,
         )
     except Exception as error:
         return _handle_error(error)

@@ -88,100 +88,80 @@ def _float(
     return parsed
 
 
-def _normalize_target_url(raw_value: Any) -> str:
+def _normalize_http_url(
+    raw_value: Any,
+    *,
+    field_name: str,
+    required: bool = True,
+) -> str | None:
     value = str(raw_value or "").strip()
     if not value:
-        raise PerformanceServiceError(
-            "TARGET_URL_REQUIRED",
-            "L'URL cible du test est obligatoire.",
-        )
+        if required:
+            raise PerformanceServiceError(
+                "URL_REQUIRED",
+                f"Le champ {field_name} est obligatoire.",
+            )
+        return None
 
     parts = urlsplit(value)
     if parts.scheme not in {"http", "https"}:
         raise PerformanceServiceError(
-            "INVALID_TARGET_URL",
-            "L'URL cible doit utiliser http ou https.",
+            "INVALID_URL",
+            f"Le champ {field_name} doit utiliser http ou https.",
         )
 
     if not parts.hostname:
         raise PerformanceServiceError(
-            "INVALID_TARGET_URL",
-            "L'URL cible ne contient pas de nom d'hôte valide.",
+            "INVALID_URL",
+            f"Le champ {field_name} ne contient pas de nom d'hôte valide.",
         )
 
     if parts.username or parts.password:
         raise PerformanceServiceError(
-            "INVALID_TARGET_URL",
-            "Les identifiants ne doivent pas être placés dans l'URL cible.",
+            "INVALID_URL",
+            f"Ne placez pas d'identifiant ou mot de passe dans {field_name}.",
         )
 
     try:
-        port = parts.port
+        _ = parts.port
     except ValueError as error:
         raise PerformanceServiceError(
-            "INVALID_TARGET_URL",
-            "Le port de l'URL cible est invalide.",
+            "INVALID_URL",
+            f"Le port de {field_name} est invalide.",
         ) from error
 
-    allowed_ports = set(current_app.config.get("PERFORMANCE_ALLOWED_TARGET_PORTS") or [])
-    if port is not None and allowed_ports and port not in allowed_ports:
-        raise PerformanceServiceError(
-            "TARGET_PORT_NOT_ALLOWED",
-            f"Le port {port} n'est pas autorisé pour les tests de performance.",
-            403,
-        )
-
-    _validate_target_allowlist(parts.hostname.lower())
-
-    # Les fragments n'ont aucun effet côté HTTP et sont retirés pour éviter
-    # d'enregistrer deux cibles différentes qui représentent la même requête.
+    # Les fragments ne sont jamais envoyés par HTTP.
     return urlunsplit((parts.scheme, parts.netloc, parts.path or "/", parts.query, ""))
 
 
-def _validate_target_allowlist(hostname: str) -> None:
-    require_allowlist = bool(
-        current_app.config.get("PERFORMANCE_REQUIRE_TARGET_ALLOWLIST", True)
+def _normalize_target_url(raw_value: Any) -> str:
+    value = _normalize_http_url(
+        raw_value,
+        field_name="URL cible",
+        required=True,
     )
-    allowed = [
-        str(item).strip().lower()
-        for item in (current_app.config.get("PERFORMANCE_ALLOWED_TARGETS") or [])
-        if str(item).strip()
-    ]
+    assert value is not None
 
-    if not require_allowlist:
-        return
-
-    if not allowed:
+    hostname = (urlsplit(value).hostname or "").lower()
+    if hostname == "localhost" or hostname.endswith(".localhost"):
         raise PerformanceServiceError(
-            "PERFORMANCE_TARGET_ALLOWLIST_EMPTY",
-            "Aucune cible k6 n'est autorisée. Configurez PERFORMANCE_ALLOWED_TARGETS côté serveur.",
-            503,
-        )
-
-    def matches(rule: str) -> bool:
-        if rule.startswith("*."):
-            suffix = rule[1:]
-            return hostname.endswith(suffix) and hostname != suffix.lstrip(".")
-        if rule.startswith("."):
-            base = rule[1:]
-            return hostname == base or hostname.endswith(rule)
-        return hostname == rule
-
-    if not any(matches(rule) for rule in allowed):
-        raise PerformanceServiceError(
-            "TARGET_NOT_ALLOWED",
-            "Cette cible n'est pas autorisée pour les tests de performance.",
+            "TARGET_LOCALHOST_NOT_ALLOWED",
+            "La cible localhost n'est pas autorisée depuis le worker k6.",
             403,
         )
 
+    return value
 
-def _validate_namespace(value: Any) -> str:
+
+def _validate_namespace(value: Any, *, required: bool = False) -> str | None:
     namespace = str(value or "").strip().lower()
     if not namespace:
-        raise PerformanceServiceError(
-            "OBSERVABILITY_NAMESPACE_REQUIRED",
-            "Le namespace Kubernetes d'observabilité est obligatoire.",
-        )
+        if required:
+            raise PerformanceServiceError(
+                "OBSERVABILITY_NAMESPACE_REQUIRED",
+                "Le namespace Kubernetes d'observabilité est obligatoire.",
+            )
+        return None
 
     if len(namespace) > 63 or not DNS_LABEL_RE.fullmatch(namespace):
         raise PerformanceServiceError(
@@ -191,17 +171,14 @@ def _validate_namespace(value: Any) -> str:
     return namespace
 
 
-def _validate_hostname(value: Any) -> str | None:
-    hostname = str(value or "").strip().lower()
-    if not hostname:
-        return None
-
-    if not DNS_HOST_RE.fullmatch(hostname):
+def _validate_dashboard_uid(value: Any) -> str:
+    uid = str(value or "k6-performance").strip()
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", uid):
         raise PerformanceServiceError(
-            "INVALID_GRAFANA_HOST",
-            "Le hostname Grafana est invalide.",
+            "INVALID_GRAFANA_DASHBOARD_UID",
+            "Le Dashboard UID Grafana est invalide.",
         )
-    return hostname
+    return uid
 
 
 def _validate_observability(mode: str, raw: Any) -> dict[str, Any] | None:
@@ -214,28 +191,30 @@ def _validate_observability(mode: str, raw: Any) -> dict[str, Any] | None:
             "La configuration Prometheus/Grafana est obligatoire en mode observability.",
         )
 
-    install_prometheus = bool(raw.get("installPrometheus", True))
-    install_grafana = bool(raw.get("installGrafana", True))
-
-    # La V1 ne reçoit pas une URL Prometheus arbitraire depuis le navigateur.
-    # Le service Prometheus attendu sera provisionné dans le namespace fourni.
-    if not install_prometheus:
-        raise PerformanceServiceError(
-            "PROMETHEUS_REQUIRED",
-            "Le mode observability nécessite Prometheus dans cette version.",
-        )
+    prometheus_url = _normalize_http_url(
+        raw.get("prometheusRemoteWriteUrl"),
+        field_name="URL Prometheus Remote Write",
+        required=True,
+    )
+    grafana_base_url = _normalize_http_url(
+        raw.get("grafanaBaseUrl"),
+        field_name="URL Grafana",
+        required=False,
+    )
 
     return {
-        "namespace": _validate_namespace(raw.get("namespace")),
+        "namespace": _validate_namespace(raw.get("namespace"), required=False),
         "retentionDays": _integer(
             raw.get("retentionDays", 7),
             field="retentionDays",
             minimum=1,
             maximum=int(current_app.config.get("PERFORMANCE_MAX_RETENTION_DAYS", 90)),
         ),
-        "grafanaIngressHost": _validate_hostname(raw.get("grafanaIngressHost")),
-        "installPrometheus": install_prometheus,
-        "installGrafana": install_grafana,
+        "prometheusRemoteWriteUrl": prometheus_url,
+        "grafanaBaseUrl": grafana_base_url,
+        "grafanaDashboardUid": _validate_dashboard_uid(
+            raw.get("grafanaDashboardUid")
+        ),
     }
 
 
@@ -292,6 +271,13 @@ def _validate_request(payload: dict[str, Any]) -> dict[str, Any]:
         raise PerformanceServiceError(
             "INVALID_PERFORMANCE_MODE",
             "Le mode de performance est invalide.",
+        )
+
+    if payload.get("authorizationConfirmed") is not True:
+        raise PerformanceServiceError(
+            "TARGET_AUTHORIZATION_REQUIRED",
+            "Confirmez que vous êtes autorisé à exécuter un test de charge sur cette cible.",
+            403,
         )
 
     raw_load = payload.get("loadProfile")
@@ -468,6 +454,7 @@ def serialize_run_summary(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def serialize_run(row: dict[str, Any]) -> dict[str, Any]:
+    run_id = int(row["id"])
     result = serialize_run_summary(row)
     result.update(
         {
@@ -477,6 +464,24 @@ def serialize_run(row: dict[str, Any]) -> dict[str, Any]:
                 else _empty_threshold_results(row.get("thresholds"))
             ),
             "observability": row.get("observability"),
+            "samples": [
+                {
+                    "id": int(sample["id"]),
+                    "sampledAt": _iso(sample.get("sampled_at")),
+                    "elapsedSeconds": int(sample.get("elapsed_seconds") or 0),
+                    "vus": int(sample.get("vus") or 0),
+                    "requests": int(sample.get("requests") or 0),
+                    "requestsTotal": int(sample.get("requests_total") or 0),
+                    "iterationsTotal": int(sample.get("iterations_total") or 0),
+                    "rps": float(sample.get("rps") or 0.0),
+                    "avgMs": float(sample.get("avg_ms") or 0.0),
+                    "p95Ms": float(sample.get("p95_ms") or 0.0),
+                    "p99Ms": float(sample.get("p99_ms") or 0.0),
+                    "errorRatePercent": float(sample.get("error_rate_percent") or 0.0),
+                    "checksRatePercent": float(sample.get("checks_rate_percent") or 0.0),
+                }
+                for sample in repository.list_run_samples(run_id)
+            ],
             "logs": [
                 {
                     "id": int(log["id"]),
@@ -484,7 +489,7 @@ def serialize_run(row: dict[str, Any]) -> dict[str, Any]:
                     "level": log.get("level") or "info",
                     "message": log.get("message") or "",
                 }
-                for log in repository.list_run_logs(int(row["id"]))
+                for log in repository.list_run_logs(run_id)
             ],
             "errorCode": row.get("error_code"),
             "errorMessage": row.get("error_message"),
@@ -656,6 +661,57 @@ def cancel_performance_run(run_id: int, owner_user_id: int | None) -> dict[str, 
             404,
         )
     return serialize_run(refreshed)
+
+
+def rerun_performance_run(
+    run_id: int,
+    owner_user_id: int | None,
+    created_by: int,
+) -> dict[str, Any]:
+    current = repository.find_run(run_id, owner_user_id=owner_user_id)
+    if current is None:
+        raise PerformanceServiceError(
+            "PERFORMANCE_RUN_NOT_FOUND",
+            "Le run de performance est introuvable.",
+            404,
+        )
+
+    if current.get("status") in {"queued", "running"}:
+        raise PerformanceServiceError(
+            "PERFORMANCE_RUN_ALREADY_ACTIVE",
+            "Ce run est encore actif. Annulez-le ou attendez sa fin avant de le relancer.",
+            409,
+        )
+
+    created = repository.create_rerun_from_existing(
+        source_run=current,
+        created_by=created_by,
+    )
+    return serialize_run(created)
+
+
+def get_performance_config() -> dict[str, Any]:
+    return {
+        "limits": {
+            "maxVirtualUsers": int(current_app.config.get("PERFORMANCE_MAX_VUS", 500)),
+            "maxDurationSeconds": int(
+                current_app.config.get("PERFORMANCE_MAX_DURATION_SECONDS", 3600)
+            ),
+            "maxRetentionDays": int(
+                current_app.config.get("PERFORMANCE_MAX_RETENTION_DAYS", 90)
+            ),
+        },
+        "targetPolicy": {
+            "configuredFromInterface": True,
+            "allowlistRequired": False,
+            "authorizationConfirmationRequired": True,
+        },
+        "observability": {
+            "configuredFromInterface": True,
+            "prometheusRemoteWriteUrlRequired": True,
+            "grafanaBaseUrlRequired": False,
+        },
+    }
 
 
 def get_performance_overview(owner_user_id: int | None) -> dict[str, int]:

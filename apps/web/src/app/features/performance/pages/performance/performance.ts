@@ -6,7 +6,6 @@ import { RouterLink } from '@angular/router';
 import { forkJoin, finalize } from 'rxjs';
 
 import {
-  PERFORMANCE_DEMO_MODE,
   PerformanceMode,
   PerformanceOverview,
   PerformanceRunStatus,
@@ -26,7 +25,6 @@ export class Performance implements OnInit {
   private readonly performanceService = inject(PerformanceService);
   private readonly formBuilder = inject(FormBuilder);
 
-  readonly demoMode = PERFORMANCE_DEMO_MODE;
   readonly isLoading = signal(true);
   readonly isRefreshing = signal(false);
   readonly errorMessage = signal<string | null>(null);

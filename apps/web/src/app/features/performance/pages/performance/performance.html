@@ -18,16 +18,6 @@
     </div>
   </header>
 
-  @if (demoMode) {
-    <section class="demo-banner">
-      <span>◈</span>
-      <div>
-        <strong>Aperçu frontend actif</strong>
-        <p>Cette étape contient des données simulées. Le backend k6 remplacera ce mode sans modifier les écrans.</p>
-      </div>
-    </section>
-  }
-
   @if (errorMessage()) {
     <section class="message message--error"><span>!</span><p>{{ errorMessage() }}</p></section>
   }
@@ -50,7 +40,7 @@
       <div class="mode-card__icon">◎</div>
       <div class="mode-card__content">
         <div class="mode-card__title"><h2>Observabilité</h2><span>Grafana + Prometheus</span></div>
-        <p>L’utilisateur crée un namespace Kubernetes et donne les droits nécessaires. Le backend utilisera ensuite Ansible pour préparer la stack.</p>
+        <p>L’utilisateur saisit directement l’URL Prometheus Remote Write et, si disponible, l’URL Grafana. Le provisioning Ansible viendra ensuite automatiser cette configuration.</p>
         <ul>
           <li>Résumé également conservé dans PostgreSQL</li>
           <li>Métriques k6 envoyées vers Prometheus</li>

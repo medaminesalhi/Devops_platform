@@ -62,6 +62,16 @@ def run_claimed_performance(run: dict[str, Any], worker_name: str) -> None:
             log_line=log_line,
         )
 
+        repository.replace_run_samples(run_id, result.samples)
+        repository.add_log(
+            run_id,
+            level="info",
+            message=(
+                f"{len(result.samples)} point(s) temporel(s) agrégé(s) "
+                "enregistré(s) pour les graphiques."
+            ),
+        )
+
         if result.threshold_failed:
             repository.finish_run(
                 run_id,

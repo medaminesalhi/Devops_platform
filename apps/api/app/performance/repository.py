@@ -166,6 +166,79 @@ def create_test_and_run(
     return result
 
 
+def create_rerun_from_existing(
+    *,
+    source_run: dict[str, Any],
+    created_by: int,
+) -> dict[str, Any]:
+    """Create a new queued run from an existing run snapshot."""
+    with get_database_connection() as connection:
+        run = connection.execute(
+            """
+                INSERT INTO performance_runs (
+                    test_id,
+                    project_id,
+                    deployment_id,
+                    created_by,
+                    test_name,
+                    target_url,
+                    test_type,
+                    mode,
+                    load_profile,
+                    thresholds,
+                    observability,
+                    status
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s::JSONB, %s::JSONB, %s::JSONB, 'queued'
+                )
+                RETURNING id;
+            """,
+            (
+                int(source_run["test_id"]),
+                int(source_run["project_id"]),
+                (
+                    int(source_run["deployment_id"])
+                    if source_run.get("deployment_id") is not None
+                    else None
+                ),
+                created_by,
+                source_run.get("test_name") or "Test de performance",
+                source_run.get("target_url") or "",
+                source_run.get("test_type") or "smoke",
+                source_run.get("mode") or "basic",
+                _json_dump(source_run.get("load_profile") or {}),
+                _json_dump(source_run.get("thresholds") or {}),
+                (
+                    _json_dump(source_run.get("observability"))
+                    if source_run.get("observability") is not None
+                    else None
+                ),
+            ),
+        ).fetchone()
+
+        if run is None:
+            raise RuntimeError("Impossible de relancer le test de performance.")
+
+        new_run_id = int(run["id"])
+        connection.execute(
+            """
+                INSERT INTO performance_run_logs (run_id, level, message)
+                VALUES (%s, 'info', %s);
+            """,
+            (
+                new_run_id,
+                f"Run relancé depuis le run #{int(source_run['id'])} et ajouté à la file du worker k6.",
+            ),
+        )
+
+    result = find_run(new_run_id)
+    if result is None:
+        raise RuntimeError("Le run relancé est introuvable.")
+    return result
+
+
 def get_overview(owner_user_id: int | None = None) -> dict[str, int]:
     conditions = []
     parameters: list[Any] = []
@@ -343,6 +416,89 @@ def list_run_logs(run_id: int) -> list[dict[str, Any]]:
             """,
             (run_id,),
         ).fetchall()
+
+
+def list_run_samples(run_id: int) -> list[dict[str, Any]]:
+    with get_database_connection() as connection:
+        return connection.execute(
+            """
+                SELECT
+                    id,
+                    run_id,
+                    sampled_at,
+                    elapsed_seconds,
+                    vus,
+                    requests,
+                    requests_total,
+                    iterations_total,
+                    rps,
+                    avg_ms,
+                    p95_ms,
+                    p99_ms,
+                    error_rate_percent,
+                    checks_rate_percent
+                FROM performance_run_samples
+                WHERE run_id = %s
+                ORDER BY elapsed_seconds, id;
+            """,
+            (run_id,),
+        ).fetchall()
+
+
+def replace_run_samples(run_id: int, samples: list[dict[str, Any]]) -> None:
+    with get_database_connection() as connection:
+        connection.execute(
+            "DELETE FROM performance_run_samples WHERE run_id = %s;",
+            (run_id,),
+        )
+
+        if not samples:
+            return
+
+        rows = [
+            (
+                run_id,
+                sample.get("sampledAt"),
+                int(sample.get("elapsedSeconds") or 0),
+                int(sample.get("vus") or 0),
+                int(sample.get("requests") or 0),
+                int(sample.get("requestsTotal") or 0),
+                int(sample.get("iterationsTotal") or 0),
+                float(sample.get("rps") or 0.0),
+                float(sample.get("avgMs") or 0.0),
+                float(sample.get("p95Ms") or 0.0),
+                float(sample.get("p99Ms") or 0.0),
+                float(sample.get("errorRatePercent") or 0.0),
+                float(sample.get("checksRatePercent") or 0.0),
+            )
+            for sample in samples
+        ]
+
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                """
+                    INSERT INTO performance_run_samples (
+                        run_id,
+                        sampled_at,
+                        elapsed_seconds,
+                        vus,
+                        requests,
+                        requests_total,
+                        iterations_total,
+                        rps,
+                        avg_ms,
+                        p95_ms,
+                        p99_ms,
+                        error_rate_percent,
+                        checks_rate_percent
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s, %s, %s
+                    );
+                """,
+                rows,
+            )
 
 
 def add_log(

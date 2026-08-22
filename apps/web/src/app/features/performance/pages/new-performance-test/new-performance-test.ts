@@ -6,8 +6,8 @@ import { forkJoin, finalize, of } from 'rxjs';
 
 import { DeploymentDetails, DeploymentsService } from '../../../../core/deployments/deployments';
 import {
-  PERFORMANCE_DEMO_MODE,
   PerformanceMode,
+  PerformanceRuntimeConfig,
   PerformanceService,
   PerformanceTestType,
 } from '../../../../core/performance/performance';
@@ -26,9 +26,9 @@ export class NewPerformanceTest implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
-  readonly demoMode = PERFORMANCE_DEMO_MODE;
   readonly projects = signal<Project[]>([]);
   readonly linkedDeployment = signal<DeploymentDetails | null>(null);
+  readonly runtimeConfig = signal<PerformanceRuntimeConfig | null>(null);
   readonly isLoading = signal(true);
   readonly isSubmitting = signal(false);
   readonly errorMessage = signal<string | null>(null);
@@ -38,6 +38,7 @@ export class NewPerformanceTest implements OnInit {
   readonly name = signal('Smoke après déploiement');
   readonly description = signal('');
   readonly targetUrl = signal('');
+  readonly authorizationConfirmed = signal(false);
   readonly testType = signal<PerformanceTestType>('smoke');
   readonly mode = signal<PerformanceMode>('basic');
 
@@ -49,31 +50,57 @@ export class NewPerformanceTest implements OnInit {
   readonly p99Ms = signal(1000);
   readonly checksRatePercent = signal(99);
 
-  readonly observabilityNamespace = signal('performance-observability');
+  readonly observabilityNamespace = signal('');
   readonly retentionDays = signal(7);
-  readonly grafanaIngressHost = signal('');
+  readonly prometheusRemoteWriteUrl = signal('');
+  readonly grafanaBaseUrl = signal('');
+  readonly grafanaDashboardUid = signal('k6-performance');
+
+  readonly maxVirtualUsersLimit = computed(
+    () => this.runtimeConfig()?.limits.maxVirtualUsers ?? 500,
+  );
+
+  readonly maxDurationSecondsLimit = computed(
+    () => this.runtimeConfig()?.limits.maxDurationSeconds ?? 3600,
+  );
+
+  readonly maxRetentionDaysLimit = computed(
+    () => this.runtimeConfig()?.limits.maxRetentionDays ?? 90,
+  );
 
   readonly selectedProject = computed(() =>
     this.projects().find(project => project.id === this.projectId()) ?? null,
   );
 
   readonly canSubmit = computed(() => {
-    const hasBaseFields = !!this.projectId()
+    const baseValid = !!this.projectId()
       && !!this.name().trim()
-      && this.isValidTargetUrl(this.targetUrl())
+      && this.isValidHttpUrl(this.targetUrl())
+      && this.authorizationConfirmed()
       && this.virtualUsers() > 0
+      && this.virtualUsers() <= this.maxVirtualUsersLimit()
       && this.maxVirtualUsers() >= this.virtualUsers()
+      && this.maxVirtualUsers() <= this.maxVirtualUsersLimit()
       && this.durationSeconds() >= 10
+      && this.durationSeconds() <= this.maxDurationSecondsLimit()
       && this.errorRatePercent() >= 0
+      && this.errorRatePercent() <= 100
       && this.p95Ms() > 0
       && this.p99Ms() >= this.p95Ms()
       && this.checksRatePercent() > 0
       && this.checksRatePercent() <= 100;
 
-    if (!hasBaseFields) return false;
+    if (!baseValid) return false;
+
     if (this.mode() === 'observability') {
-      return !!this.observabilityNamespace().trim() && this.retentionDays() > 0;
+      const grafanaUrl = this.grafanaBaseUrl().trim();
+      return this.isValidHttpUrl(this.prometheusRemoteWriteUrl())
+        && (!grafanaUrl || this.isValidHttpUrl(grafanaUrl))
+        && this.retentionDays() >= 1
+        && this.retentionDays() <= this.maxRetentionDaysLimit()
+        && !!this.grafanaDashboardUid().trim();
     }
+
     return true;
   });
 
@@ -88,17 +115,21 @@ export class NewPerformanceTest implements OnInit {
       deployment: deploymentId
         ? this.deploymentsService.getDeployment(deploymentId)
         : of(null),
+      performanceConfig: this.performanceService.getConfig(),
     })
       .pipe(finalize(() => this.isLoading.set(false)))
       .subscribe({
         next: result => {
           this.projects.set(result.projects.projects);
           this.linkedDeployment.set(result.deployment);
+          this.runtimeConfig.set(result.performanceConfig);
 
           if (result.deployment) {
             this.projectId.set(result.deployment.projectId);
             this.targetUrl.set(result.deployment.health.applicationUrl ?? '');
-            this.name.set(`Performance · ${result.deployment.projectName} · ${result.deployment.version}`);
+            this.name.set(
+              `Performance · ${result.deployment.projectName} · ${result.deployment.version}`,
+            );
           } else if (!this.projectId() && result.projects.projects.length) {
             this.projectId.set(result.projects.projects[0].id);
           }
@@ -109,22 +140,29 @@ export class NewPerformanceTest implements OnInit {
 
   setMode(mode: PerformanceMode): void {
     this.mode.set(mode);
+    this.errorMessage.set(null);
   }
 
   setTestType(type: PerformanceTestType): void {
     this.testType.set(type);
+
     const presets: Record<PerformanceTestType, { vus: number; maxVus: number; duration: number }> = {
       smoke: { vus: 2, maxVus: 2, duration: 30 },
       load: { vus: 20, maxVus: 100, duration: 300 },
       stress: { vus: 50, maxVus: 250, duration: 600 },
       spike: { vus: 10, maxVus: 300, duration: 180 },
       soak: { vus: 20, maxVus: 100, duration: 3600 },
-      custom: { vus: this.virtualUsers(), maxVus: this.maxVirtualUsers(), duration: this.durationSeconds() },
+      custom: {
+        vus: this.virtualUsers(),
+        maxVus: this.maxVirtualUsers(),
+        duration: this.durationSeconds(),
+      },
     };
+
     const preset = presets[type];
-    this.virtualUsers.set(preset.vus);
-    this.maxVirtualUsers.set(preset.maxVus);
-    this.durationSeconds.set(preset.duration);
+    this.virtualUsers.set(Math.min(preset.vus, this.maxVirtualUsersLimit()));
+    this.maxVirtualUsers.set(Math.min(preset.maxVus, this.maxVirtualUsersLimit()));
+    this.durationSeconds.set(Math.min(preset.duration, this.maxDurationSecondsLimit()));
   }
 
   submit(): void {
@@ -138,11 +176,11 @@ export class NewPerformanceTest implements OnInit {
 
     this.performanceService.createAndRun({
       projectId: project.id,
-      projectName: project.name,
       deploymentId: this.deploymentId(),
       name: this.name().trim(),
       description: this.description().trim() || null,
       targetUrl: this.targetUrl().trim(),
+      authorizationConfirmed: this.authorizationConfirmed(),
       testType: this.testType(),
       mode: this.mode(),
       loadProfile: {
@@ -158,11 +196,11 @@ export class NewPerformanceTest implements OnInit {
       },
       observability: this.mode() === 'observability'
         ? {
-          namespace: this.observabilityNamespace().trim(),
+          namespace: this.observabilityNamespace().trim() || null,
           retentionDays: Number(this.retentionDays()),
-          grafanaIngressHost: this.grafanaIngressHost().trim() || null,
-          installPrometheus: true,
-          installGrafana: true,
+          prometheusRemoteWriteUrl: this.prometheusRemoteWriteUrl().trim(),
+          grafanaBaseUrl: this.grafanaBaseUrl().trim() || null,
+          grafanaDashboardUid: this.grafanaDashboardUid().trim() || 'k6-performance',
         }
         : null,
     })
@@ -187,10 +225,10 @@ export class NewPerformanceTest implements OnInit {
     return Number.isInteger(value) && value > 0 ? value : null;
   }
 
-  private isValidTargetUrl(value: string): boolean {
+  private isValidHttpUrl(value: string): boolean {
     try {
       const url = new URL(value.trim());
-      return url.protocol === 'http:' || url.protocol === 'https:';
+      return (url.protocol === 'http:' || url.protocol === 'https:') && !!url.hostname;
     } catch {
       return false;
     }
@@ -199,9 +237,11 @@ export class NewPerformanceTest implements OnInit {
   private resolveError(error: unknown): string {
     if (error instanceof HttpErrorResponse) {
       if (error.status === 0) return 'Le backend Flask est inaccessible.';
-      const body = error.error as { error?: { message?: string } } | null;
+      const body = error.error as { error?: { code?: string; message?: string } } | null;
       return body?.error?.message || `Erreur HTTP ${error.status}.`;
     }
-    return error instanceof Error ? error.message : 'Impossible de créer le test de performance.';
+    return error instanceof Error
+      ? error.message
+      : 'Impossible de créer le test de performance.';
   }
 }

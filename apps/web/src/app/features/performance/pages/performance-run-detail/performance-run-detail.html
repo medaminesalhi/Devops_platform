@@ -1,67 +1,335 @@
 <section class="run-page">
-  <nav class="breadcrumb" aria-label="Fil d’Ariane"><a routerLink="/performance">Performance</a><span>›</span><strong>Run #{{ run()?.id ?? '—' }}</strong></nav>
+  <nav class="breadcrumb" aria-label="Fil d’Ariane">
+    <a routerLink="/performance">Performance</a>
+    <span>›</span>
+    <strong>Run #{{ run()?.id ?? '—' }}</strong>
+  </nav>
 
-  @if (errorMessage()) {<section class="message message--error"><span>!</span><p>{{ errorMessage() }}</p></section>}
+  @if (errorMessage()) {
+    <section class="message message--error">
+      <span>!</span>
+      <p>{{ errorMessage() }}</p>
+    </section>
+  }
+
   @if (isLoading()) {
-    <section class="loading-card"><span class="loader"></span><p>Chargement du résultat k6…</p></section>
+    <section class="loading-card">
+      <span class="loader"></span>
+      <p>Chargement du résultat k6…</p>
+    </section>
   } @else if (run(); as current) {
     <header class="run-header">
-      <div class="run-header__identity"><span class="run-id">#{{ current.id }}</span><div><div class="title-row"><h1>{{ current.testName }}</h1><span [class]="'status-pill status-pill--' + current.status">{{ statusLabel(current.status) }}</span></div><p>{{ current.projectName }} · {{ typeLabel(current.testType) }} · {{ modeLabel(current.mode) }}</p></div></div>
+      <div class="run-header__identity">
+        <span class="run-id">#{{ current.id }}</span>
+        <div>
+          <div class="title-row">
+            <h1>{{ current.testName }}</h1>
+            <span [class]="'status-pill status-pill--' + current.status">
+              {{ statusLabel(current.status) }}
+            </span>
+          </div>
+          <p>{{ current.projectName }} · {{ typeLabel(current.testType) }} · {{ modeLabel(current.mode) }}</p>
+        </div>
+      </div>
+
       <div class="header-actions">
-        <button class="button button--secondary" type="button" (click)="loadRun()">↻ Actualiser</button>
-        @if (current.deploymentId) {<a class="button button--secondary" [routerLink]="['/deployments', current.deploymentId]">Deployment #{{ current.deploymentId }}</a>}
-        @if (current.grafanaDashboardUrl) {<button class="button button--grafana" type="button" (click)="openGrafana()">◎ Ouvrir Grafana ↗</button>}
-        @if (canCancel()) {<button class="button button--danger" type="button" [disabled]="isWorking()" (click)="cancel()">Annuler</button>}
+        @if (canRerun()) {
+          <button
+            class="button button--primary"
+            type="button"
+            [disabled]="isWorking()"
+            (click)="rerun()"
+          >
+            ↻ Relancer le test
+          </button>
+        }
+
+        <button
+          class="button button--secondary"
+          type="button"
+          [disabled]="isWorking()"
+          (click)="loadRun()"
+        >
+          ↻ Actualiser
+        </button>
+
+        @if (current.deploymentId) {
+          <a
+            class="button button--secondary"
+            [routerLink]="['/deployments', current.deploymentId]"
+          >
+            Deployment #{{ current.deploymentId }}
+          </a>
+        }
+
+        @if (current.grafanaDashboardUrl) {
+          <button class="button button--grafana" type="button" (click)="openGrafana()">
+            ◎ Ouvrir Grafana ↗
+          </button>
+        }
+
+        @if (canCancel()) {
+          <button
+            class="button button--danger"
+            type="button"
+            [disabled]="isWorking()"
+            (click)="cancel()"
+          >
+            Annuler
+          </button>
+        }
       </div>
     </header>
 
-    @if (demoMode) {<section class="demo-banner"><span>◈</span><p>Résultat de démonstration. Les mêmes composants afficheront ensuite les vraies métriques k6.</p></section>}
-
     <section class="context-grid">
-      <article><span>Mode</span><strong>{{ modeLabel(current.mode) }}</strong><small>{{ current.mode === 'basic' ? 'PostgreSQL + UI plateforme' : 'PostgreSQL + Prometheus + Grafana' }}</small></article>
-      <article><span>Cible</span><strong class="truncate">{{ current.targetUrl }}</strong><small>URL testée par k6</small></article>
-      <article><span>Charge</span><strong>{{ current.maxVirtualUsers }} VUs max</strong><small>{{ current.durationSeconds }} secondes</small></article>
-      <article><span>Démarrage</span><strong>{{ current.startedAt ? (current.startedAt | date:'dd/MM/yyyy HH:mm:ss') : 'En attente' }}</strong><small>{{ current.finishedAt ? 'Terminé ' + (current.finishedAt | date:'HH:mm:ss') : 'Run actif' }}</small></article>
+      <article>
+        <span>Mode</span>
+        <strong>{{ modeLabel(current.mode) }}</strong>
+        <small>{{ current.mode === 'basic' ? 'PostgreSQL + UI plateforme' : 'PostgreSQL + Prometheus + Grafana' }}</small>
+      </article>
+
+      <article>
+        <span>Cible</span>
+        <strong class="truncate">{{ current.targetUrl }}</strong>
+        <small>URL testée par k6</small>
+      </article>
+
+      <article>
+        <span>Charge</span>
+        <strong>{{ current.maxVirtualUsers }} VUs max</strong>
+        <small>{{ current.durationSeconds }} secondes</small>
+      </article>
+
+      <article>
+        <span>Démarrage</span>
+        <strong>{{ current.startedAt ? (current.startedAt | date:'dd/MM/yyyy HH:mm:ss') : 'En attente' }}</strong>
+        <small>{{ current.finishedAt ? 'Terminé ' + (current.finishedAt | date:'HH:mm:ss') : 'Run actif' }}</small>
+      </article>
     </section>
 
     @if (current.metrics; as metrics) {
       <section class="metric-grid">
-        <article class="metric-card"><span>Requêtes</span><strong>{{ metrics.requests | number:'1.0-0' }}</strong><small>{{ metrics.rps | number:'1.0-1' }} req/s</small></article>
-        <article class="metric-card"><span>Moyenne</span><strong>{{ metrics.avgMs }} ms</strong><small>min {{ metrics.minMs }} · max {{ metrics.maxMs }}</small></article>
-        <article class="metric-card"><span>p95</span><strong>{{ metrics.p95Ms }} ms</strong><small>p90 {{ metrics.p90Ms }} ms</small></article>
-        <article class="metric-card"><span>p99</span><strong>{{ metrics.p99Ms }} ms</strong><small>latence de queue</small></article>
-        <article class="metric-card" [class.metric-card--failed]="metrics.errorRatePercent >= 1"><span>Erreurs</span><strong>{{ metrics.errorRatePercent | number:'1.0-2' }} %</strong><small>{{ metrics.checksRatePercent | number:'1.0-2' }} % checks</small></article>
+        <article class="metric-card">
+          <span>Requêtes</span>
+          <strong>{{ metrics.requests | number:'1.0-0' }}</strong>
+          <small>{{ metrics.rps | number:'1.0-1' }} req/s</small>
+        </article>
+
+        <article class="metric-card">
+          <span>Moyenne</span>
+          <strong>{{ metrics.avgMs | number:'1.0-1' }} ms</strong>
+          <small>min {{ metrics.minMs | number:'1.0-1' }} · max {{ metrics.maxMs | number:'1.0-1' }}</small>
+        </article>
+
+        <article class="metric-card">
+          <span>p95</span>
+          <strong>{{ metrics.p95Ms | number:'1.0-1' }} ms</strong>
+          <small>p90 {{ metrics.p90Ms | number:'1.0-1' }} ms</small>
+        </article>
+
+        <article class="metric-card">
+          <span>p99</span>
+          <strong>{{ metrics.p99Ms | number:'1.0-1' }} ms</strong>
+          <small>99 % des requêtes sous cette latence</small>
+        </article>
+
+        <article class="metric-card" [class.metric-card--failed]="metrics.errorRatePercent >= 1">
+          <span>Erreurs</span>
+          <strong>{{ metrics.errorRatePercent | number:'1.0-2' }} %</strong>
+          <small>{{ metrics.checksRatePercent | number:'1.0-2' }} % checks réussis</small>
+        </article>
       </section>
+
+      @if (hasSamples()) {
+        <section class="charts-grid" aria-label="Courbes de performance">
+          <article class="panel chart-card chart-card--wide">
+            <header class="chart-card__header">
+              <div>
+                <p class="eyebrow">Latence</p>
+                <h2>p95 et p99 dans le temps</h2>
+              </div>
+              <div class="chart-legend" aria-label="Légende">
+                <span><i class="legend-line legend-line--p95"></i>p95</span>
+                <span><i class="legend-line legend-line--p99"></i>p99</span>
+              </div>
+            </header>
+            <div class="chart-shell">
+              <span class="chart-y-label">{{ latencyChart().max | number:'1.0-0' }} ms</span>
+              <svg viewBox="0 0 600 160" role="img" aria-label="Évolution de la latence p95 et p99">
+                <line class="chart-grid-line" x1="12" y1="12" x2="588" y2="12"></line>
+                <line class="chart-grid-line" x1="12" y1="77" x2="588" y2="77"></line>
+                <line class="chart-grid-line" x1="12" y1="142" x2="588" y2="142"></line>
+                <polyline class="chart-line chart-line--p95" [attr.points]="latencyChart().p95Points"></polyline>
+                <polyline class="chart-line chart-line--p99" [attr.points]="latencyChart().p99Points"></polyline>
+              </svg>
+              <div class="chart-axis"><span>0 s</span><span>{{ chartDurationLabel() }}</span></div>
+            </div>
+          </article>
+
+          <article class="panel chart-card">
+            <header class="chart-card__header">
+              <div>
+                <p class="eyebrow">Débit</p>
+                <h2>Requêtes / seconde</h2>
+              </div>
+              <strong>{{ metrics.rps | number:'1.0-1' }} req/s moy.</strong>
+            </header>
+            <div class="chart-shell">
+              <span class="chart-y-label">{{ rpsChart().max | number:'1.0-1' }}</span>
+              <svg viewBox="0 0 600 160" role="img" aria-label="Évolution du nombre de requêtes par seconde">
+                <line class="chart-grid-line" x1="12" y1="12" x2="588" y2="12"></line>
+                <line class="chart-grid-line" x1="12" y1="77" x2="588" y2="77"></line>
+                <line class="chart-grid-line" x1="12" y1="142" x2="588" y2="142"></line>
+                <polyline class="chart-line chart-line--rps" [attr.points]="rpsChart().points"></polyline>
+              </svg>
+              <div class="chart-axis"><span>0 s</span><span>{{ chartDurationLabel() }}</span></div>
+            </div>
+          </article>
+
+          <article class="panel chart-card">
+            <header class="chart-card__header">
+              <div>
+                <p class="eyebrow">Charge</p>
+                <h2>Utilisateurs virtuels</h2>
+              </div>
+              <strong>{{ current.maxVirtualUsers }} VUs max</strong>
+            </header>
+            <div class="chart-shell">
+              <span class="chart-y-label">{{ vusChart().max | number:'1.0-0' }}</span>
+              <svg viewBox="0 0 600 160" role="img" aria-label="Évolution des utilisateurs virtuels">
+                <line class="chart-grid-line" x1="12" y1="12" x2="588" y2="12"></line>
+                <line class="chart-grid-line" x1="12" y1="77" x2="588" y2="77"></line>
+                <line class="chart-grid-line" x1="12" y1="142" x2="588" y2="142"></line>
+                <polyline class="chart-line chart-line--vus" [attr.points]="vusChart().points"></polyline>
+              </svg>
+              <div class="chart-axis"><span>0 s</span><span>{{ chartDurationLabel() }}</span></div>
+            </div>
+          </article>
+
+          <article class="panel chart-card">
+            <header class="chart-card__header">
+              <div>
+                <p class="eyebrow">Fiabilité</p>
+                <h2>Taux d’erreur</h2>
+              </div>
+              <strong>{{ metrics.errorRatePercent | number:'1.0-2' }} % final</strong>
+            </header>
+            <div class="chart-shell">
+              <span class="chart-y-label">100 %</span>
+              <svg viewBox="0 0 600 160" role="img" aria-label="Évolution du taux d'erreur">
+                <line class="chart-grid-line" x1="12" y1="12" x2="588" y2="12"></line>
+                <line class="chart-grid-line" x1="12" y1="77" x2="588" y2="77"></line>
+                <line class="chart-grid-line" x1="12" y1="142" x2="588" y2="142"></line>
+                <polyline class="chart-line chart-line--errors" [attr.points]="errorsChart().points"></polyline>
+              </svg>
+              <div class="chart-axis"><span>0 s</span><span>{{ chartDurationLabel() }}</span></div>
+            </div>
+          </article>
+        </section>
+      }
 
       <div class="content-grid">
         <section class="panel threshold-panel">
-          <header class="panel-heading"><div><p class="eyebrow">Quality gate</p><h2>Thresholds k6</h2></div><span [class]="'gate-result gate-result--' + current.status">{{ current.status === 'passed' ? 'PASS' : current.status === 'failed' ? 'FAIL' : statusLabel(current.status) }}</span></header>
+          <header class="panel-heading">
+            <div>
+              <p class="eyebrow">Quality gate</p>
+              <h2>Thresholds k6</h2>
+            </div>
+            <span [class]="'gate-result gate-result--' + current.status">
+              {{ current.status === 'passed' ? 'PASS' : current.status === 'failed' ? 'FAIL' : statusLabel(current.status) }}
+            </span>
+          </header>
+
           <div class="threshold-list">
             @for (threshold of current.thresholds; track threshold.key) {
-              <article [class.threshold-row--failed]="!threshold.passed"><span>{{ threshold.passed ? '✓' : '×' }}</span><div><strong>{{ threshold.label }}</strong><small>Requis {{ threshold.expected }}</small></div><b>{{ threshold.actual }}</b></article>
+              <article [class.threshold-row--failed]="!threshold.passed">
+                <span>{{ threshold.passed ? '✓' : '×' }}</span>
+                <div>
+                  <strong>{{ threshold.label }}</strong>
+                  <small>Requis {{ threshold.expected }}</small>
+                </div>
+                <b>{{ threshold.actual }}</b>
+              </article>
             }
           </div>
         </section>
 
         <section class="panel details-panel">
-          <header class="panel-heading"><div><p class="eyebrow">Résumé k6</p><h2>Volume transféré</h2></div></header>
-          <dl><div><dt>Iterations</dt><dd>{{ metrics.iterations | number:'1.0-0' }}</dd></div><div><dt>Données reçues</dt><dd>{{ formatBytes(metrics.dataReceivedBytes) }}</dd></div><div><dt>Données envoyées</dt><dd>{{ formatBytes(metrics.dataSentBytes) }}</dd></div><div><dt>Erreur technique</dt><dd>{{ current.errorCode ?? 'Aucune' }}</dd></div></dl>
+          <header class="panel-heading">
+            <div>
+              <p class="eyebrow">Résumé k6</p>
+              <h2>Volume transféré</h2>
+            </div>
+          </header>
+          <dl>
+            <div><dt>Iterations</dt><dd>{{ metrics.iterations | number:'1.0-0' }}</dd></div>
+            <div><dt>Données reçues</dt><dd>{{ formatBytes(metrics.dataReceivedBytes) }}</dd></div>
+            <div><dt>Données envoyées</dt><dd>{{ formatBytes(metrics.dataSentBytes) }}</dd></div>
+            <div><dt>Erreur technique</dt><dd>{{ current.errorCode ?? 'Aucune' }}</dd></div>
+            @if (current.errorMessage) {
+              <div class="details-panel__message"><dt>Détail</dt><dd>{{ current.errorMessage }}</dd></div>
+            }
+          </dl>
         </section>
       </div>
     } @else {
-      <section class="waiting-panel"><span class="loader"></span><div><strong>Le worker n’a pas encore produit de métriques</strong><p>Le run est {{ statusLabel(current.status).toLowerCase() }}. Le backend remplira ce panneau pendant et après l’exécution.</p></div></section>
+      <section class="waiting-panel">
+        <span class="loader"></span>
+        <div>
+          <strong>Le worker n’a pas encore produit de métriques</strong>
+          <p>Le run est {{ statusLabel(current.status).toLowerCase() }}. Les métriques finales apparaîtront automatiquement à la fin de l’exécution.</p>
+        </div>
+      </section>
     }
 
     @if (current.mode === 'observability') {
       @if (current.observability; as observability) {
         <section class="panel observability-panel">
-          <header><div><p class="eyebrow">Mode avancé</p><h2>Prometheus + Grafana</h2><p>Le résumé reste dans notre plateforme. Prometheus conserve la série temporelle et Grafana fournit l’exploration détaillée.</p></div>@if (current.grafanaDashboardUrl) {<button class="button button--grafana" type="button" (click)="openGrafana()">Ouvrir le dashboard ↗</button>}</header>
-          <div class="observability-flow"><article><span>1</span><strong>k6</strong><small>génère la charge</small></article><i>→</i><article><span>2</span><strong>Prometheus</strong><small>stocke les métriques</small></article><i>→</i><article><span>3</span><strong>Grafana</strong><small>visualise le run</small></article></div>
-          <div class="observability-meta"><div><span>Namespace</span><strong>{{ observability.namespace }}</strong></div><div><span>Rétention</span><strong>{{ observability.retentionDays }} jours</strong></div><div><span>Grafana</span><strong>{{ observability.grafanaIngressHost ?? 'Cluster interne' }}</strong></div></div>
+          <header>
+            <div>
+              <p class="eyebrow">Mode avancé</p>
+              <h2>Prometheus + Grafana</h2>
+              <p>Le résumé et les courbes principales restent dans notre plateforme. Prometheus/Grafana ajoutent l’exploration avancée.</p>
+            </div>
+            @if (current.grafanaDashboardUrl) {
+              <button class="button button--grafana" type="button" (click)="openGrafana()">Ouvrir le dashboard ↗</button>
+            }
+          </header>
+
+          <div class="observability-flow">
+            <article><span>1</span><strong>k6</strong><small>génère la charge</small></article>
+            <i>→</i>
+            <article><span>2</span><strong>Prometheus</strong><small>stocke les métriques</small></article>
+            <i>→</i>
+            <article><span>3</span><strong>Grafana</strong><small>visualise le run</small></article>
+          </div>
+
+          <div class="observability-meta">
+            <div><span>Namespace</span><strong>{{ observability.namespace ?? 'Non renseigné' }}</strong></div>
+            <div><span>Prometheus</span><strong>{{ observability.prometheusRemoteWriteUrl }}</strong></div>
+            <div><span>Grafana</span><strong>{{ observability.grafanaBaseUrl ?? 'Non configuré' }}</strong></div>
+            <div><span>Dashboard UID</span><strong>{{ observability.grafanaDashboardUid }}</strong></div>
+          </div>
         </section>
       }
     }
 
-    <section class="panel logs-panel"><header class="panel-heading"><div><p class="eyebrow">Exécution</p><h2>Journal du run</h2></div></header><div class="logs">@for (log of current.logs; track log.id) {<article><time>{{ log.createdAt | date:'HH:mm:ss' }}</time><span [class]="'log-level log-level--' + log.level">{{ log.level }}</span><p>{{ log.message }}</p></article>}</div></section>
+    <section class="panel logs-panel">
+      <header class="panel-heading">
+        <div>
+          <p class="eyebrow">Exécution</p>
+          <h2>Journal du run</h2>
+        </div>
+      </header>
+      <div class="logs">
+        @for (log of current.logs; track log.id) {
+          <article>
+            <time>{{ log.createdAt | date:'HH:mm:ss' }}</time>
+            <span [class]="'log-level log-level--' + log.level">{{ log.level }}</span>
+            <p>{{ log.message }}</p>
+          </article>
+        }
+      </div>
+    </section>
   }
 </section>
