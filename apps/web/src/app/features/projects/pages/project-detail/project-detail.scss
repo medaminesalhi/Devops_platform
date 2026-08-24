@@ -326,3 +326,17 @@ dd { overflow: hidden; margin: 4px 0 0; font-size: 12px; font-weight: 750; text-
     display: grid;
   }
 }
+
+
+.artifact-list-actions,
+.validation-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.artifact-list-actions .button {
+  min-height: 2.35rem;
+  padding-inline: 0.8rem;
+}

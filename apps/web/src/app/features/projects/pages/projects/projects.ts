@@ -106,6 +106,9 @@ export class Projects implements OnInit {
   readonly errorMessage =
     signal<string | null>(null);
 
+  readonly deletingProjectId =
+    signal<number | null>(null);
+
 
   readonly filterForm =
     this.formBuilder.nonNullable.group({
@@ -198,6 +201,103 @@ export class Projects implements OnInit {
         ? 'Public'
         : 'Privé'
     );
+  }
+
+
+  projectLink(
+    project: Project,
+  ): string | any[] {
+    if (
+      project.status === 'draft'
+      || project.status === 'source_error'
+    ) {
+      return '/projects/new';
+    }
+
+    return ['/projects', project.id];
+  }
+
+
+  projectQueryParams(
+    project: Project,
+  ): Record<string, number> | null {
+    if (
+      project.status !== 'draft'
+      && project.status !== 'source_error'
+    ) {
+      return null;
+    }
+
+    return {
+      draftId: project.id,
+      step: this.resumeStep(project),
+    };
+  }
+
+
+  resumeStep(
+    project: Project,
+  ): number {
+    if (project.status === 'source_error') {
+      return 2;
+    }
+
+    const sourceConfigured =
+      project.source.status === 'valid'
+      && (
+        project.source.type === 'zip'
+          ? !!project.source.archive?.originalName
+          : !!project.source.repositoryUrl
+      );
+
+    if (!sourceConfigured) {
+      return 2;
+    }
+
+    if (!project.defaultEnvironment) {
+      return 3;
+    }
+
+    return 4;
+  }
+
+
+  deleteProject(
+    project: Project,
+  ): void {
+    if (!this.isAdmin()) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Supprimer définitivement le projet « ${project.name} » ?\n\n`
+      + 'Les analyses, générations et déploiements liés dans SApixi seront supprimés.',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    this.deletingProjectId.set(project.id);
+    this.errorMessage.set(null);
+
+    this.projectsService
+      .deleteProject(project.id)
+      .pipe(
+        finalize(() => {
+          this.deletingProjectId.set(null);
+        }),
+      )
+      .subscribe({
+        next: () => {
+          this.loadProjects();
+        },
+        error: (error: HttpErrorResponse) => {
+          this.errorMessage.set(
+            this.resolveError(error),
+          );
+        },
+      });
   }
 
 

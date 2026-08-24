@@ -607,7 +607,7 @@
         }
 
 
-        @if (connection.providerType === 'nexus' || connection.providerType === 'gitlab') {
+        @if (connection.providerType === 'nexus' || connection.providerType === 'gitlab' || connection.providerType === 'github') {
           <section class="detected-repositories compact-repositories">
             <div class="repository-heading">
               <div>
@@ -1424,7 +1424,7 @@
           }
         }
 
-        @if (currentProvider()?.type === 'nexus' || currentProvider()?.type === 'gitlab') {
+        @if (currentProvider()?.type === 'nexus' || currentProvider()?.type === 'gitlab' || currentProvider()?.type === 'github') {
           <div class="detected-repositories editor-repositories">
             <div class="repository-heading">
               <div>

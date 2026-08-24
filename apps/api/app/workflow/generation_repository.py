@@ -1572,3 +1572,90 @@ def confirm_generation_review(
         )
 
     return confirmed
+
+def approve_all_reviewable_artifacts(
+    *,
+    project_id: int,
+    generation_run_id: int,
+    user_id: int,
+) -> list[dict[str, Any]]:
+    """Approuve en une transaction tous les artefacts valides/non-invalides."""
+    with get_database_connection() as database:
+        generation = database.execute(
+            """
+                SELECT id, status
+                FROM project_generation_runs
+                WHERE id = %s
+                  AND project_id = %s
+                FOR UPDATE;
+            """,
+            (generation_run_id, project_id),
+        ).fetchone()
+
+        if generation is None:
+            raise ValueError("La génération est introuvable.")
+
+        if generation["status"] != "awaiting_review":
+            raise ValueError("La génération n'est pas en phase de revue.")
+
+        counts = database.execute(
+            """
+                SELECT
+                    COUNT(*)::INTEGER AS total,
+                    COUNT(*) FILTER (
+                        WHERE validation_status = 'failed'
+                    )::INTEGER AS invalid
+                FROM project_generated_artifacts
+                WHERE generation_run_id = %s;
+            """,
+            (generation_run_id,),
+        ).fetchone()
+
+        if counts is None or counts["total"] == 0:
+            raise ValueError("La génération ne contient aucun artefact.")
+
+        if counts["invalid"] > 0:
+            raise ValueError(
+                "Un ou plusieurs artefacts sont invalides. "
+                "Corrigez-les avant l'approbation globale."
+            )
+
+        database.execute(
+            """
+                UPDATE project_generated_artifacts
+                SET review_status = 'approved',
+                    review_comment = CASE
+                        WHEN review_status = 'pending_review'
+                            THEN COALESCE(review_comment, 'Approuvé via action globale.')
+                        ELSE review_comment
+                    END,
+                    reviewed_by = %s,
+                    reviewed_at = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE generation_run_id = %s
+                  AND validation_status <> 'failed';
+            """,
+            (user_id, generation_run_id),
+        )
+
+        database.execute(
+            """
+                INSERT INTO project_generation_events (
+                    generation_run_id,
+                    level,
+                    step,
+                    message,
+                    details
+                )
+                VALUES (
+                    %s,
+                    'success',
+                    'review',
+                    'Tous les artefacts valides ont été approuvés en une seule action.',
+                    '{}'::JSONB
+                );
+            """,
+            (generation_run_id,),
+        )
+
+    return list_generation_artifacts(generation_run_id)

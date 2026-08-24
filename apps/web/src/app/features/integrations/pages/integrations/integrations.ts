@@ -604,7 +604,7 @@ export class Integrations
 
     this.editorOpen.set(true);
 
-    if (connection.providerType === 'nexus' || connection.providerType === 'gitlab') {
+    if (connection.providerType === 'nexus' || connection.providerType === 'gitlab' || connection.providerType === 'github') {
       this.discoverSavedRepositories(connection, true);
     }
   }
@@ -940,7 +940,7 @@ export class Integrations
   private discoverDraftRepositories(
     configuration: IntegrationConfiguration,
   ): void {
-    if (!['nexus', 'gitlab'].includes(configuration.providerType)) {
+    if (!['nexus', 'gitlab', 'github'].includes(configuration.providerType)) {
       this.draftRepositories.set([]);
       return;
     }
@@ -965,7 +965,7 @@ export class Integrations
     connection: IntegrationConnection,
     copyToDraft = false,
   ): void {
-    if (!['nexus', 'gitlab'].includes(connection.providerType)) {
+    if (!['nexus', 'gitlab', 'github'].includes(connection.providerType)) {
       this.savedRepositories.set([]);
       if (copyToDraft) this.draftRepositories.set([]);
       return;

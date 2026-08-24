@@ -248,15 +248,26 @@
                 </td>
 
                 <td>
-                  <a
-                    class="open-link"
-                    [routerLink]="[
-                      '/projects',
-                      project.id
-                    ]"
-                  >
-                    Ouvrir
-                  </a>
+                  <div class="project-actions">
+                    <a
+                      class="open-link"
+                      [routerLink]="projectLink(project)"
+                      [queryParams]="projectQueryParams(project)"
+                    >
+                      {{ project.status === 'draft' || project.status === 'source_error' ? 'Continuer' : 'Ouvrir' }}
+                    </a>
+
+                    @if (isAdmin()) {
+                      <button
+                        class="danger-button"
+                        type="button"
+                        [disabled]="deletingProjectId() === project.id"
+                        (click)="deleteProject(project)"
+                      >
+                        {{ deletingProjectId() === project.id ? 'Suppression…' : 'Supprimer' }}
+                      </button>
+                    }
+                  </div>
                 </td>
               </tr>
             }

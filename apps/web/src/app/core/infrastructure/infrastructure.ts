@@ -46,6 +46,7 @@ export type ServiceRole =
 
 export type InfrastructureProviderType =
   | 'gitlab'
+  | 'github'
   | 'nexus'
   | 'argocd'
   | 'kubernetes'

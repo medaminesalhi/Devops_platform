@@ -99,7 +99,7 @@
                 <span>Connexion Git</span>
                 <select formControlName="sourceConnectionId">
                   @for (connection of options()?.gitConnections ?? []; track connection.id) {
-                    <option [value]="connection.id">{{ connection.name }} · {{ connection.status }}</option>
+                    <option [value]="connection.id">{{ connection.providerType === 'github' ? 'GitHub' : 'GitLab' }} · {{ connection.name }} · {{ connection.status }}</option>
                   }
                 </select>
                 <small>Connexion configurée dans la page Intégrations.</small>
@@ -107,7 +107,7 @@
 
               <label class="field field--full">
                 <span>URL de clonage</span>
-                <input type="text" formControlName="repositoryUrl" placeholder="https://gitlab.example.com/groupe/projet.git" />
+                <input type="text" formControlName="repositoryUrl" placeholder="https://github.com/organisation/projet.git ou https://gitlab.example.com/groupe/projet.git" />
               </label>
 
               <label class="field"><span>Branche</span><input type="text" formControlName="branch" placeholder="main" /></label>

@@ -182,9 +182,7 @@ export interface DeploymentContractComponent {
     host: string;
     path: string;
     pathType: 'Prefix' | 'Exact' | 'ImplementationSpecific';
-    tlsEnabled: boolean;
     tlsSecretName: string;
-    certManagerIssuer: string;
     annotations: Record<string, string>;
   };
   resources: {
@@ -284,12 +282,6 @@ export interface DeploymentProposalAdvancedDecisions {
   startCommand: string | null;
   port: number | null;
   serviceType: 'ClusterIP' | 'NodePort' | 'LoadBalancer';
-  ingressClassName: string;
-  ingressPath: string;
-  ingressPathType: 'Prefix' | 'Exact' | 'ImplementationSpecific';
-  ingressTlsEnabled: boolean;
-  ingressTlsSecretName: string | null;
-  ingressCertManagerIssuer: string | null;
   readinessPath: string;
   livenessPath: string;
   cpuRequest: string;
@@ -373,12 +365,6 @@ export interface DeploymentProposalComponent {
     serviceType: string;
     ingressEnabled: boolean;
     host: string | null;
-    ingressClassName: string;
-    ingressPath: string;
-    ingressPathType: 'Prefix' | 'Exact' | 'ImplementationSpecific';
-    ingressTlsEnabled: boolean;
-    ingressTlsSecretName: string | null;
-    ingressCertManagerIssuer: string | null;
     replicas: number;
     readinessPath: string | null;
     livenessPath: string | null;
@@ -694,6 +680,19 @@ export class WorkflowService {
         { headers: this.headers() },
       )
       .pipe(map(response => response.data.artifact));
+  }
+
+  approveAllArtifacts(
+    projectId: number,
+    generationId: number,
+  ): Observable<WorkflowArtifact[]> {
+    return this.http
+      .post<ApiResponse<{ artifacts: WorkflowArtifact[] }>>(
+        `/api/projects/${projectId}/workflow/generations/${generationId}/artifacts/approve-all`,
+        {},
+        { headers: this.headers() },
+      )
+      .pipe(map(response => response.data.artifacts));
   }
 
   confirmGeneration(projectId: number, generationId: number): Observable<WorkflowGeneration> {

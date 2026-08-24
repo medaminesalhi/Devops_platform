@@ -21,6 +21,7 @@ export type ProjectStatus = 'draft' | 'active' | 'source_error' | 'archived';
 export interface GitConnectionOption {
   id: number;
   name: string;
+  providerType: 'gitlab' | 'github';
   baseUrl: string;
   status: string;
   verifySsl: boolean;
@@ -125,6 +126,7 @@ export interface ProjectArchive {
 
 export interface ProjectSource {
   type: ProjectSourceType;
+  provider: 'gitlab' | 'github' | 'archive';
   connectionId: number | null;
   connectionName: string | null;
   baseUrl: string | null;
@@ -313,6 +315,15 @@ export class ProjectsService {
         headers: this.headers(),
       })
       .pipe(map(response => response.data.project));
+  }
+
+  deleteProject(projectId: number): Observable<{ id: number; name: string }> {
+    return this.http
+      .delete<ApiResponse<{ deletedProject: { id: number; name: string } }>>(
+        `/api/projects/${projectId}`,
+        { headers: this.headers() },
+      )
+      .pipe(map(response => response.data.deletedProject));
   }
 
   private headers(): HttpHeaders {

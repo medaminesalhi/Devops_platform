@@ -25,6 +25,7 @@ from app.auth.decorators import (
 from app.projects.service import (
     ProjectServiceError,
     create_new_project,
+    delete_project_by_id,
     get_project_by_id,
     get_project_options,
     get_projects,
@@ -399,6 +400,10 @@ def project_json(
             "type":
                 source_type,
 
+            "provider":
+                project.get("source_provider")
+                or ("archive" if is_zip else "gitlab"),
+
             "connectionId":
                 project.get(
                     "source_connection_id"
@@ -588,6 +593,9 @@ def options_route():
 
                         "name":
                             connection["name"],
+
+                        "providerType":
+                            connection["provider_type"],
 
                         "baseUrl":
                             connection["base_url"],
@@ -929,6 +937,42 @@ def project_detail_route(
                     project_json(
                         project
                     ),
+            },
+        }
+    )
+
+
+@projects_blueprint.delete(
+    "/<int:project_id>"
+)
+@require_auth
+def delete_project_route(
+    project_id: int,
+):
+    if not current_user_is_admin():
+        return error_response(
+            "PROJECT_DELETE_FORBIDDEN",
+            "Seul un administrateur peut supprimer un projet.",
+            403,
+        )
+
+    try:
+        deleted = delete_project_by_id(project_id)
+    except ProjectServiceError as error:
+        return error_response(
+            error.code,
+            error.message,
+            error.http_status,
+        )
+
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "deletedProject": {
+                    "id": int(deleted["id"]),
+                    "name": deleted["name"],
+                },
             },
         }
     )

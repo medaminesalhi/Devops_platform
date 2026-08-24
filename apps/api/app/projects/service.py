@@ -18,6 +18,7 @@ from app.projects.archive_provider import (
 from app.projects.repository import (
     create_git_project,
     create_zip_project,
+    delete_project,
     find_environment,
     find_git_connection,
     find_project,
@@ -98,6 +99,23 @@ def get_project_by_id(
     return project
 
 
+
+
+def delete_project_by_id(
+    project_id: int,
+) -> dict[str, Any]:
+    deleted = delete_project(project_id)
+
+    if deleted is None:
+        raise ProjectServiceError(
+            "PROJECT_NOT_FOUND",
+            "Le projet est introuvable.",
+            404,
+        )
+
+    return deleted
+
+
 def ensure_project_create_role(
     roles: set[str],
 ) -> None:
@@ -133,7 +151,7 @@ def resolve_credential(
             raise ProjectServiceError(
                 "INTEGRATION_CREDENTIAL_NOT_CONFIGURED",
                 (
-                    "La connexion GitLab ne contient "
+                    "La connexion Git ne contient "
                     "aucun credential."
                 ),
             )
@@ -184,6 +202,14 @@ def resolve_credential(
                 ),
             )
 
+        username = connection.get("credential_username")
+        if not username and auth_method == "https_token":
+            username = (
+                "x-access-token"
+                if connection.get("provider_type") == "github"
+                else "oauth2"
+            )
+
         return {
             "credential_source": "integration",
             "auth_method": auth_method,
@@ -194,9 +220,7 @@ def resolve_credential(
                 else None
             ),
 
-            "username": connection[
-                "credential_username"
-            ],
+            "username": username,
 
             "secret": decrypt_credential(
                 connection[
@@ -233,7 +257,7 @@ def validate_git_source(
         raise ProjectServiceError(
             "GIT_CONNECTION_NOT_FOUND",
             (
-                "La connexion GitLab est "
+                "La connexion Git est "
                 "introuvable ou désactivée."
             ),
             404,
@@ -483,6 +507,17 @@ def create_git_source_project(
             credential["secret"]
         )
 
+    connection = find_git_connection(
+        data["source_connection_id"],
+        owner_user_id=owner_user_id,
+    )
+    if connection is None:
+        raise ProjectServiceError(
+            "GIT_CONNECTION_NOT_FOUND",
+            "La connexion Git est introuvable ou désactivée.",
+            404,
+        )
+
     project = create_git_project(
         name=data["name"],
         description=data["description"],
@@ -493,6 +528,11 @@ def create_git_source_project(
 
         source_connection_id=(
             data["source_connection_id"]
+        ),
+
+        source_provider=str(
+            connection.get("provider_type")
+            or "gitlab"
         ),
 
         repository_url=(

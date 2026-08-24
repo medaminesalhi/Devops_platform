@@ -404,7 +404,7 @@ export class Infrastructure
 
             Validators.pattern(
               (
-                /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/
+                /^[a-z0-9]+ (?:[-a-z0-9]*[a-z0-9])?$/
               )
             ),
           ],
@@ -1209,6 +1209,9 @@ export class Infrastructure
       > = {
         gitlab:
           'GitLab',
+
+        github:
+          'GitHub',
 
         nexus:
           'Nexus Repository',

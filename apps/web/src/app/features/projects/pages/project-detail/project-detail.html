@@ -426,75 +426,6 @@
                     </select>
                   </label>
 
-                  @if (proposalDecisions().exposureMode === 'public') {
-                    <label class="field">
-                      <span>IngressClass</span>
-                      <input
-                        type="text"
-                        [ngModel]="proposalDecisions().advanced.ingressClassName"
-                        (ngModelChange)="updateProposalAdvancedDecision('ingressClassName', $event)"
-                        placeholder="nginx"
-                      />
-                      <small>Nom exact de l'IngressClass installée dans le cluster.</small>
-                    </label>
-
-                    <label class="field">
-                      <span>Chemin Ingress</span>
-                      <input
-                        type="text"
-                        [ngModel]="proposalDecisions().advanced.ingressPath"
-                        (ngModelChange)="updateProposalAdvancedDecision('ingressPath', $event)"
-                        placeholder="/"
-                      />
-                    </label>
-
-                    <label class="field">
-                      <span>Path type</span>
-                      <select
-                        [ngModel]="proposalDecisions().advanced.ingressPathType"
-                        (ngModelChange)="updateProposalAdvancedDecision('ingressPathType', $event)"
-                      >
-                        <option value="Prefix">Prefix</option>
-                        <option value="Exact">Exact</option>
-                        <option value="ImplementationSpecific">ImplementationSpecific</option>
-                      </select>
-                    </label>
-
-                    <label class="field">
-                      <span>HTTPS / TLS</span>
-                      <select
-                        [ngModel]="proposalDecisions().advanced.ingressTlsEnabled"
-                        (ngModelChange)="updateProposalAdvancedDecision('ingressTlsEnabled', $event)"
-                      >
-                        <option [ngValue]="false">Désactivé</option>
-                        <option [ngValue]="true">Activé</option>
-                      </select>
-                    </label>
-
-                    @if (proposalDecisions().advanced.ingressTlsEnabled) {
-                      <label class="field">
-                        <span>Secret TLS existant (optionnel)</span>
-                        <input
-                          type="text"
-                          [ngModel]="proposalDecisions().advanced.ingressTlsSecretName"
-                          (ngModelChange)="updateProposalAdvancedDecision('ingressTlsSecretName', $event || null)"
-                          placeholder="mon-app-tls"
-                        />
-                        <small>Laissez vide si cert-manager doit créer le Secret.</small>
-                      </label>
-
-                      <label class="field">
-                        <span>cert-manager ClusterIssuer (optionnel)</span>
-                        <input
-                          type="text"
-                          [ngModel]="proposalDecisions().advanced.ingressCertManagerIssuer"
-                          (ngModelChange)="updateProposalAdvancedDecision('ingressCertManagerIssuer', $event || null)"
-                          placeholder="letsencrypt-prod"
-                        />
-                      </label>
-                    }
-                  }
-
                   <label class="field">
                     <span>Readiness probe</span>
                     <input type="text" [ngModel]="proposalDecisions().advanced.readinessPath" (ngModelChange)="updateProposalAdvancedDecision('readinessPath', $event)" placeholder="/health" />
@@ -576,8 +507,6 @@
                     <article><span>Port</span><strong>{{ component.docker.port }}</strong></article>
                     <article><span>Service</span><strong>{{ component.kubernetes.serviceType }}</strong></article>
                     <article><span>Ingress</span><strong>{{ component.kubernetes.ingressEnabled ? component.kubernetes.host : 'Interne' }}</strong></article>
-                    <article><span>IngressClass</span><strong>{{ component.kubernetes.ingressEnabled ? component.kubernetes.ingressClassName : '—' }}</strong></article>
-                    <article><span>TLS</span><strong>{{ component.kubernetes.ingressEnabled && component.kubernetes.ingressTlsEnabled ? (component.kubernetes.ingressTlsSecretName || 'cert-manager') : 'Désactivé' }}</strong></article>
                     <article><span>Ressources</span><strong>{{ component.kubernetes.cpuRequest }} / {{ component.kubernetes.memoryRequest }}</strong></article>
                     <article><span>Probes</span><strong>{{ component.kubernetes.readinessPath ?? 'À confirmer' }}</strong></article>
                     <article><span>Migration</span><strong>{{ component.migration.enabled ? component.migration.command : 'Désactivée' }}</strong></article>
@@ -689,7 +618,20 @@
             @if (generationTab() === 'artifacts') {
               <section class="artifact-workspace">
                 <aside class="panel artifact-list">
-                  <header><div><p class="eyebrow">Fichiers</p><h3>{{ artifacts().length }} artefact(s)</h3></div><button class="icon-button" type="button" (click)="loadArtifacts()">↻</button></header>
+                  <header>
+                    <div><p class="eyebrow">Fichiers</p><h3>{{ artifacts().length }} artefact(s)</h3></div>
+                    <div class="artifact-list-actions">
+                      <button
+                        class="button button--primary"
+                        type="button"
+                        [disabled]="isWorking() || generationConfirmed() || artifacts().length === 0 || invalidCount() > 0"
+                        (click)="approveAllArtifacts()"
+                      >
+                        ✓ Tout approuver
+                      </button>
+                      <button class="icon-button" type="button" (click)="loadArtifacts()">↻</button>
+                    </div>
+                  </header>
                   <div>
                     @for (artifact of artifacts(); track artifact.id) {
                       <button type="button" class="artifact-item" [class.active]="selectedArtifact()?.id === artifact.id" (click)="selectArtifact(artifact.id)"><span>{{ artifact.artifactType.includes('helm') ? 'H' : artifact.artifactType.includes('argocd') ? 'A' : 'D' }}</span><div><strong>{{ artifact.relativePath }}</strong><small>{{ artifactTypeLabel(artifact.artifactType) }}</small></div><i [class.ok]="artifact.validationStatus === 'passed'" [class.warn]="artifact.validationStatus === 'warning'" [class.bad]="artifact.validationStatus === 'failed'"></i></button>
@@ -714,7 +656,7 @@
             @if (generationTab() === 'validation') {
               <section class="validation-dashboard">
                 <div class="metric-grid"><article class="panel"><span>Total</span><strong>{{ artifacts().length }}</strong></article><article class="panel"><span>Approuvés</span><strong class="positive">{{ approvedCount() }}</strong></article><article class="panel"><span>À revoir</span><strong>{{ pendingReviewCount() }}</strong></article><article class="panel"><span>Invalides</span><strong class="negative">{{ invalidCount() }}</strong></article></div>
-                <section class="panel validation-summary"><div><p class="eyebrow">Confirmation finale</p><h3>{{ canConfirmGeneration() ? 'Tous les contrôles sont satisfaits' : 'La revue doit être terminée' }}</h3><ul><li [class.ok]="invalidCount() === 0">Aucun fichier invalide</li><li [class.ok]="rejectedCount() === 0">Aucun fichier rejeté</li><li [class.ok]="artifacts().length > 0 && approvedCount() === artifacts().length">Tous les fichiers approuvés</li></ul></div><button class="button button--primary" type="button" [disabled]="!canConfirmGeneration() || isWorking()" (click)="confirmGeneration()">Confirmer les artefacts →</button></section>
+                <section class="panel validation-summary"><div><p class="eyebrow">Confirmation finale</p><h3>{{ canConfirmGeneration() ? 'Tous les contrôles sont satisfaits' : 'La revue doit être terminée' }}</h3><ul><li [class.ok]="invalidCount() === 0">Aucun fichier invalide</li><li [class.ok]="rejectedCount() === 0">Aucun fichier rejeté</li><li [class.ok]="artifacts().length > 0 && approvedCount() === artifacts().length">Tous les fichiers approuvés</li></ul></div><div class="validation-actions"><button class="button button--secondary" type="button" [disabled]="isWorking() || generationConfirmed() || artifacts().length === 0 || invalidCount() > 0 || approvedCount() === artifacts().length" (click)="approveAllArtifacts()">✓ Tout approuver</button><button class="button button--primary" type="button" [disabled]="!canConfirmGeneration() || isWorking()" (click)="confirmGeneration()">Confirmer les artefacts →</button></div></section>
               </section>
             }
           }

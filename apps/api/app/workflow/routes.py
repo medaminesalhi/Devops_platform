@@ -27,6 +27,7 @@ from app.workflow.contracts import (
 )
 
 from app.workflow.generation_repository import (
+    approve_all_reviewable_artifacts,
     confirm_generation_review,
     create_workflow_generation,
     find_generation_artifact,
@@ -2958,6 +2959,57 @@ def review_artifact_route(
                         include_content=
                             True,
                     ),
+            },
+        }
+    )
+
+
+# ============================================================
+# PHASE 4 — APPROBATION GLOBALE DES ARTEFACTS
+# ============================================================
+
+@workflow_blueprint.post(
+    (
+        "/<int:project_id>/"
+        "workflow/generations/"
+        "<int:generation_run_id>/"
+        "artifacts/approve-all"
+    )
+)
+@require_auth
+@require_project_access
+def approve_all_artifacts_route(
+    project_id: int,
+    generation_run_id: int,
+):
+    try:
+        ensure_write_permission()
+        artifacts = approve_all_reviewable_artifacts(
+            project_id=project_id,
+            generation_run_id=generation_run_id,
+            user_id=current_user_id(),
+        )
+    except PermissionError as error:
+        return error_response(
+            "WORKFLOW_FORBIDDEN",
+            str(error),
+            403,
+        )
+    except ValueError as error:
+        return error_response(
+            "ARTIFACTS_NOT_APPROVED",
+            str(error),
+            409,
+        )
+
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "artifacts": [
+                    artifact_to_json(artifact, include_content=False)
+                    for artifact in artifacts
+                ]
             },
         }
     )

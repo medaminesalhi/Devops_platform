@@ -124,12 +124,6 @@ export class ProjectDetail implements OnInit, OnDestroy {
       startCommand: null,
       port: null,
       serviceType: 'ClusterIP',
-      ingressClassName: 'nginx',
-      ingressPath: '/',
-      ingressPathType: 'Prefix',
-      ingressTlsEnabled: false,
-      ingressTlsSecretName: null,
-      ingressCertManagerIssuer: null,
       readinessPath: '/health',
       livenessPath: '/health',
       cpuRequest: '100m',
@@ -617,6 +611,54 @@ export class ProjectDetail implements OnInit, OnDestroy {
       });
   }
 
+  approveAllArtifacts(): void {
+    const projectId = this.projectId();
+    const generationId = this.generation()?.id;
+
+    if (!projectId || !generationId) {
+      return;
+    }
+
+    if (this.invalidCount() > 0) {
+      this.actionError.set(
+        'Corrigez les fichiers invalides avant de lancer l’approbation globale.',
+      );
+      return;
+    }
+
+    if (!window.confirm(
+      `Approuver automatiquement les ${this.artifacts().length} fichiers générés ?`,
+    )) {
+      return;
+    }
+
+    this.isWorking.set(true);
+    this.actionError.set(null);
+
+    this.workflowService
+      .approveAllArtifacts(projectId, generationId)
+      .pipe(finalize(() => this.isWorking.set(false)))
+      .subscribe({
+        next: artifacts => {
+          this.artifacts.set(artifacts);
+          const selectedId = this.selectedArtifact()?.id;
+          if (selectedId) {
+            const refreshed = artifacts.find(item => item.id === selectedId);
+            if (refreshed) {
+              this.selectedArtifact.set({
+                ...this.selectedArtifact()!,
+                ...refreshed,
+              });
+            }
+          }
+          this.successMessage.set(
+            'Tous les fichiers valides ont été approuvés automatiquement.',
+          );
+        },
+        error: error => this.actionError.set(this.resolveError(error)),
+      });
+  }
+
   confirmGeneration(): void {
     const projectId = this.projectId();
     const generationId = this.generation()?.id;
@@ -743,6 +785,21 @@ export class ProjectDetail implements OnInit, OnDestroy {
       .subscribe({
         next: context => {
           this.project.set(context.project);
+
+          if (context.project.status !== 'active') {
+            void this.router.navigate(
+              ['/projects/new'],
+              {
+                queryParams: {
+                  draftId: context.project.id,
+                  step: this.resumeDraftStep(context.project),
+                },
+                replaceUrl: true,
+              },
+            );
+            return;
+          }
+
           this.analysis.set(context.analysis);
           this.workflow.set(context.workflow);
           this.proposal.set(context.proposal ?? context.workflow?.latestProposal ?? null);
@@ -771,12 +828,6 @@ export class ProjectDetail implements OnInit, OnDestroy {
       startCommand: null,
       port: null,
       serviceType: 'ClusterIP',
-      ingressClassName: 'nginx',
-      ingressPath: '/',
-      ingressPathType: 'Prefix',
-      ingressTlsEnabled: false,
-      ingressTlsSecretName: null,
-      ingressCertManagerIssuer: null,
       readinessPath: '/health',
       livenessPath: '/health',
       cpuRequest: '100m',
@@ -841,6 +892,31 @@ export class ProjectDetail implements OnInit, OnDestroy {
       this.aiModels.set([]);
       this.selectedAiModel.set('');
     }
+  }
+
+
+  private resumeDraftStep(project: Project): number {
+    if (project.status === 'source_error') {
+      return 2;
+    }
+
+    const sourceConfigured =
+      project.source.status === 'valid'
+      && (
+        project.source.type === 'zip'
+          ? !!project.source.archive?.originalName
+          : !!project.source.repositoryUrl
+      );
+
+    if (!sourceConfigured) {
+      return 2;
+    }
+
+    if (!project.defaultEnvironment) {
+      return 3;
+    }
+
+    return 4;
   }
 
 

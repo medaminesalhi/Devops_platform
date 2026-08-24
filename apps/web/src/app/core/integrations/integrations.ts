@@ -20,6 +20,7 @@ import {
 
 export type ProviderType =
   | 'gitlab'
+  | 'github'
   | 'nexus'
   | 'argocd'
   | 'kubernetes'
@@ -103,7 +104,7 @@ export interface IntegrationConfiguration {
 
 
 export interface IntegrationRepositoryOption {
-  provider: 'nexus' | 'gitlab';
+  provider: 'nexus' | 'gitlab' | 'github';
   id: string;
   name: string;
   label: string;

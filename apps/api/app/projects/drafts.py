@@ -243,7 +243,14 @@ def _resolve_stored_credential(
                 "INTEGRATION_CREDENTIAL_NOT_CONFIGURED",
                 "La connexion Git ne contient aucun credential.",
             )
-        return connection.get("credential_username"), decrypt_credential(ciphertext)
+        username = connection.get("credential_username")
+        if not username and connection.get("credential_auth_type") == "token":
+            username = (
+                "x-access-token"
+                if connection.get("provider_type") == "github"
+                else "oauth2"
+            )
+        return username, decrypt_credential(ciphertext)
 
     if credential_source == "project":
         ciphertext = project.get("project_secret_ciphertext")
@@ -344,7 +351,15 @@ def _credential_for_new_git_source(
                 "Le secret de la connexion Git est absent.",
             )
 
-        return connection.get("credential_username"), decrypt_credential(ciphertext)
+        username = connection.get("credential_username")
+        if not username and connection.get("credential_auth_type") == "token":
+            username = (
+                "x-access-token"
+                if connection.get("provider_type") == "github"
+                else "oauth2"
+            )
+
+        return username, decrypt_credential(ciphertext)
 
     return data.get("username"), data.get("secret")
 
@@ -392,7 +407,7 @@ def _save_git_source(
                 UPDATE projects
                 SET
                     source_type = 'git',
-                    source_provider = 'gitlab',
+                    source_provider = %s,
                     source_connection_id = %s,
                     repository_url = %s,
                     repository_path = %s,
@@ -420,6 +435,7 @@ def _save_git_source(
                 WHERE id = %s;
             """,
             (
+                connection["provider_type"],
                 data["source_connection_id"],
                 validation.repository_url,
                 validation.repository_path,
@@ -871,6 +887,12 @@ def _replace_credential(
                 "La connexion Git ne contient aucun credential.",
             )
         username = connection.get("credential_username")
+        if not username and connection.get("credential_auth_type") == "token":
+            username = (
+                "x-access-token"
+                if connection.get("provider_type") == "github"
+                else "oauth2"
+            )
         secret = decrypt_credential(connection["secret_ciphertext"])
     else:
         username = credential.get("username")

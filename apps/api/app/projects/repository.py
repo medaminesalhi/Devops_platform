@@ -18,6 +18,7 @@ PROJECT_SELECT = """
         project.description,
         project.operation_mode,
         project.source_type,
+        project.source_provider,
         project.status,
 
         project.source_connection_id,
@@ -145,6 +146,7 @@ def list_git_connections(
         SELECT
             connection.id,
             connection.name,
+            connection.provider_type,
             connection.base_url,
             connection.status,
             connection.verify_ssl,
@@ -174,7 +176,7 @@ def list_git_connections(
                 connection.id
 
         WHERE
-            connection.provider_type = 'gitlab'
+            connection.provider_type IN ('gitlab', 'github')
             AND connection.enabled = TRUE
             AND (
                 %s::BIGINT IS NULL
@@ -200,6 +202,7 @@ def find_git_connection(
         SELECT
             connection.id,
             connection.name,
+            connection.provider_type,
             connection.base_url,
             connection.verify_ssl,
             connection.ssh_host,
@@ -231,7 +234,7 @@ def find_git_connection(
 
         WHERE
             connection.id = %s
-            AND connection.provider_type = 'gitlab'
+            AND connection.provider_type IN ('gitlab', 'github')
             AND connection.enabled = TRUE
             AND (
                 %s::BIGINT IS NULL
@@ -394,6 +397,7 @@ def create_git_project(
     operation_mode: str,
 
     source_connection_id: int,
+    source_provider: str,
 
     repository_url: str,
     repository_path: str,
@@ -453,7 +457,7 @@ def create_git_project(
                     %s,
                     %s,
                     'git',
-                    'gitlab',
+                    %s,
                     %s,
                     %s,
                     %s,
@@ -480,6 +484,7 @@ def create_git_project(
                 slug,
                 description,
                 operation_mode,
+                source_provider,
                 source_connection_id,
                 repository_url,
                 repository_path,
@@ -887,3 +892,17 @@ def find_available_slug(
         candidate = f"{slug_base}-{suffix}"
 
         suffix += 1
+
+def delete_project(project_id: int) -> dict[str, Any] | None:
+    """Supprime définitivement un projet et ses données liées en cascade."""
+    with get_database_connection() as connection:
+        row = connection.execute(
+            """
+                DELETE FROM projects
+                WHERE id = %s
+                RETURNING id, name;
+            """,
+            (project_id,),
+        ).fetchone()
+
+    return row

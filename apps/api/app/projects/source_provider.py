@@ -92,7 +92,7 @@ class GitSourceProvider:
                 "REPOSITORY_HOST_MISMATCH",
                 (
                     "L'URL appartient à un autre serveur "
-                    "que la connexion GitLab sélectionnée."
+                    "que la connexion Git sélectionnée."
                 ),
             )
 

@@ -211,6 +211,81 @@ export const PROVIDER_DEFINITIONS:
     },
 
 
+    github: {
+      type: 'github',
+      category: 'source_control',
+
+      label: 'GitHub',
+
+      description:
+        'Dépôts GitHub, organisations et '
+        + 'accès au code source.',
+
+      namePlaceholder:
+        'Exemple : GitHub principal',
+
+      urlPlaceholder:
+        'https://github.com',
+
+      endpointPath:
+        '/user',
+
+      exactUrl:
+        false,
+
+      ports: [
+        {
+          port: 443,
+          label: 'HTTPS',
+          usage:
+            'Accès sécurisé à GitHub.',
+        },
+      ],
+
+      authTypes: [
+        'token',
+      ],
+
+      defaultAuthType:
+        'token',
+
+      credentialLabel:
+        'Personal Access Token',
+
+      credentialPlaceholder:
+        'github_pat_... ou ghp_...',
+
+      usernameLabel:
+        'Nom d’utilisateur',
+
+      usernamePlaceholder:
+        'Facultatif pour le test API',
+
+      verifySslAvailable:
+        true,
+
+      helpTitle:
+        'Connexion à GitHub',
+
+      helpMessages: [
+        (
+          'Pour GitHub.com, utilisez '
+          + 'https://github.com comme adresse.'
+        ),
+        (
+          'SApixi utilise automatiquement '
+          + 'https://api.github.com/user pour '
+          + 'tester le token.'
+        ),
+        (
+          'Le token doit au minimum pouvoir '
+          + 'lire les repositories utilisés '
+          + 'par les projets.'
+        ),
+      ],
+    },
+
+
     nexus: {
       type: 'nexus',
       category: 'registry',
@@ -229,7 +304,7 @@ export const PROVIDER_DEFINITIONS:
         'https://nexus.example.com',
 
       endpointPath:
-        '/service/rest/v1/repositories',
+        '/service/rest/v1/status',
 
       exactUrl:
         false,
@@ -1017,6 +1092,18 @@ export function buildCheckedUrl(
     baseUrl
       .trim()
       .replace(/\/+$/, '');
+
+  if (providerType === 'github') {
+    try {
+      const parsed = new URL(normalized);
+      if (parsed.hostname === 'github.com' || parsed.hostname === 'www.github.com') {
+        return 'https://api.github.com/user';
+      }
+      return normalized + '/api/v3/user';
+    } catch {
+      return normalized;
+    }
+  }
 
   if (
     !normalized
