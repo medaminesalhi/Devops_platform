@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from pathlib import Path
 
-from typing import Iterator
+from typing import Any, Iterator
 
 from urllib.parse import (
     quote,
@@ -55,6 +55,7 @@ class GitWorkspaceManager:
         *,
         project: dict,
         commit_policy: str,
+        requested_commit_sha: str | None = None,
     ) -> Iterator[CheckoutResult]:
         configured_root = (
             current_app.config.get(
@@ -143,16 +144,25 @@ class GitWorkspaceManager:
                 or branch_head_sha
             )
 
+            requested_commit = str(
+                requested_commit_sha or ""
+            ).strip().lower()
+
             branch_changed = (
                 expected_commit
                 != branch_head_sha
             )
 
-            analyzed_commit = (
-                branch_head_sha
-                if commit_policy == "latest"
-                else expected_commit
-            )
+            # Une analyse lancée depuis le sélecteur de commits doit être
+            # strictement reproductible : lorsque requested_commit_sha est
+            # fourni avec la politique « validated », on checkout exactement
+            # ce SHA, même si la branche a avancé depuis.
+            if commit_policy == "validated" and requested_commit:
+                analyzed_commit = requested_commit
+            elif commit_policy == "latest":
+                analyzed_commit = branch_head_sha
+            else:
+                analyzed_commit = expected_commit
 
             self.initialize_repository(
                 source_path=source_path,
@@ -273,6 +283,136 @@ class GitWorkspaceManager:
                 verify_ssl=bool(project.get("verify_ssl", True)),
             )
 
+
+
+
+    def list_branch_commits(
+        self,
+        *,
+        project: dict,
+        limit: int = 30,
+    ) -> dict[str, Any]:
+        """Retourne les derniers commits de la branche configurée.
+
+        Cette méthode reste indépendante de GitHub/GitLab : elle utilise Git
+        directement avec exactement les mêmes credentials HTTPS/SSH et la
+        même politique TLS que le checkout d'analyse.
+        """
+        if str(project.get("source_type") or "git").lower() != "git":
+            raise GitWorkspaceError(
+                "GIT_SOURCE_REQUIRED",
+                "L'historique des commits nécessite une source Git.",
+            )
+
+        safe_limit = max(1, min(int(limit or 30), 100))
+        branch = str(project.get("default_branch") or "main")
+        verify_ssl = bool(project.get("verify_ssl", True))
+
+        environment = os.environ.copy()
+        environment["GIT_TERMINAL_PROMPT"] = "0"
+        environment["GIT_CONFIG_NOSYSTEM"] = "1"
+
+        configured_root = current_app.config.get("ANALYSIS_WORKSPACE_ROOT") or None
+        if configured_root:
+            Path(configured_root).mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory(
+            prefix=f"piximind-commits-{project['id']}-",
+            dir=configured_root,
+        ) as temporary_directory:
+            workspace = Path(temporary_directory)
+            auth_path = workspace / "auth"
+            repository_path = workspace / "repository"
+            auth_path.mkdir(parents=True, exist_ok=True)
+
+            repository_url = self.prepare_authentication(
+                project=project,
+                auth_path=auth_path,
+                environment=environment,
+            )
+            self.initialize_repository(
+                source_path=repository_path,
+                repository_url=repository_url,
+                environment=environment,
+            )
+
+            base_command = ["git", "-c", "credential.helper="]
+            if not verify_ssl:
+                base_command.extend(["-c", "http.sslVerify=false"])
+
+            # On ne télécharge que l'historique récent demandé. Le repository
+            # source de l'utilisateur n'est jamais modifié.
+            self.run_git(
+                [
+                    *base_command,
+                    "fetch",
+                    "--no-tags",
+                    "--depth",
+                    str(safe_limit),
+                    "origin",
+                    f"refs/heads/{branch}",
+                ],
+                cwd=repository_path,
+                environment=environment,
+            )
+
+            head = self.run_git(
+                ["git", "rev-parse", "FETCH_HEAD"],
+                cwd=repository_path,
+                environment=environment,
+            ).stdout.strip().lower()
+
+            record_separator = "\x1e"
+            field_separator = "\x1f"
+            pretty = (
+                "%H%x1f%h%x1f%an%x1f%ae%x1f%aI%x1f%s%x1e"
+            )
+            raw = self.run_git(
+                [
+                    "git",
+                    "log",
+                    "FETCH_HEAD",
+                    "-n",
+                    str(safe_limit),
+                    f"--pretty=format:{pretty}",
+                ],
+                cwd=repository_path,
+                environment=environment,
+            ).stdout
+
+            commits: list[dict[str, Any]] = []
+            for record in raw.split(record_separator):
+                cleaned = record.strip("\r\n ")
+                if not cleaned:
+                    continue
+                fields = cleaned.split(field_separator)
+                if len(fields) != 6:
+                    continue
+                sha, short_sha, author_name, author_email, committed_at, message = fields
+                sha = sha.strip().lower()
+                commits.append(
+                    {
+                        "sha": sha,
+                        "shortSha": short_sha.strip(),
+                        "message": message.strip() or "Commit sans message",
+                        "authorName": author_name.strip() or None,
+                        "authorEmail": author_email.strip() or None,
+                        "committedAt": committed_at.strip() or None,
+                        "isHead": sha == head,
+                    }
+                )
+
+            if not commits:
+                raise GitWorkspaceError(
+                    "SOURCE_HISTORY_EMPTY",
+                    f"Aucun commit n'a été trouvé sur la branche « {branch} ».",
+                )
+
+            return {
+                "branch": branch,
+                "head": head,
+                "commits": commits,
+            }
 
     def prepare_authentication(
         self,

@@ -406,7 +406,8 @@ class WorkspaceProvider:
         else:
             with git_workspace_manager.checkout(
                 project=project,
-                commit_policy="confirmed",
+                commit_policy="validated",
+                requested_commit_sha=expected_commit or None,
             ) as checkout:
                 shutil.copytree(
                     checkout.source_path,

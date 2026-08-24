@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from typing import Any
 
 
@@ -20,10 +22,23 @@ def read_start_analysis_payload(
 ) -> dict[str, Any]:
     payload = payload or {}
 
+    requested_commit_sha = str(
+        payload.get("commitSha") or ""
+    ).strip().lower()
+
+    if requested_commit_sha and not re.fullmatch(
+        r"[0-9a-f]{40}|[0-9a-f]{64}",
+        requested_commit_sha,
+    ):
+        raise AnalysisValidationError(
+            "INVALID_COMMIT_SHA",
+            "Le commit sélectionné doit être un SHA Git complet (40 ou 64 caractères hexadécimaux).",
+        )
+
     commit_policy = str(
         payload.get(
             "commitPolicy",
-            "validated",
+            "latest",
         )
     ).strip()
 
@@ -39,9 +54,13 @@ def read_start_analysis_payload(
             ),
         )
 
+    # Un SHA explicite signifie toujours : analyser exactement cette version.
+    if requested_commit_sha:
+        commit_policy = "validated"
+
     return {
-        "commit_policy":
-            commit_policy,
+        "commit_policy": commit_policy,
+        "requested_commit_sha": requested_commit_sha or None,
     }
 
 

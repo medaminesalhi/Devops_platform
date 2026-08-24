@@ -305,6 +305,16 @@ class Config:
         1800,
     )
 
+    DEPLOYMENT_HEARTBEAT_SECONDS = read_integer(
+        "DEPLOYMENT_HEARTBEAT_SECONDS",
+        2,
+    )
+
+    DEPLOYMENT_STALE_WORKER_SECONDS = read_integer(
+        "DEPLOYMENT_STALE_WORKER_SECONDS",
+        120,
+    )
+
     DEPLOYMENT_HTTP_TIMEOUT_SECONDS = read_integer(
         "DEPLOYMENT_HTTP_TIMEOUT_SECONDS",
         30,

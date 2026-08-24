@@ -72,7 +72,9 @@ def run_analysis_job(
             )
 
             with source_workspace_manager.prepare(
-                project
+                project,
+                commit_policy=str(analysis_run.get("commit_policy") or "latest"),
+                requested_commit_sha=analysis_run.get("requested_commit_sha"),
             ) as prepared_source:
                 source_action = (
                     "Extraction de l'archive terminée."

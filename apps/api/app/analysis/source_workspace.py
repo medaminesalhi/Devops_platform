@@ -49,6 +49,9 @@ class SourceWorkspaceManager:
     def prepare(
         self,
         project: dict,
+        *,
+        commit_policy: str = "latest",
+        requested_commit_sha: str | None = None,
     ) -> Iterator[PreparedSource]:
         source_type = str(
             project.get("source_type") or "git"
@@ -62,7 +65,8 @@ class SourceWorkspaceManager:
         try:
             with git_workspace_manager.checkout(
                 project=project,
-                commit_policy="latest",
+                commit_policy=commit_policy,
+                requested_commit_sha=requested_commit_sha,
             ) as checkout:
                 previous_version = project.get(
                     "previous_analyzed_version"

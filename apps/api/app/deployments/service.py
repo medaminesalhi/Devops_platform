@@ -596,6 +596,7 @@ def get_options(
 def get_project_readiness(
     project_id: int,
     generation_id: int | None = None,
+    selected_commit: str | None = None,
 ) -> dict[str, Any]:
     project = repository.find_project_for_deployment(project_id)
     if project is None:
@@ -604,6 +605,11 @@ def get_project_readiness(
             "Le projet est introuvable.",
             404,
         )
+
+    generation = None
+    selected_generation_id: int | None = None
+    generation_commit = ""
+    component_count = 0
 
     if generation_id is not None:
         generation = repository.find_generation_for_deployment(
@@ -617,21 +623,22 @@ def get_project_readiness(
                 404,
             )
         selected_generation_id = int(generation["id"])
-        source_commit = str(generation.get("analyzed_commit_sha") or "")
+        generation_commit = str(generation.get("analyzed_commit_sha") or "").strip().lower()
         component_count = len(
             repository.list_generation_components(selected_generation_id)
         )
-    else:
-        generation = repository.find_latest_ready_generation(project_id)
-        selected_generation_id = (
-            int(generation["generation_id"]) if generation else None
-        )
-        source_commit = (
-            str(generation.get("source_commit") or "") if generation else ""
-        )
-        component_count = (
-            int(generation.get("component_count") or 0) if generation else 0
-        )
+    elif selected_commit is None:
+        # Compatibilité avec la passerelle projet : sans sélection explicite,
+        # on conserve la dernière génération prête comme valeur par défaut.
+        latest = repository.find_latest_ready_generation(project_id)
+        if latest is not None:
+            selected_generation_id = int(latest["generation_id"])
+            generation_commit = str(latest.get("source_commit") or "").strip().lower()
+            component_count = int(latest.get("component_count") or 0)
+
+    selected_source_commit = str(
+        selected_commit or generation_commit or ""
+    ).strip().lower()
 
     environment_id = (
         int(project["default_environment_id"])
@@ -647,38 +654,49 @@ def get_project_readiness(
     freshness = (
         inspect_source_freshness(
             project_id=project_id,
-            generation_commit=source_commit,
+            selected_commit=selected_source_commit,
         )
-        if selected_generation_id and source_commit
+        if selected_source_commit
         else None
     )
 
-    if freshness is not None:
-        if freshness.status == "outdated":
-            source_status = "blocked"
-            action_label = "Réanalyser le nouveau commit"
-            action_path = f"/projects/{project_id}/analysis"
-        elif freshness.status == "unavailable":
-            source_status = "warning"
-            action_label = None
-            action_path = None
-        else:
-            source_status = "ready"
-            action_label = None
-            action_path = None
+    source_status = "blocked"
+    source_message = "Sélectionnez un commit du repository avant de continuer."
 
-        checks.insert(
-            0,
-            {
-                "key": "source_freshness",
-                "label": "Version du code source",
-                "description": freshness.message,
-                "status": source_status,
-                "integrationName": None,
-                "actionLabel": action_label,
-                "actionPath": action_path,
-            },
+    if selected_source_commit and selected_generation_id is None:
+        source_message = (
+            f"Aucune génération approuvée n'est disponible pour le commit "
+            f"{selected_source_commit[:8]}. Analysez ce commit puis créez et approuvez "
+            "une nouvelle génération avant le déploiement."
         )
+    elif selected_generation_id is not None and generation_commit != selected_source_commit:
+        source_message = (
+            f"La génération #{selected_generation_id} appartient au commit "
+            f"{generation_commit[:8]}, alors que vous avez sélectionné "
+            f"{selected_source_commit[:8]}. Choisissez une génération du même commit."
+        )
+    elif freshness is not None:
+        source_message = freshness.message
+        if freshness.status == "current":
+            source_status = "ready"
+        elif freshness.status in {"historical", "unavailable"}:
+            # Une ancienne version explicitement choisie reste déployable.
+            # L'indisponibilité du HEAD distant est informative : l'immuabilité
+            # est garantie par le SHA de la génération approuvée.
+            source_status = "warning"
+
+    checks.insert(
+        0,
+        {
+            "key": "source_selection",
+            "label": "Version du code source",
+            "description": source_message,
+            "status": source_status,
+            "integrationName": None,
+            "actionLabel": None,
+            "actionPath": None,
+        },
+    )
 
     return {
         "projectId": project_id,
@@ -689,9 +707,11 @@ def get_project_readiness(
             if selected_generation_id
             else None
         ),
-        "sourceCommit": source_commit or None,
+        "sourceCommit": generation_commit or None,
+        "selectedSourceCommit": selected_source_commit or None,
         "sourceCurrentCommit": freshness.current_commit if freshness else None,
-        "sourceOutdated": freshness.outdated if freshness else False,
+        "sourceOutdated": freshness.historical if freshness else False,
+        "sourceHistorical": freshness.historical if freshness else False,
         "sourceFreshnessStatus": freshness.status if freshness else None,
         "environmentId": environment_id,
         "environmentName": project.get("environment_name"),
@@ -700,6 +720,7 @@ def get_project_readiness(
         "ready": not any(item["status"] == "blocked" for item in checks),
         "checks": checks,
     }
+
 
 def _contract_component_by_id(
     contract: dict[str, Any] | None,
@@ -774,37 +795,52 @@ def _build_release_components(
     return result
 
 
-def _assert_source_is_current(
+def _assert_source_selection_matches_generation(
     *,
-    project_id: int,
     generation_id: int,
     generation_commit: str | None,
+    selected_commit: str | None,
 ) -> None:
-    source_commit = str(generation_commit or "").strip()
-    freshness = inspect_source_freshness(
-        project_id=project_id,
-        generation_commit=source_commit,
-    )
-    if not freshness.outdated:
-        return
+    expected = str(generation_commit or "").strip().lower()
+    selected = str(selected_commit or "").strip().lower()
 
-    raise DeploymentServiceError(
-        "SOURCE_OUTDATED",
-        (
-            f"La génération #{generation_id} utilise le commit "
-            f"{source_commit[:8]}, mais la branche "
-            f"{freshness.branch or 'source'} pointe maintenant sur "
-            f"{(freshness.current_commit or '')[:8]}. "
-            "Relancez l'analyse sur le dernier commit, confirmez-la, "
-            "puis créez une nouvelle génération avant de déployer."
-        ),
-        409,
-    )
+    if not selected:
+        raise DeploymentServiceError(
+            "SOURCE_COMMIT_REQUIRED",
+            "Sélectionnez explicitement le commit à déployer.",
+            400,
+        )
+
+    if not expected:
+        raise DeploymentServiceError(
+            "GENERATION_SOURCE_COMMIT_MISSING",
+            f"Le commit source de la génération #{generation_id} est absent.",
+            409,
+        )
+
+    if selected != expected:
+        raise DeploymentServiceError(
+            "GENERATION_COMMIT_MISMATCH",
+            (
+                f"La génération #{generation_id} appartient au commit {expected[:8]}, "
+                f"mais le commit sélectionné est {selected[:8]}. "
+                "Sélectionnez une génération créée pour ce commit."
+            ),
+            409,
+        )
+
 
 
 def create_deployment(payload: dict[str, Any], user_id: int) -> dict[str, Any]:
     project_id = _safe_int(payload.get("projectId"), "projectId")
     generation_id = _safe_int(payload.get("generationId"), "generationId")
+    selected_commit = str(payload.get("sourceCommit") or "").strip().lower()
+
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", selected_commit):
+        raise DeploymentServiceError(
+            "INVALID_SOURCE_COMMIT",
+            "Le commit source doit être un SHA complet de 40 ou 64 caractères hexadécimaux.",
+        )
 
     version = str(payload.get("version") or "").strip()
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}", version):
@@ -858,10 +894,10 @@ def create_deployment(payload: dict[str, Any], user_id: int) -> dict[str, Any]:
             409,
         )
 
-    _assert_source_is_current(
-        project_id=project_id,
+    _assert_source_selection_matches_generation(
         generation_id=generation_id,
         generation_commit=generation.get("analyzed_commit_sha"),
+        selected_commit=selected_commit,
     )
 
     environment_id = generation.get("default_environment_id")
@@ -955,10 +991,20 @@ def start_deployment(deployment_id: int) -> dict[str, Any]:
             409,
         )
 
-    _assert_source_is_current(
+    generation = repository.find_generation_for_deployment(
         project_id=int(row["project_id"]),
         generation_id=int(row["generation_run_id"]),
-        generation_commit=row.get("source_commit"),
+    )
+    if generation is None:
+        raise DeploymentServiceError(
+            "GENERATION_NOT_FOUND",
+            "La génération du déploiement est introuvable.",
+            409,
+        )
+    _assert_source_selection_matches_generation(
+        generation_id=int(row["generation_run_id"]),
+        generation_commit=generation.get("analyzed_commit_sha"),
+        selected_commit=row.get("source_commit"),
     )
 
     checks = build_preflight(

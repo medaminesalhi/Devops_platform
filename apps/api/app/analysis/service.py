@@ -4,6 +4,10 @@ from typing import Any
 
 from flask import current_app
 
+from app.analysis.git_workspace import (
+    GitWorkspaceError,
+    git_workspace_manager,
+)
 from app.analysis.repository import (
     add_analysis_event,
     confirm_analysis,
@@ -49,18 +53,71 @@ def ensure_analysis_role(roles: set[str]) -> None:
         )
 
 
+def list_project_source_commits(
+    *,
+    project_id: int,
+    limit: int = 30,
+) -> dict[str, Any]:
+    project = find_project_source(project_id)
+    if project is None:
+        raise AnalysisServiceError(
+            "PROJECT_NOT_FOUND",
+            "Le projet est introuvable.",
+            404,
+        )
+
+    source_type = str(project.get("source_type") or "git").lower()
+    if source_type == "zip":
+        version = str(project.get("archive_sha256") or "").strip().lower()
+        commits = []
+        if version:
+            commits.append(
+                {
+                    "sha": version,
+                    "shortSha": version[:12],
+                    "message": "Archive ZIP validée",
+                    "authorName": None,
+                    "authorEmail": None,
+                    "committedAt": None,
+                    "isHead": True,
+                }
+            )
+        return {
+            "sourceType": "zip",
+            "branch": None,
+            "head": version or None,
+            "commits": commits,
+        }
+
+    try:
+        history = git_workspace_manager.list_branch_commits(
+            project=project,
+            limit=limit,
+        )
+    except GitWorkspaceError as error:
+        raise AnalysisServiceError(
+            error.code,
+            error.message,
+            400,
+        ) from error
+
+    return {
+        "sourceType": "git",
+        "branch": history["branch"],
+        "head": history["head"],
+        "commits": history["commits"],
+    }
+
+
 def start_project_analysis(
     *,
     project_id: int,
     user_id: int,
     roles: set[str],
     commit_policy: str,
+    requested_commit_sha: str | None = None,
 ) -> dict[str, Any]:
     ensure_analysis_role(roles)
-
-    # Le choix manuel a été supprimé du frontend.
-    # Le backend sélectionne automatiquement la bonne politique.
-    del commit_policy
 
     project = find_project_source(project_id)
 
@@ -80,7 +137,7 @@ def start_project_analysis(
 
     source_type = str(
         project.get("source_type") or "git"
-    )
+    ).lower()
 
     if source_type == "zip":
         requested_version = project.get("archive_sha256")
@@ -93,8 +150,8 @@ def start_project_analysis(
                 409,
             )
     else:
-        requested_version = project.get("last_source_commit_sha")
-        commit_policy = "latest"
+        requested_version = str(requested_commit_sha or "").strip().lower() or None
+        commit_policy = "validated" if requested_version else "latest"
 
         if not project.get("repository_url"):
             raise AnalysisServiceError(
@@ -124,11 +181,15 @@ def start_project_analysis(
         analysis_run_id=int(analysis_run["id"]),
         level="info",
         step="pending",
-        message="Analyse ajoutée à la file d'exécution.",
+        message=(
+            f"Analyse du commit {requested_version[:12]} ajoutée à la file d'exécution."
+            if requested_version and source_type == "git"
+            else "Analyse ajoutée à la file d'exécution."
+        ),
         details={
             "sourceType": source_type,
             "requestedVersion": requested_version,
-            "automaticVersionSelection": True,
+            "automaticVersionSelection": requested_version is None,
         },
     )
 

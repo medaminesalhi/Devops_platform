@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from app.database import get_database_connection
@@ -902,6 +903,127 @@ def deployment_cancel_requested(deployment_id: int) -> bool:
             (deployment_id,),
         ).fetchone()
     return bool(row and row["cancel_requested"])
+
+
+def heartbeat_deployment(
+    deployment_id: int,
+    worker_name: str,
+) -> bool:
+    """Met à jour le heartbeat du worker qui possède réellement le lock."""
+    with get_database_connection() as connection:
+        row = connection.execute(
+            """
+                UPDATE deployments
+                SET locked_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                  AND status = 'running'
+                  AND locked_by = %s
+                RETURNING id;
+            """,
+            (deployment_id, worker_name),
+        ).fetchone()
+    return row is not None
+
+
+def recover_stale_deployments(
+    stale_seconds: int,
+) -> list[dict[str, Any]]:
+    """Termine les exécutions dont le worker a disparu.
+
+    `locked_at` est utilisé comme heartbeat. Un déploiement annulé devient
+    `cancelled`; sinon il devient `failed` avec une erreur retryable.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(
+        seconds=max(30, int(stale_seconds)),
+    )
+    recovered: list[dict[str, Any]] = []
+
+    with get_database_connection() as connection:
+        rows = connection.execute(
+            """
+                SELECT id, current_stage, cancel_requested, locked_by, locked_at
+                FROM deployments
+                WHERE status = 'running'
+                  AND locked_at IS NOT NULL
+                  AND locked_at < %s
+                ORDER BY locked_at, id
+                FOR UPDATE SKIP LOCKED;
+            """,
+            (cutoff,),
+        ).fetchall()
+
+        for row in rows:
+            deployment_id = int(row["id"])
+            current_stage = str(row.get("current_stage") or "prepare")
+            cancelled = bool(row.get("cancel_requested"))
+            final_status = "cancelled" if cancelled else "failed"
+            error_code = None if cancelled else "DEPLOYMENT_WORKER_HEARTBEAT_LOST"
+            error_message = (
+                None
+                if cancelled
+                else (
+                    "Le worker de déploiement ne répond plus. "
+                    "L'exécution a été libérée automatiquement et peut être relancée."
+                )
+            )
+            label = (
+                "Annulé après arrêt du worker"
+                if cancelled
+                else "Worker de déploiement interrompu"
+            )
+
+            connection.execute(
+                """
+                    UPDATE deployment_steps
+                    SET status = %s,
+                        error_code = %s,
+                        error_message = %s
+                    WHERE deployment_id = %s
+                      AND stage = %s
+                      AND status = 'running';
+                """,
+                (
+                    "cancelled" if cancelled else "failed",
+                    error_code,
+                    error_message,
+                    deployment_id,
+                    current_stage,
+                ),
+            )
+
+            connection.execute(
+                """
+                    UPDATE deployments
+                    SET status = %s,
+                        current_stage_label = %s,
+                        error_code = %s,
+                        error_message = %s,
+                        finished_at = CURRENT_TIMESTAMP,
+                        locked_at = NULL,
+                        locked_by = NULL
+                    WHERE id = %s;
+                """,
+                (
+                    final_status,
+                    label,
+                    error_code,
+                    error_message,
+                    deployment_id,
+                ),
+            )
+
+            recovered.append(
+                {
+                    "id": deployment_id,
+                    "status": final_status,
+                    "stage": current_stage,
+                    "previousWorker": row.get("locked_by"),
+                    "errorCode": error_code,
+                    "errorMessage": error_message,
+                }
+            )
+
+    return recovered
 
 
 def claim_next_deployment(worker_name: str) -> dict[str, Any] | None:

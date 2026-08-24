@@ -75,6 +75,16 @@ def _optional_integer(name: str) -> int | None:
     return value if value > 0 else None
 
 
+def _optional_string(name: str, maximum: int = 100) -> str | None:
+    raw = request.args.get(name)
+    if raw is None:
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+    return value[:maximum]
+
+
 def _json_payload() -> dict[str, Any]:
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
@@ -144,11 +154,13 @@ def deployment_options_route():
 def project_readiness_route(project_id: int):
     try:
         generation_id = _optional_integer("generationId")
+        selected_commit = _optional_string("sourceCommit")
         return _success(
             {
                 "readiness": get_project_readiness(
                     project_id,
                     generation_id=generation_id,
+                    selected_commit=selected_commit,
                 )
             }
         )

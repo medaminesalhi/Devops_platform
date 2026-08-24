@@ -10,36 +10,38 @@ from app.analysis.repository import find_project_source
 @dataclass(frozen=True)
 class SourceFreshness:
     status: str
-    generation_commit: str
+    selected_commit: str
     current_commit: str | None
     branch: str | None
     message: str
 
     @property
-    def outdated(self) -> bool:
-        return self.status == "outdated"
+    def historical(self) -> bool:
+        return self.status == "historical"
 
     def to_dict(self) -> dict[str, Any]:
-        return {**asdict(self), "outdated": self.outdated}
+        return {**asdict(self), "historical": self.historical}
 
 
 def inspect_source_freshness(
     *,
     project_id: int,
-    generation_commit: str | None,
+    selected_commit: str | None,
 ) -> SourceFreshness:
-    """Compare une génération immuable avec la source distante actuelle.
+    """Compare le commit explicitement sélectionné avec le HEAD distant.
 
-    Cette fonction ne remplace jamais le commit de la génération. Un nouveau
-    commit doit déclencher une nouvelle analyse puis une nouvelle génération.
+    Une version antérieure n'est plus considérée comme une erreur : si
+    l'utilisateur la choisit explicitement et qu'une génération approuvée lui
+    correspond, elle peut être redéployée (rollback volontaire). Le HEAD sert
+    seulement à indiquer si la sélection est la version courante ou historique.
     """
-    expected = str(generation_commit or "").strip()
+    selected = str(selected_commit or "").strip().lower()
     project = find_project_source(project_id)
 
     if project is None:
         return SourceFreshness(
             status="unavailable",
-            generation_commit=expected,
+            selected_commit=selected,
             current_commit=None,
             branch=None,
             message="La source du projet est introuvable.",
@@ -47,23 +49,21 @@ def inspect_source_freshness(
 
     source_type = str(project.get("source_type") or "git").lower()
     if source_type != "git":
-        # Les archives restent immuables dans le workflow actuel. La détection
-        # de HEAD distant concerne uniquement les projets Git.
         return SourceFreshness(
             status="current",
-            generation_commit=expected,
-            current_commit=expected or None,
+            selected_commit=selected,
+            current_commit=selected or None,
             branch=None,
-            message="La génération utilise la source approuvée de ce projet.",
+            message="La révision source sélectionnée est prête à être utilisée.",
         )
 
     branch = str(project.get("default_branch") or "main")
     try:
-        current = git_workspace_manager.get_branch_head(project=project)
+        current = git_workspace_manager.get_branch_head(project=project).lower()
     except GitWorkspaceError as error:
         return SourceFreshness(
             status="unavailable",
-            generation_commit=expected,
+            selected_commit=selected,
             current_commit=None,
             branch=branch,
             message=(
@@ -72,32 +72,35 @@ def inspect_source_freshness(
             ),
         )
 
-    if not expected:
+    if not selected:
         return SourceFreshness(
             status="unavailable",
-            generation_commit="",
+            selected_commit="",
             current_commit=current,
             branch=branch,
-            message="Le commit source de la génération est absent.",
+            message="Aucun commit n'a été sélectionné.",
         )
 
-    outdated = current != expected
-    if outdated:
-        message = (
-            f"Un nouveau commit existe sur {branch} : {current[:8]}. "
-            f"La génération sélectionnée utilise {expected[:8]}. "
-            "Relancez l'analyse, confirmez-la puis créez une nouvelle génération."
-        )
-    else:
-        message = (
-            f"La génération correspond au dernier commit de {branch} "
-            f"({current[:8]})."
+    if selected == current:
+        return SourceFreshness(
+            status="current",
+            selected_commit=selected,
+            current_commit=current,
+            branch=branch,
+            message=(
+                f"Le commit sélectionné est le dernier commit de {branch} "
+                f"({current[:8]})."
+            ),
         )
 
     return SourceFreshness(
-        status="outdated" if outdated else "current",
-        generation_commit=expected,
+        status="historical",
+        selected_commit=selected,
         current_commit=current,
         branch=branch,
-        message=message,
+        message=(
+            f"Version antérieure sélectionnée : {selected[:8]}. "
+            f"Le dernier commit de {branch} est {current[:8]}. "
+            "Le déploiement reste autorisé car cette version a été choisie explicitement."
+        ),
     )

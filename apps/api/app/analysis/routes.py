@@ -20,6 +20,7 @@ from app.analysis.service import (
     get_latest_project_analysis,
     get_project_analysis,
     get_project_analysis_events,
+    list_project_source_commits,
     start_project_analysis,
     update_analysis_component,
 )
@@ -267,6 +268,46 @@ def analysis_to_json(
     }
 
 
+@analysis_blueprint.get(
+    "/<int:project_id>/source/commits"
+)
+@require_auth
+@require_project_access
+def source_commits_route(
+    project_id: int,
+):
+    raw_limit = request.args.get("limit", "30")
+    try:
+        limit = int(raw_limit)
+    except (TypeError, ValueError):
+        return error_response(
+            "INVALID_LIMIT",
+            "La limite de commits est invalide.",
+            400,
+        )
+
+    try:
+        history = list_project_source_commits(
+            project_id=project_id,
+            limit=max(1, min(limit, 100)),
+        )
+    except AnalysisServiceError as error:
+        return error_response(
+            error.code,
+            error.message,
+            error.http_status,
+        )
+
+    return jsonify(
+        {
+            "success": True,
+            "data": {
+                "source": history,
+            },
+        }
+    )
+
+
 @analysis_blueprint.post(
     "/<int:project_id>/analyses"
 )
@@ -297,6 +338,9 @@ def start_analysis_route(
 
             commit_policy=
                 data["commit_policy"],
+
+            requested_commit_sha=
+                data["requested_commit_sha"],
         )
 
     except AnalysisValidationError as error:
