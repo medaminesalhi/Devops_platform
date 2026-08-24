@@ -75,7 +75,7 @@ export class NewDeployment implements OnInit {
             this.selectedGenerationId.set(generation.id);
             this.version.set(this.suggestVersion(generation.sourceCommit));
           }
-          this.loadReadiness(project.id);
+          this.loadReadiness(project.id, generation?.id ?? null);
         },
         error: error => this.errorMessage.set(this.resolveError(error)),
       });
@@ -89,14 +89,22 @@ export class NewDeployment implements OnInit {
     this.selectedGenerationId.set(generation?.id ?? null);
     this.version.set(generation ? this.suggestVersion(generation.sourceCommit) : '');
     this.readiness.set(null);
-    if (project) this.loadReadiness(project.id);
+    if (project) this.loadReadiness(project.id, generation?.id ?? null);
   }
 
   selectGeneration(value: string): void {
     const generationId = Number(value);
-    this.selectedGenerationId.set(Number.isInteger(generationId) ? generationId : null);
-    const generation = this.selectedProject()?.generations.find(item => item.id === generationId) ?? null;
+    const selectedId = Number.isInteger(generationId) ? generationId : null;
+    this.selectedGenerationId.set(selectedId);
+
+    const generation = this.selectedProject()?.generations.find(
+      item => item.id === generationId,
+    ) ?? null;
     if (generation) this.version.set(this.suggestVersion(generation.sourceCommit));
+
+    const projectId = this.selectedProjectId();
+    this.readiness.set(null);
+    if (projectId) this.loadReadiness(projectId, selectedId);
   }
 
   setSyncMode(value: DeploymentSyncMode): void {
@@ -105,7 +113,7 @@ export class NewDeployment implements OnInit {
 
   recheck(): void {
     const projectId = this.selectedProjectId();
-    if (projectId) this.loadReadiness(projectId);
+    if (projectId) this.loadReadiness(projectId, this.selectedGenerationId());
   }
 
   createAndStart(): void {
@@ -139,10 +147,10 @@ export class NewDeployment implements OnInit {
     return status === 'ready' ? 'Prêt' : status === 'warning' ? 'À vérifier' : 'Bloquant';
   }
 
-  private loadReadiness(projectId: number): void {
+  private loadReadiness(projectId: number, generationId: number | null): void {
     this.isChecking.set(true);
     this.errorMessage.set(null);
-    this.deploymentsService.getProjectReadiness(projectId)
+    this.deploymentsService.getProjectReadiness(projectId, generationId)
       .pipe(finalize(() => this.isChecking.set(false)))
       .subscribe({
         next: readiness => this.readiness.set(readiness),

@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import re
 import shutil
+import signal
 import subprocess
 import tarfile
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -126,6 +129,45 @@ class CommandRunner:
         self.deployment_id = deployment_id
         self.logger = logger
 
+    @staticmethod
+    def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
+        """Arrête la commande et ses enfants (npm -> vite, docker, git...)."""
+        if process.poll() is not None:
+            return
+
+        try:
+            if os.name != "nt":
+                os.killpg(process.pid, signal.SIGTERM)
+            else:
+                process.terminate()
+        except (ProcessLookupError, PermissionError):
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                return
+
+        try:
+            process.wait(timeout=10)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+
+        try:
+            if os.name != "nt":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+        except (ProcessLookupError, PermissionError):
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            pass
+
     def run(
         self,
         command: list[str],
@@ -158,6 +200,9 @@ class CommandRunner:
                 encoding="utf-8",
                 errors="replace",
                 bufsize=1,
+                # Nouveau groupe de processus : un cancel tue aussi npm/vite
+                # ou tout autre enfant lancé par la commande principale.
+                start_new_session=(os.name != "nt"),
             )
         except FileNotFoundError as error:
             raise DeploymentExecutionError(
@@ -175,35 +220,34 @@ class CommandRunner:
 
         output_lines: list[str] = []
         started = time.monotonic()
-
         assert process.stdout is not None
+
+        output_queue: queue.Queue[str | None] = queue.Queue()
+
+        def read_stdout() -> None:
+            # readline peut bloquer, mais uniquement dans ce thread. Le thread
+            # principal reste libre pour vérifier cancel_requested et timeout.
+            try:
+                for line in iter(process.stdout.readline, ""):
+                    output_queue.put(line)
+            finally:
+                output_queue.put(None)
+
+        reader = threading.Thread(
+            target=read_stdout,
+            name=f"deployment-{self.deployment_id}-stdout",
+            daemon=True,
+        )
+        reader.start()
+        reader_finished = False
+
         while True:
             if repository.deployment_cancel_requested(self.deployment_id):
-                process.terminate()
-                try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
+                self._terminate_process_tree(process)
                 raise DeploymentCancelled("Annulation demandée par l’utilisateur.")
 
-            line = process.stdout.readline()
-            if line:
-                normalized = sanitize_log(line.rstrip())
-                output_lines.append(normalized)
-                self.logger.write(
-                    scope,
-                    "info",
-                    normalized,
-                    stage=stage,
-                    component_name=component_name,
-                )
-            elif process.poll() is not None:
-                break
-            else:
-                time.sleep(0.1)
-
             if time.monotonic() - started > timeout_seconds:
-                process.kill()
+                self._terminate_process_tree(process)
                 raise DeploymentExecutionError(
                     "COMMAND_TIMEOUT",
                     f"La commande {command[0]} a dépassé {timeout_seconds} secondes.",
@@ -212,6 +256,28 @@ class CommandRunner:
                     retryable=True,
                     component_name=component_name,
                 )
+
+            try:
+                line = output_queue.get(timeout=0.25)
+            except queue.Empty:
+                line = "__SAPIXI_NO_OUTPUT__"
+
+            if line is None:
+                reader_finished = True
+            elif line != "__SAPIXI_NO_OUTPUT__":
+                normalized = sanitize_log(line.rstrip())
+                if normalized:
+                    output_lines.append(normalized)
+                    self.logger.write(
+                        scope,
+                        "info",
+                        normalized,
+                        stage=stage,
+                        component_name=component_name,
+                    )
+
+            if process.poll() is not None and reader_finished and output_queue.empty():
+                break
 
         return_code = process.wait()
         output = "\n".join(output_lines)
@@ -1720,12 +1786,10 @@ class KubernetesProvider:
         deployment: dict[str, Any],
         logger: DeploymentLogger,
         connection: dict[str, Any],
-        contract: dict[str, Any] | None = None,
     ) -> None:
         self.deployment = deployment
         self.logger = logger
         self.connection = connection
-        self.contract = contract or {}
         self.base_url = str(connection.get("base_url") or "").rstrip("/")
         self.verify_ssl = bool(connection.get("verify_ssl", True))
         self.secret = decrypt_credential(connection.get("secret_ciphertext"))
@@ -1812,45 +1876,6 @@ class KubernetesProvider:
         if seconds < 86400:
             return f"{seconds // 3600} h"
         return f"{seconds // 86400} j"
-
-    def _expected_ingresses(self) -> dict[str, dict[str, str]]:
-        """Retourne les Ingress que le contrat confirmé demande réellement."""
-        project = self.contract.get("project") or {}
-        project_slug = slug(
-            str(
-                project.get("slug")
-                or self.deployment.get("project_slug")
-                or "application"
-            )
-        )
-
-        expected: dict[str, dict[str, str]] = {}
-
-        for component in self.contract.get("components") or []:
-            if not isinstance(component, dict):
-                continue
-
-            ingress = component.get("ingress") or {}
-            if not isinstance(ingress, dict) or not bool(ingress.get("enabled")):
-                continue
-
-            component_slug = slug(
-                str(
-                    component.get("slug")
-                    or component.get("name")
-                    or "application"
-                )
-            )
-
-            # Même convention que le fullname Helm généré par SApixi.
-            name = f"{project_slug}-{component_slug}"[:63].rstrip("-")
-
-            expected[name] = {
-                "host": str(ingress.get("host") or "").strip(),
-                "className": str(ingress.get("className") or "").strip(),
-            }
-
-        return expected
 
     def observe(self) -> list[dict[str, Any]]:
         namespace = str(self.deployment.get("namespace") or "default")
@@ -1965,38 +1990,18 @@ class KubernetesProvider:
             2,
             int(current_app.config.get("DEPLOYMENT_HEALTH_POLL_SECONDS", 5)),
         )
-
-        expected_ingresses = self._expected_ingresses()
-
         started = time.monotonic()
         latest: list[dict[str, Any]] = []
-        last_missing_ingresses: list[str] = []
-        last_progressing_ingresses: list[str] = []
-
         while time.monotonic() - started < timeout_seconds:
             if repository.deployment_cancel_requested(int(self.deployment["id"])):
                 raise DeploymentCancelled("Annulation demandée par l’utilisateur.")
-
             latest = self.observe()
             repository.replace_resources(int(self.deployment["id"]), latest)
-
-            # Les workloads restent la base de la santé applicative.
             workloads = [
-                item
-                for item in latest
-                if item["kind"] in {"deployment", "pod", "job"}
+                item for item in latest if item["kind"] in {"deployment", "pod", "job"}
             ]
-            degraded = [
-                item
-                for item in workloads
-                if item["health"] == "degraded"
-            ]
-            progressing = [
-                item
-                for item in workloads
-                if item["health"] == "progressing"
-            ]
-
+            degraded = [item for item in workloads if item["health"] == "degraded"]
+            progressing = [item for item in workloads if item["health"] == "progressing"]
             if degraded:
                 names = ", ".join(item["name"] for item in degraded[:5])
                 raise DeploymentExecutionError(
@@ -2007,102 +2012,15 @@ class KubernetesProvider:
                     retryable=False,
                     requires_new_generation=True,
                 )
-
-            # Un Ingress demandé dans le contrat doit réellement exister
-            # après la synchronisation Argo CD.
-            actual_ingresses = {
-                str(item.get("name") or ""): item
-                for item in latest
-                if item.get("kind") == "ingress"
-            }
-
-            last_missing_ingresses = sorted(
-                set(expected_ingresses) - set(actual_ingresses)
-            )
-
-            last_progressing_ingresses = sorted(
-                name
-                for name in expected_ingresses
-                if name in actual_ingresses
-                and actual_ingresses[name].get("health") != "healthy"
-            )
-
-            if (
-                workloads
-                and not progressing
-                and not last_missing_ingresses
-                and not last_progressing_ingresses
-            ):
-                for name, expected in expected_ingresses.items():
-                    resource = actual_ingresses.get(name)
-                    if resource is None:
-                        continue
-
-                    url = str(resource.get("url") or "").strip()
-                    host = str(expected.get("host") or "").strip()
-
-                    destination = (
-                        url
-                        or (f"http://{host}" if host else "")
-                    )
-
-                    self.logger.write(
-                        "kubernetes",
-                        "success",
-                        (
-                            f"Ingress appliqué : {name}"
-                            + (f" → {destination}" if destination else "")
-                        ),
-                        stage="health",
-                    )
-
+            if workloads and not progressing:
                 return latest
-
-            if last_missing_ingresses:
-                self.logger.write(
-                    "kubernetes",
-                    "info",
-                    (
-                        "En attente de l’application des Ingress par Argo CD : "
-                        + ", ".join(last_missing_ingresses)
-                    ),
-                    stage="health",
-                )
-            elif last_progressing_ingresses:
-                self.logger.write(
-                    "kubernetes",
-                    "info",
-                    (
-                        "Les Ingress sont présents mais progressent encore : "
-                        + ", ".join(last_progressing_ingresses)
-                    ),
-                    stage="health",
-                )
-            else:
-                self.logger.write(
-                    "kubernetes",
-                    "info",
-                    "Les ressources Kubernetes progressent encore…",
-                    stage="health",
-                )
-
-            time.sleep(poll_seconds)
-
-        if last_missing_ingresses or last_progressing_ingresses:
-            pending = sorted(
-                set(last_missing_ingresses)
-                | set(last_progressing_ingresses)
-            )
-            raise DeploymentExecutionError(
-                "INGRESS_NOT_APPLIED",
-                (
-                    "Argo CD n’a pas rendu disponibles les Ingress attendus : "
-                    + ", ".join(pending)
-                ),
+            self.logger.write(
+                "kubernetes",
+                "info",
+                "Les ressources Kubernetes progressent encore…",
                 stage="health",
-                title="Ingress non appliqué",
-                retryable=True,
             )
+            time.sleep(poll_seconds)
 
         raise DeploymentExecutionError(
             "HEALTH_TIMEOUT",
@@ -2111,4 +2029,3 @@ class KubernetesProvider:
             title="Délai de santé dépassé",
             retryable=True,
         )
-

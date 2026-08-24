@@ -141,7 +141,6 @@ class DeploymentPipeline:
             deployment=deployment,
             logger=self.logger,
             connection=self.kubernetes_connection,
-            contract=self.contract,
         )
 
     @staticmethod
@@ -175,8 +174,13 @@ class DeploymentPipeline:
             )
         return connection
 
+    def _raise_if_cancel_requested(self) -> None:
+        if repository.deployment_cancel_requested(self.deployment_id):
+            raise DeploymentCancelled("Annulation demandée par l’utilisateur.")
+
     def run(self) -> None:
         try:
+            self._raise_if_cancel_requested()
             # Un vrai préflight est exécuté avant les étapes coûteuses.
             # En mode prepare_only, Argo CD/Kubernetes ne seront pas utilisés.
             if self.deployment.get("sync_mode") != "prepare_only":
@@ -187,7 +191,9 @@ class DeploymentPipeline:
                     stage="prepare",
                 )
                 self.argocd_provider.preflight()
+                self._raise_if_cancel_requested()
                 self.kubernetes_provider.preflight()
+                self._raise_if_cancel_requested()
             self._run_steps()
         except DeploymentCancelled:
             self._mark_cancelled()
@@ -209,6 +215,7 @@ class DeploymentPipeline:
     def _run_steps(self) -> None:
         steps = repository.list_deployment_steps(self.deployment_id)
         for step in steps:
+            self._raise_if_cancel_requested()
             status = str(step.get("status") or "pending")
             if status in {"succeeded", "skipped"}:
                 continue
@@ -239,6 +246,7 @@ class DeploymentPipeline:
                 return
 
             self._run_stage(stage)
+            self._raise_if_cancel_requested()
             self._refresh_progress(stage)
 
             if stage == "gitops" and self.deployment.get("sync_mode") == "prepare_only":
@@ -382,7 +390,8 @@ class DeploymentPipeline:
         )
 
     def _mark_cancelled(self) -> None:
-        current_stage = str(self.deployment.get("current_stage") or "prepare")
+        current = repository.find_deployment(self.deployment_id) or self.deployment
+        current_stage = str(current.get("current_stage") or "prepare")
         repository.update_step(
             deployment_id=self.deployment_id,
             stage=current_stage,
@@ -392,6 +401,9 @@ class DeploymentPipeline:
             self.deployment_id,
             status="cancelled",
             current_stage_label="Annulé par l’utilisateur",
+            cancel_requested=True,
+            error_code=None,
+            error_message=None,
             finished_at=datetime.now(timezone.utc),
             locked_at=None,
             locked_by=None,

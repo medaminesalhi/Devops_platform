@@ -488,21 +488,60 @@ class GitLabAdapter(
         )
 
 
+class GitHubAdapter(
+    BaseIntegrationAdapter
+):
+    def api_base_url(
+        self,
+        base_url: str,
+    ) -> str:
+        parsed = urlparse(base_url)
+        hostname = (parsed.hostname or "").lower()
+
+        if hostname in {"github.com", "www.github.com"}:
+            return "https://api.github.com"
+
+        # GitHub Enterprise Server expose l'API REST sous /api/v3.
+        return base_url.rstrip("/") + "/api/v3"
+
+    def build_request(
+        self,
+        connection: dict[str, Any],
+        credential: str | None,
+    ) -> HttpRequestDefinition:
+        headers = self.default_headers()
+        headers["Accept"] = "application/vnd.github+json"
+        headers["X-GitHub-Api-Version"] = "2022-11-28"
+
+        if credential:
+            headers["Authorization"] = f"Bearer {credential}"
+
+        api_base_url = self.api_base_url(
+            str(connection.get("base_url") or "")
+        )
+
+        return HttpRequestDefinition(
+            url=self.build_url(api_base_url, "/user"),
+            headers=headers,
+            basic_auth=None,
+            credential_used=bool(credential),
+        )
+
+
 class NexusAdapter(
     BaseIntegrationAdapter
 ):
     """
-    Validation de la connexion Nexus.
+    Nexus expose deux points d'accès distincts :
 
-    Une intégration Nexus représente uniquement l'accès au serveur
-    Nexus (API + authentification). Aucun repository Docker ou Helm
-    n'est attaché à la connexion.
+    - base_url : API REST Nexus, par exemple
+      http://100.96.79.120:8081
+    - registry_url : connecteur Docker du repository hosted,
+      par exemple http://100.96.79.120:8084
 
-    Les repositories sont découverts dynamiquement puis sélectionnés
-    plus tard dans le workflow projet/déploiement.
+    Le test valide l'API REST, le repository Docker sélectionné
+    et la joignabilité de l'endpoint Registry V2.
     """
-
-    endpoint_path = "/service/rest/v1/repositories"
 
     def build_request(
         self,
@@ -532,7 +571,7 @@ class NexusAdapter(
         return HttpRequestDefinition(
             url=self.build_url(
                 base_url,
-                self.endpoint_path,
+                "/service/rest/v1/repositories",
             ),
             headers=headers,
             basic_auth=basic_auth,
@@ -544,17 +583,16 @@ class NexusAdapter(
         connection: dict[str, Any],
         credential: str | None,
     ) -> IntegrationTestResult:
-        """
-        Vérifie seulement :
-        - que l'API Nexus répond ;
-        - que l'authentification permet de lister les repositories.
-
-        Le choix et le contrôle d'un repository précis appartiennent
-        au workflow projet/déploiement, pas à la page Intégrations.
-        """
-
         base_url = str(
             connection.get("base_url")
+            or ""
+        ).strip()
+        registry_url = str(
+            connection.get("registry_url")
+            or ""
+        ).strip()
+        repository_name = str(
+            connection.get("registry_repository")
             or ""
         ).strip()
 
@@ -563,9 +601,7 @@ class NexusAdapter(
                 status="not_configured",
                 http_status=None,
                 latency_ms=0,
-                message=(
-                    "L'URL de l'API Nexus n'est pas configurée."
-                ),
+                message="L'URL de l'API Nexus n'est pas configurée.",
                 checked_url=None,
                 server_reachable=False,
                 authenticated=None,
@@ -586,7 +622,7 @@ class NexusAdapter(
         started_at = time.perf_counter()
 
         try:
-            response = requests.get(
+            api_response = requests.get(
                 request_definition.url,
                 headers=request_definition.headers,
                 auth=request_definition.basic_auth,
@@ -600,29 +636,28 @@ class NexusAdapter(
                 * 1000
             )
 
-            if response.status_code in {401, 403}:
+            if api_response.status_code in {401, 403}:
                 return IntegrationTestResult(
                     status="degraded",
-                    http_status=response.status_code,
+                    http_status=api_response.status_code,
                     latency_ms=latency_ms,
                     message=(
                         "L'API Nexus répond, mais le credential "
-                        "est absent, invalide ou ne permet pas "
-                        "de lister les repositories."
+                        "est absent, invalide ou insuffisant."
                     ),
                     checked_url=request_definition.url,
                     server_reachable=True,
                     authenticated=False,
                 )
 
-            if not 200 <= response.status_code < 400:
+            if not 200 <= api_response.status_code < 400:
                 return IntegrationTestResult(
                     status="offline",
-                    http_status=response.status_code,
+                    http_status=api_response.status_code,
                     latency_ms=latency_ms,
                     message=(
                         "L'API Nexus a retourné HTTP "
-                        f"{response.status_code}."
+                        f"{api_response.status_code}."
                     ),
                     checked_url=request_definition.url,
                     server_reachable=True,
@@ -630,11 +665,11 @@ class NexusAdapter(
                 )
 
             try:
-                repositories = response.json()
+                repositories = api_response.json()
             except ValueError:
                 return IntegrationTestResult(
                     status="degraded",
-                    http_status=response.status_code,
+                    http_status=api_response.status_code,
                     latency_ms=latency_ms,
                     message=(
                         "L'API Nexus répond, mais la liste des "
@@ -649,14 +684,18 @@ class NexusAdapter(
                     ),
                 )
 
-            if not isinstance(repositories, list):
+            # Une connexion Nexus ne nécessite pas encore
+            # de repository Docker. Celui-ci sera sélectionné
+            # plus tard au niveau du projet.
+            if not registry_url or not repository_name:
                 return IntegrationTestResult(
-                    status="degraded",
-                    http_status=response.status_code,
+                    status="online",
+                    http_status=api_response.status_code,
                     latency_ms=latency_ms,
                     message=(
-                        "L'API Nexus répond, mais le format de la "
-                        "liste des repositories est inattendu."
+                        "API Nexus accessible. Les repositories sont "
+                        "détectables. Le repository Docker sera "
+                        "sélectionné au niveau du projet."
                     ),
                     checked_url=request_definition.url,
                     server_reachable=True,
@@ -667,50 +706,133 @@ class NexusAdapter(
                     ),
                 )
 
-            repository_count = len(
-                [
+            repository_item = next(
+                (
                     item
                     for item in repositories
                     if isinstance(item, dict)
-                ]
+                    and str(item.get("name") or "")
+                    == repository_name
+                ),
+                None,
             )
 
-            docker_count = len(
-                [
-                    item
-                    for item in repositories
-                    if isinstance(item, dict)
-                    and str(
-                        item.get("format")
-                        or ""
-                    ).lower() == "docker"
-                ]
+            if repository_item is None:
+                return IntegrationTestResult(
+                    status="degraded",
+                    http_status=api_response.status_code,
+                    latency_ms=latency_ms,
+                    message=(
+                        f"Le repository Nexus '{repository_name}' "
+                        "n'existe pas."
+                    ),
+                    checked_url=request_definition.url,
+                    server_reachable=True,
+                    authenticated=(
+                        True
+                        if request_definition.credential_used
+                        else None
+                    ),
+                )
+
+            repository_format = str(
+                repository_item.get("format")
+                or ""
+            ).lower()
+            repository_type = str(
+                repository_item.get("type")
+                or ""
+            ).lower()
+
+            if repository_format != "docker":
+                return IntegrationTestResult(
+                    status="degraded",
+                    http_status=api_response.status_code,
+                    latency_ms=latency_ms,
+                    message=(
+                        f"Le repository '{repository_name}' existe, "
+                        "mais son format n'est pas Docker."
+                    ),
+                    checked_url=request_definition.url,
+                    server_reachable=True,
+                    authenticated=(
+                        True
+                        if request_definition.credential_used
+                        else None
+                    ),
+                )
+
+            if repository_type != "hosted":
+                return IntegrationTestResult(
+                    status="degraded",
+                    http_status=api_response.status_code,
+                    latency_ms=latency_ms,
+                    message=(
+                        f"Le repository '{repository_name}' doit être "
+                        "de type hosted pour recevoir les images."
+                    ),
+                    checked_url=request_definition.url,
+                    server_reachable=True,
+                    authenticated=(
+                        True
+                        if request_definition.credential_used
+                        else None
+                    ),
+                )
+
+            registry_checked_url = self.build_url(
+                registry_url,
+                "/v2/",
+            )
+            registry_response = requests.get(
+                registry_checked_url,
+                headers=self.default_headers(),
+                timeout=timeout_seconds,
+                verify=verify,
+                allow_redirects=False,
             )
 
-            helm_count = len(
-                [
-                    item
-                    for item in repositories
-                    if isinstance(item, dict)
-                    and str(
-                        item.get("format")
-                        or ""
-                    ).lower() == "helm"
-                ]
+            total_latency_ms = round(
+                (time.perf_counter() - started_at)
+                * 1000
             )
+
+            # Un Docker Registry peut répondre 200 lorsque l'accès
+            # anonyme est autorisé, ou 401/403 avant le flux Bearer.
+            # Dans les trois cas le connecteur /v2/ est bien joignable.
+            if registry_response.status_code not in {
+                200,
+                401,
+                403,
+            }:
+                return IntegrationTestResult(
+                    status="degraded",
+                    http_status=registry_response.status_code,
+                    latency_ms=total_latency_ms,
+                    message=(
+                        "L'API Nexus et le repository sont valides, "
+                        "mais le connecteur Docker a retourné HTTP "
+                        f"{registry_response.status_code}."
+                    ),
+                    checked_url=registry_checked_url,
+                    server_reachable=True,
+                    authenticated=(
+                        True
+                        if request_definition.credential_used
+                        else None
+                    ),
+                )
 
             return IntegrationTestResult(
                 status="online",
-                http_status=response.status_code,
-                latency_ms=latency_ms,
+                http_status=registry_response.status_code,
+                latency_ms=total_latency_ms,
                 message=(
-                    "API Nexus accessible. "
-                    f"{repository_count} repository(s) détecté(s), "
-                    f"dont {docker_count} Docker et {helm_count} Helm. "
-                    "La sélection des repositories se fera dans le "
-                    "workflow projet/déploiement."
+                    "API Nexus accessible, repository Docker "
+                    f"'{repository_name}' détecté et registre "
+                    f"'{registry_url}' joignable."
                 ),
-                checked_url=request_definition.url,
+                checked_url=registry_checked_url,
                 server_reachable=True,
                 authenticated=(
                     True
@@ -725,8 +847,8 @@ class NexusAdapter(
                 http_status=None,
                 latency_ms=0,
                 message=(
-                    "Le certificat TLS Nexus n'est pas reconnu : "
-                    f"{error}"
+                    "Le certificat TLS Nexus/Registry n'est pas "
+                    f"reconnu : {error}"
                 ),
                 checked_url=request_definition.url,
                 server_reachable=False,
@@ -739,8 +861,8 @@ class NexusAdapter(
                 http_status=None,
                 latency_ms=timeout_seconds * 1000,
                 message=(
-                    "Nexus n'a pas répondu en "
-                    f"{timeout_seconds} secondes."
+                    "Nexus ou son registre Docker n'a pas répondu "
+                    f"en {timeout_seconds} secondes."
                 ),
                 checked_url=request_definition.url,
                 server_reachable=False,
@@ -753,9 +875,9 @@ class NexusAdapter(
                 http_status=None,
                 latency_ms=0,
                 message=(
-                    "Connexion impossible vers Nexus. Vérifiez "
-                    "l'URL, le port, le routage et le pare-feu : "
-                    f"{error}"
+                    "Connexion impossible vers Nexus ou son registre "
+                    "Docker. Vérifiez l'URL, le port, le routage et "
+                    f"le pare-feu : {error}"
                 ),
                 checked_url=request_definition.url,
                 server_reachable=False,
@@ -946,6 +1068,7 @@ ADAPTERS: dict[
     BaseIntegrationAdapter,
 ] = {
     "gitlab": GitLabAdapter(),
+    "github": GitHubAdapter(),
     "nexus": NexusAdapter(),
     "argocd": ArgoCdAdapter(),
     "kubernetes": KubernetesAdapter(),

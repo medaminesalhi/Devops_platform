@@ -43,6 +43,13 @@
 .source-summary article { min-width: 0; }
 .source-summary span { display: block; color: #8b9a9e; font-size: .62rem; text-transform: uppercase; letter-spacing: .05em; }
 .source-summary strong { display: block; overflow: hidden; margin-top: .25rem; color: #36535a; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.source-alert { display: flex; gap: .65rem; margin-top: .7rem; padding: .72rem; border: 1px solid #efc8cc; border-radius: .68rem; background: #fff5f5; }
+.source-alert > span { display: grid; width: 1.7rem; height: 1.7rem; flex: 0 0 1.7rem; place-items: center; border-radius: .5rem; background: #ffe3e6; color: #ba414b; font-size: .72rem; font-weight: 900; }
+.source-alert strong { color: #8f3540; font-size: .72rem; }
+.source-alert p { margin: .18rem 0 .35rem; color: #8b5960; font-size: .64rem; line-height: 1.45; }
+.source-alert b { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.source-alert a { color: #9e3d47; font-size: .63rem; font-weight: 850; text-decoration: none; }
+.source-alert a:hover { text-decoration: underline; }
 .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
 .choice-card { position: relative; display: flex; align-items: flex-start; gap: .62rem; min-height: 7.2rem; padding: .82rem; border: 1px solid #dfe7e9; border-radius: .7rem; background: #fbfcfc; color: inherit; text-align: left; font: inherit; }
 .choice-card:hover { border-color: #b9ced2; background: #fff; }
@@ -66,6 +73,8 @@
 .check-row--blocked .check-row__icon { background: #fff0f1; color: #bd424c; }
 .check-row strong { display: block; color: #38545b; font-size: .7rem; }
 .check-row p { margin: .14rem 0 0; color: #8a999d; font-size: .62rem; line-height: 1.35; }
+.check-row__action { display: inline-flex; margin-top: .28rem; color: #628f19; font-size: .6rem; font-weight: 850; text-decoration: none; }
+.check-row__action:hover { text-decoration: underline; }
 .check-row > small { color: #7d8f94; font-size: .58rem; font-weight: 800; }
 .readiness-result { display: flex; gap: .6rem; margin: .4rem .8rem .8rem; padding: .72rem; border: 1px solid #d9e8ca; border-radius: .65rem; background: #f6faef; }
 .readiness-result > span { display: grid; width: 1.7rem; height: 1.7rem; flex: 0 0 1.7rem; place-items: center; border-radius: .5rem; background: #e8f4d9; color: #63940f; }

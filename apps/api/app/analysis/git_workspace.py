@@ -227,6 +227,53 @@ class GitWorkspaceManager:
             )
 
 
+    def get_branch_head(
+        self,
+        *,
+        project: dict,
+    ) -> str:
+        """Retourne le HEAD distant de la branche sans cloner le repository.
+
+        La prévalidation de déploiement utilise cette méthode pour comparer le
+        commit de la génération approuvée avec le HEAD actuellement publié.
+        Les mêmes credentials HTTPS/SSH et la même politique TLS que pour
+        l'analyse sont réutilisés.
+        """
+        if str(project.get("source_type") or "git").lower() != "git":
+            raise GitWorkspaceError(
+                "GIT_SOURCE_REQUIRED",
+                "La vérification du HEAD distant nécessite une source Git.",
+            )
+
+        environment = os.environ.copy()
+        environment["GIT_TERMINAL_PROMPT"] = "0"
+        environment["GIT_CONFIG_NOSYSTEM"] = "1"
+
+        configured_root = current_app.config.get("ANALYSIS_WORKSPACE_ROOT") or None
+        if configured_root:
+            Path(configured_root).mkdir(parents=True, exist_ok=True)
+
+        with tempfile.TemporaryDirectory(
+            prefix=f"piximind-head-{project['id']}-",
+            dir=configured_root,
+        ) as temporary_directory:
+            auth_path = Path(temporary_directory) / "auth"
+            auth_path.mkdir(parents=True, exist_ok=True)
+
+            repository_url = self.prepare_authentication(
+                project=project,
+                auth_path=auth_path,
+                environment=environment,
+            )
+
+            return self.read_branch_head(
+                repository_url=repository_url,
+                branch=str(project.get("default_branch") or "main"),
+                environment=environment,
+                verify_ssl=bool(project.get("verify_ssl", True)),
+            )
+
+
     def prepare_authentication(
         self,
         *,

@@ -50,6 +50,7 @@ integrations_blueprint = Blueprint(
 
 PROVIDER_TYPES = {
     "gitlab",
+    "github",
     "nexus",
     "argocd",
     "kubernetes",
@@ -77,6 +78,10 @@ ALLOWED_AUTH_TYPES: dict[
         "none",
         "token",
         "basic",
+    },
+
+    "github": {
+        "token",
     },
 
     "nexus": {
@@ -1371,7 +1376,7 @@ def discover_draft_repositories_route():
     if validation_error:
         return error_response("INVALID_CONFIGURATION", validation_error, 400)
 
-    if configuration["provider_type"] not in {"nexus", "gitlab"}:
+    if configuration["provider_type"] not in {"nexus", "gitlab", "github"}:
         return jsonify({"success": True, "data": {"repositories": []}})
 
     temporary_connection = {
@@ -1401,7 +1406,7 @@ def discover_saved_repositories_route(connection_id: int):
     if connection is None:
         return error_response("CONNECTION_NOT_FOUND", "Connexion introuvable.", 404)
 
-    if connection["provider_type"] not in {"nexus", "gitlab"}:
+    if connection["provider_type"] not in {"nexus", "gitlab", "github"}:
         return jsonify({"success": True, "data": {"repositories": []}})
 
     credential = decrypt_credential(connection.get("secret_ciphertext"))

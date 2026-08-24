@@ -143,8 +143,14 @@ def deployment_options_route():
 @require_project_access
 def project_readiness_route(project_id: int):
     try:
+        generation_id = _optional_integer("generationId")
         return _success(
-            {"readiness": get_project_readiness(project_id)}
+            {
+                "readiness": get_project_readiness(
+                    project_id,
+                    generation_id=generation_id,
+                )
+            }
         )
     except Exception as error:
         return _handle_error(error)

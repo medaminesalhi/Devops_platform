@@ -62,9 +62,28 @@
             <div class="source-summary">
               <article><span>Environnement</span><strong>{{ project.environmentName }}</strong></article>
               <article><span>Namespace</span><strong>{{ project.namespace }}</strong></article>
-              <article><span>Commit source</span><strong>{{ selectedGeneration()?.sourceCommit ?? '—' }}</strong></article>
+              <article><span>Commit de la génération</span><strong>{{ selectedGeneration()?.sourceCommit ?? '—' }}</strong></article>
               <article><span>Composants</span><strong>{{ selectedGeneration()?.componentCount ?? 0 }}</strong></article>
             </div>
+
+            @if (readiness()?.sourceOutdated) {
+              <div class="source-alert">
+                <span>!</span>
+                <div>
+                  <strong>Nouveau commit détecté</strong>
+                  <p>
+                    Cette génération utilise
+                    <b>{{ readiness()?.sourceCommit?.slice(0, 8) }}</b>,
+                    alors que la branche distante pointe sur
+                    <b>{{ readiness()?.sourceCurrentCommit?.slice(0, 8) }}</b>.
+                    Une nouvelle analyse et une nouvelle génération sont nécessaires.
+                  </p>
+                  <a [routerLink]="'/projects/' + project.id + '/analysis'">
+                    Réanalyser le nouveau commit →
+                  </a>
+                </div>
+              </div>
+            }
           }
         </section>
 
@@ -76,14 +95,14 @@
 
           <div class="form-grid">
             <label class="field field--full">
-              <span>Tag de version</span>
+              <span>Tag de release / images Docker</span>
               <input
                 type="text"
                 [ngModel]="version()"
                 (ngModelChange)="version.set($event)"
                 placeholder="v1.0.0 ou commit-0e463202"
               />
-              <small>Utilisez un tag immuable. SApixi l’appliquera à toutes les images de la release.</small>
+              <small>Ce tag identifie les images dans Nexus. Il ne sélectionne pas le commit Git à déployer.</small>
             </label>
 
             <label class="field field--full">
@@ -153,7 +172,15 @@
               @for (check of current.checks; track check.key) {
                 <article [class]="'check-row check-row--' + check.status">
                   <span class="check-row__icon">{{ check.status === 'ready' ? '✓' : check.status === 'warning' ? '!' : '×' }}</span>
-                  <div><strong>{{ check.label }}</strong><p>{{ check.description }}</p></div>
+                  <div>
+                    <strong>{{ check.label }}</strong>
+                    <p>{{ check.description }}</p>
+                    @if (check.actionPath && check.actionLabel) {
+                      <a class="check-row__action" [routerLink]="check.actionPath">
+                        {{ check.actionLabel }} →
+                      </a>
+                    }
+                  </div>
                   <small>{{ checkLabel(check.status) }}</small>
                 </article>
               }

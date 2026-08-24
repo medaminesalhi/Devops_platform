@@ -376,6 +376,163 @@ def resolve_gitlab_repository(
     }
 
 
+def _github_api_base_url(
+    connection: dict[str, Any],
+) -> str:
+    base_url = str(connection.get("base_url") or "").rstrip("/")
+    parsed = urlparse(base_url)
+    hostname = (parsed.hostname or "").lower()
+
+    if hostname in {"github.com", "www.github.com"}:
+        return "https://api.github.com"
+
+    return base_url + "/api/v3"
+
+
+def discover_github_repositories(
+    connection: dict[str, Any],
+    credential: str | None,
+) -> list[dict[str, Any]]:
+    if not credential:
+        raise RepositoryDiscoveryError(
+            "Un token GitHub est requis pour découvrir les repositories."
+        )
+
+    api_base = _github_api_base_url(connection)
+    repositories: list[dict[str, Any]] = []
+
+    for page in range(1, 11):
+        payload, _ = _get_json(
+            connection,
+            credential,
+            f"{api_base}/user/repos",
+            params={
+                "affiliation": "owner,collaborator,organization_member",
+                "visibility": "all",
+                "sort": "updated",
+                "direction": "desc",
+                "per_page": 100,
+                "page": page,
+            },
+        )
+
+        if not isinstance(payload, list):
+            raise RepositoryDiscoveryError(
+                "La liste des repositories GitHub est invalide."
+            )
+
+        for raw in payload:
+            if not isinstance(raw, dict):
+                continue
+
+            repository_id = raw.get("id")
+            full_name = str(raw.get("full_name") or raw.get("name") or "").strip()
+            repo_url = str(raw.get("clone_url") or "").strip()
+            if not repository_id or not full_name or not repo_url:
+                continue
+
+            permissions = raw.get("permissions") if isinstance(raw.get("permissions"), dict) else {}
+            repositories.append(
+                {
+                    "provider": "github",
+                    "id": str(repository_id),
+                    "name": full_name,
+                    "label": full_name,
+                    "format": "git",
+                    "type": "repository",
+                    "url": repo_url,
+                    "endpointUrl": repo_url,
+                    "defaultBranch": raw.get("default_branch") or "main",
+                    "projectId": int(repository_id),
+                    "writable": bool(permissions.get("push", False)),
+                    "metadata": {
+                        "webUrl": raw.get("html_url"),
+                        "visibility": raw.get("visibility") or ("private" if raw.get("private") else "public"),
+                        "owner": (raw.get("owner") or {}).get("login") if isinstance(raw.get("owner"), dict) else None,
+                    },
+                }
+            )
+
+        if len(payload) < 100:
+            break
+
+    return repositories
+
+
+def resolve_github_repository(
+    connection: dict[str, Any],
+    credential: str | None,
+    repository_ref: str,
+) -> dict[str, Any]:
+    if not credential:
+        raise RepositoryDiscoveryError(
+            "Un token GitHub est requis pour vérifier ce repository."
+        )
+
+    raw = str(repository_ref or "").strip()
+    if not raw:
+        raise RepositoryDiscoveryError("Le repository GitHub est vide.")
+
+    base_url = str(connection.get("base_url") or "").rstrip("/")
+    base = urlparse(base_url)
+    identifier = raw
+
+    if "://" in raw:
+        parsed = urlparse(raw)
+        if parsed.hostname and base.hostname and parsed.hostname.lower() != base.hostname.lower():
+            raise RepositoryDiscoveryError(
+                "L'URL du repository n'appartient pas au GitHub configuré."
+            )
+        identifier = parsed.path.strip("/")
+
+    identifier = identifier.strip("/")
+    if identifier.endswith(".git"):
+        identifier = identifier[:-4]
+
+    if identifier.count("/") != 1:
+        raise RepositoryDiscoveryError(
+            "Le repository GitHub doit être au format owner/repository."
+        )
+
+    payload, _ = _get_json(
+        connection,
+        credential,
+        f"{_github_api_base_url(connection)}/repos/{quote(identifier, safe='/')}",
+    )
+    if not isinstance(payload, dict):
+        raise RepositoryDiscoveryError(
+            "Le repository GitHub retourné est invalide."
+        )
+
+    repository_id = payload.get("id")
+    full_name = str(payload.get("full_name") or "").strip()
+    repo_url = str(payload.get("clone_url") or "").strip()
+    if not repository_id or not full_name or not repo_url:
+        raise RepositoryDiscoveryError(
+            "Le repository GitHub ne contient pas les informations nécessaires."
+        )
+
+    permissions = payload.get("permissions") if isinstance(payload.get("permissions"), dict) else {}
+    return {
+        "provider": "github",
+        "id": str(repository_id),
+        "name": full_name,
+        "label": full_name,
+        "format": "git",
+        "type": "repository",
+        "url": repo_url,
+        "endpointUrl": repo_url,
+        "defaultBranch": payload.get("default_branch") or "main",
+        "projectId": int(repository_id),
+        "writable": bool(permissions.get("push", False)),
+        "metadata": {
+            "webUrl": payload.get("html_url"),
+            "visibility": payload.get("visibility") or ("private" if payload.get("private") else "public"),
+            "manual": True,
+        },
+    }
+
+
 def discover_repositories(
     connection: dict[str, Any],
     credential: str | None,
@@ -385,4 +542,6 @@ def discover_repositories(
         return discover_nexus_repositories(connection, credential)
     if provider_type == "gitlab":
         return discover_gitlab_repositories(connection, credential)
+    if provider_type == "github":
+        return discover_github_repositories(connection, credential)
     return []

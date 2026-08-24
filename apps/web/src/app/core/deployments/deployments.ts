@@ -275,6 +275,9 @@ export interface ProjectDeploymentReadiness {
   generationId: number | null;
   generationLabel: string | null;
   sourceCommit: string | null;
+  sourceCurrentCommit: string | null;
+  sourceOutdated: boolean;
+  sourceFreshnessStatus: 'current' | 'outdated' | 'unavailable' | null;
   environmentId: number | null;
   environmentName: string | null;
   namespace: string | null;
@@ -344,19 +347,27 @@ export class DeploymentsService {
     return this.respond(this.mockProjectOptions());
   }
 
-  getProjectReadiness(projectId: number): Observable<ProjectDeploymentReadiness> {
+  getProjectReadiness(
+    projectId: number,
+    generationId: number | null = null,
+  ): Observable<ProjectDeploymentReadiness> {
     if (!DEPLOYMENTS_DEMO_MODE) {
+      let params = new HttpParams();
+      if (generationId) params = params.set('generationId', generationId);
+
       return this.http
         .get<ApiResponse<{ readiness: ProjectDeploymentReadiness }>>(
           `/api/deployments/projects/${projectId}/readiness`,
-          { headers: this.headers() },
+          { headers: this.headers(), params },
         )
         .pipe(map(response => response.data.readiness));
     }
 
     const option = this.mockProjectOptions().find(item => item.id === projectId)
       ?? this.mockProjectOptions()[0];
-    const generation = option.generations[0] ?? null;
+    const generation = option.generations.find(item => item.id === generationId)
+      ?? option.generations[0]
+      ?? null;
     const checks = this.defaultPreflight();
 
     return this.respond({
@@ -365,6 +376,9 @@ export class DeploymentsService {
       generationId: generation?.id ?? null,
       generationLabel: generation?.label ?? null,
       sourceCommit: generation?.sourceCommit ?? null,
+      sourceCurrentCommit: generation?.sourceCommit ?? null,
+      sourceOutdated: false,
+      sourceFreshnessStatus: 'current',
       environmentId: option.environmentId,
       environmentName: option.environmentName,
       namespace: option.namespace,
