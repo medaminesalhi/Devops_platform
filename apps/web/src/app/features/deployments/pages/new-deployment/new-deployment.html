@@ -33,7 +33,10 @@
         <section class="panel section-card">
           <header class="section-heading">
             <span>01</span>
-            <div><h2>Version approuvée</h2><p>Choisissez le projet et la génération qui serviront de base.</p></div>
+            <div>
+              <h2>Version source à déployer</h2>
+              <p>Le dernier commit est sélectionné par défaut. Vous pouvez choisir explicitement une version antérieure.</p>
+            </div>
           </header>
 
           <div class="form-grid">
@@ -44,43 +47,103 @@
                   <option [value]="project.id">{{ project.name }}</option>
                 }
               </select>
-              <small>Seuls les projets avec des artefacts approuvés sont disponibles.</small>
+              <small>Seuls les projets possédant au moins une génération approuvée sont proposés.</small>
             </label>
 
             <label class="field">
-              <span>Génération</span>
-              <select [ngModel]="selectedGenerationId()" (ngModelChange)="selectGeneration($event)">
-                @for (generation of selectedProject()?.generations ?? []; track generation.id) {
-                  <option [value]="generation.id">{{ generation.label }} · {{ generation.sourceCommit.slice(0, 8) }}</option>
+              <span>{{ sourceHistory()?.sourceType === 'zip' ? 'Révision source' : 'Commit Git' }}</span>
+              <select
+                [ngModel]="selectedCommitSha() ?? ''"
+                (ngModelChange)="selectCommit($event)"
+                [disabled]="isLoadingCommits()"
+              >
+                @if (isLoadingCommits()) {
+                  <option value="">Chargement des commits…</option>
+                } @else {
+                  @for (commit of commitOptions(); track commit.sha) {
+                    <option [value]="commit.sha">{{ commitLabel(commit) }}</option>
+                  }
                 }
               </select>
-              <small>{{ selectedGeneration()?.approvedArtifactCount ?? 0 }} artefact(s) approuvé(s).</small>
+              <small>
+                @if (sourceHistory()?.branch; as branch) {
+                  Branche suivie : {{ branch }} · {{ commitOptions().length }} version(s) proposée(s).
+                } @else {
+                  La révision source est liée aux générations approuvées.
+                }
+              </small>
+            </label>
+
+            <label class="field field--full">
+              <span>Génération approuvée correspondant à ce commit</span>
+              <select
+                [ngModel]="selectedGenerationId() ?? ''"
+                (ngModelChange)="selectGeneration($event)"
+                [disabled]="matchingGenerations().length === 0"
+              >
+                @if (matchingGenerations().length === 0) {
+                  <option value="">Aucune génération approuvée pour ce commit</option>
+                } @else {
+                  @for (generation of matchingGenerations(); track generation.id) {
+                    <option [value]="generation.id">
+                      {{ generation.label }} · {{ generation.sourceCommit.slice(0, 8) }} · {{ generation.approvedArtifactCount }} artefact(s)
+                    </option>
+                  }
+                }
+              </select>
+              <small>Une génération ne peut être utilisée que pour le commit exact dont elle provient.</small>
             </label>
           </div>
+
+          @if (commitLoadWarning()) {
+            <div class="source-note source-note--warning">
+              <span>!</span>
+              <p>{{ commitLoadWarning() }}</p>
+            </div>
+          }
 
           @if (selectedProject(); as project) {
             <div class="source-summary">
               <article><span>Environnement</span><strong>{{ project.environmentName }}</strong></article>
               <article><span>Namespace</span><strong>{{ project.namespace }}</strong></article>
-              <article><span>Commit de la génération</span><strong>{{ selectedGeneration()?.sourceCommit ?? '—' }}</strong></article>
-              <article><span>Composants</span><strong>{{ selectedGeneration()?.componentCount ?? 0 }}</strong></article>
+              <article><span>Commit sélectionné</span><strong>{{ selectedCommitSha()?.slice(0, 12) ?? '—' }}</strong></article>
+              <article><span>HEAD actuel</span><strong>{{ sourceHistory()?.head?.slice(0, 12) ?? '—' }}</strong></article>
             </div>
 
-            @if (readiness()?.sourceOutdated) {
+            @if (selectedCommit(); as commit) {
+              <div class="commit-detail">
+                <div>
+                  <span>Message</span>
+                  <strong>{{ commit.message }}</strong>
+                </div>
+                <small>{{ commitMeta(commit) }}</small>
+              </div>
+            }
+
+            @if (selectedCommitSha() && matchingGenerations().length === 0) {
               <div class="source-alert">
                 <span>!</span>
                 <div>
-                  <strong>Nouveau commit détecté</strong>
+                  <strong>Ce commit n'a pas encore de génération approuvée</strong>
                   <p>
-                    Cette génération utilise
-                    <b>{{ readiness()?.sourceCommit?.slice(0, 8) }}</b>,
-                    alors que la branche distante pointe sur
-                    <b>{{ readiness()?.sourceCurrentCommit?.slice(0, 8) }}</b>.
-                    Une nouvelle analyse et une nouvelle génération sont nécessaires.
+                    Le commit <b>{{ selectedCommitSha()?.slice(0, 8) }}</b> doit être analysé,
+                    confirmé puis généré avant de pouvoir être déployé.
                   </p>
-                  <a [routerLink]="'/projects/' + project.id + '/analysis'">
-                    Réanalyser le nouveau commit →
-                  </a>
+                  <button type="button" class="text-action" (click)="analyzeSelectedCommit()">
+                    Analyser ce commit →
+                  </button>
+                </div>
+              </div>
+            } @else if (sourceIsHistorical()) {
+              <div class="source-alert source-alert--warning">
+                <span>↶</span>
+                <div>
+                  <strong>Version antérieure sélectionnée volontairement</strong>
+                  <p>
+                    Vous avez choisi <b>{{ selectedCommitSha()?.slice(0, 8) }}</b>.
+                    Le HEAD actuel est <b>{{ sourceHistory()?.head?.slice(0, 8) }}</b>.
+                    Cette version reste déployable avec sa génération approuvée.
+                  </p>
                 </div>
               </div>
             }
@@ -201,6 +264,7 @@
           <h2>{{ selectedProject()?.name ?? 'Aucun projet' }}</h2>
           <dl>
             <div><dt>Version</dt><dd>{{ version() || '—' }}</dd></div>
+            <div><dt>Commit</dt><dd>{{ selectedCommitSha()?.slice(0, 8) ?? '—' }}</dd></div>
             <div><dt>Génération</dt><dd>{{ selectedGeneration()?.label ?? '—' }}</dd></div>
             <div><dt>Environnement</dt><dd>{{ selectedProject()?.environmentName ?? '—' }}</dd></div>
             <div><dt>Synchronisation</dt><dd>{{ syncMode() === 'prepare_only' ? 'Préparer uniquement' : syncMode() === 'automatic' ? 'Automatique' : 'Avec confirmation' }}</dd></div>

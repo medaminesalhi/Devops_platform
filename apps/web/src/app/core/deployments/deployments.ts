@@ -237,6 +237,23 @@ export interface DeploymentGenerationOption {
   approvedArtifactCount: number;
 }
 
+export interface ProjectSourceCommitOption {
+  sha: string;
+  shortSha: string;
+  message: string;
+  authorName: string | null;
+  authorEmail: string | null;
+  committedAt: string | null;
+  isHead: boolean;
+}
+
+export interface ProjectSourceHistory {
+  sourceType: 'git' | 'zip';
+  branch: string | null;
+  head: string | null;
+  commits: ProjectSourceCommitOption[];
+}
+
 export interface DeploymentProjectOption {
   id: number;
   name: string;
@@ -250,6 +267,7 @@ export interface DeploymentProjectOption {
 export interface DeploymentCreateRequest {
   projectId: number;
   generationId: number;
+  sourceCommit: string;
   version: string;
   note: string | null;
   syncMode: DeploymentSyncMode;
@@ -275,9 +293,11 @@ export interface ProjectDeploymentReadiness {
   generationId: number | null;
   generationLabel: string | null;
   sourceCommit: string | null;
+  selectedSourceCommit: string | null;
   sourceCurrentCommit: string | null;
   sourceOutdated: boolean;
-  sourceFreshnessStatus: 'current' | 'outdated' | 'unavailable' | null;
+  sourceHistorical: boolean;
+  sourceFreshnessStatus: 'current' | 'historical' | 'unavailable' | null;
   environmentId: number | null;
   environmentName: string | null;
   namespace: string | null;
@@ -347,13 +367,49 @@ export class DeploymentsService {
     return this.respond(this.mockProjectOptions());
   }
 
+  getProjectSourceHistory(
+    projectId: number,
+    limit = 30,
+  ): Observable<ProjectSourceHistory> {
+    if (!DEPLOYMENTS_DEMO_MODE) {
+      const params = new HttpParams().set('limit', Math.max(1, Math.min(limit, 100)));
+      return this.http
+        .get<ApiResponse<{ source: ProjectSourceHistory }>>(
+          `/api/projects/${projectId}/source/commits`,
+          { headers: this.headers(), params },
+        )
+        .pipe(map(response => response.data.source));
+    }
+
+    const option = this.mockProjectOptions().find(item => item.id === projectId)
+      ?? this.mockProjectOptions()[0];
+    const commits = option.generations.map((generation, index) => ({
+      sha: generation.sourceCommit,
+      shortSha: generation.sourceCommit.slice(0, 8),
+      message: `Version générée #${generation.id}`,
+      authorName: 'Utilisateur SApixi',
+      authorEmail: null,
+      committedAt: generation.createdAt,
+      isHead: index === 0,
+    }));
+
+    return this.respond({
+      sourceType: 'git',
+      branch: 'main',
+      head: commits[0]?.sha ?? null,
+      commits,
+    });
+  }
+
   getProjectReadiness(
     projectId: number,
     generationId: number | null = null,
+    sourceCommit: string | null = null,
   ): Observable<ProjectDeploymentReadiness> {
     if (!DEPLOYMENTS_DEMO_MODE) {
       let params = new HttpParams();
       if (generationId) params = params.set('generationId', generationId);
+      if (sourceCommit?.trim()) params = params.set('sourceCommit', sourceCommit.trim());
 
       return this.http
         .get<ApiResponse<{ readiness: ProjectDeploymentReadiness }>>(
@@ -366,8 +422,10 @@ export class DeploymentsService {
     const option = this.mockProjectOptions().find(item => item.id === projectId)
       ?? this.mockProjectOptions()[0];
     const generation = option.generations.find(item => item.id === generationId)
-      ?? option.generations[0]
       ?? null;
+    const selectedCommit = sourceCommit ?? generation?.sourceCommit ?? option.generations[0]?.sourceCommit ?? null;
+    const head = option.generations[0]?.sourceCommit ?? selectedCommit;
+    const sourceHistorical = Boolean(selectedCommit && head && selectedCommit !== head);
     const checks = this.defaultPreflight();
 
     return this.respond({
@@ -376,14 +434,16 @@ export class DeploymentsService {
       generationId: generation?.id ?? null,
       generationLabel: generation?.label ?? null,
       sourceCommit: generation?.sourceCommit ?? null,
-      sourceCurrentCommit: generation?.sourceCommit ?? null,
-      sourceOutdated: false,
-      sourceFreshnessStatus: 'current',
+      selectedSourceCommit: selectedCommit,
+      sourceCurrentCommit: head,
+      sourceOutdated: sourceHistorical,
+      sourceHistorical,
+      sourceFreshnessStatus: sourceHistorical ? 'historical' : 'current',
       environmentId: option.environmentId,
       environmentName: option.environmentName,
       namespace: option.namespace,
       componentCount: generation?.componentCount ?? 0,
-      ready: checks.every(item => item.status !== 'blocked'),
+      ready: Boolean(generation) && checks.every(item => item.status !== 'blocked'),
       checks,
     });
   }
