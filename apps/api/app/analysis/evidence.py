@@ -367,7 +367,15 @@ def enrich_component(
             )
 
             component.runtime = "Nginx"
-            component.detected_port = component.detected_port or 80
+
+            # Le port exposé par l'image finale est plus fiable que le
+            # port de dev Node/React/Vite détecté plus tôt. Par exemple un
+            # frontend React peut utiliser 3000 en dev mais Nginx 80 en prod.
+            component.detected_port = (
+                int(ports[0])
+                if ports
+                else 80
+            )
 
             if component.component_type in {"container", "unknown"}:
                 component.component_type = "frontend"

@@ -641,9 +641,17 @@ def _default_port(component: dict[str, Any]) -> int:
     detected = component.get("detected_port")
     if detected:
         return _safe_int(detected, 8080, 1, 65535)
+
     framework = _safe_text(component.get("framework")).lower()
+    runtime = _safe_text(component.get("runtime")).lower()
     component_type = _safe_text(component.get("component_type")).lower()
-    if "flask" in framework or "django" in framework or "fastapi" in framework:
+
+    # Une image Nginx standard sert par défaut sur 80.
+    if "nginx" in runtime:
+        return 80
+    if "flask" in framework:
+        return 5000
+    if "django" in framework or "fastapi" in framework:
         return 8000
     if "spring" in framework:
         return 8080
@@ -720,15 +728,62 @@ def _start_command(component: dict[str, Any], port: int) -> str:
 def _migration_command(component: dict[str, Any]) -> str | None:
     framework = _safe_text(component.get("framework")).lower()
     configuration = _json_value(component.get("configuration"), {})
-    explicit = _safe_text(configuration.get("migrationCommand") if isinstance(configuration, dict) else None)
+
+    explicit = _safe_text(
+        configuration.get("migrationCommand")
+        if isinstance(configuration, dict)
+        else None,
+        maximum=1000,
+    )
     if explicit:
         return explicit
-    if "django" in framework:
-        return "python manage.py migrate"
-    if "flask" in framework or "alembic" in framework:
+
+    migration_tool = _safe_text(
+        configuration.get("migrationTool")
+        if isinstance(configuration, dict)
+        else None
+    ).lower()
+
+    # Important : Flask seul ne signifie PAS Flask-Migrate.
+    if migration_tool in {"flask-migrate", "flask_migrate"}:
         return "flask db upgrade"
+    if migration_tool == "alembic":
+        return "alembic upgrade head"
+    if migration_tool == "django" or "django" in framework:
+        return "python manage.py migrate"
     if "rails" in framework:
         return "bundle exec rails db:migrate"
+    return None
+
+
+def _default_probe_path(component: dict[str, Any]) -> str | None:
+    configuration = _json_value(component.get("configuration"), {})
+    if isinstance(configuration, dict):
+        explicit = _safe_text(
+            configuration.get("healthPath")
+            or configuration.get("healthEndpoint")
+            or configuration.get("readinessPath"),
+            maximum=300,
+        )
+        if explicit:
+            return explicit if explicit.startswith("/") else f"/{explicit}"
+
+    component_type = _safe_text(
+        component.get("component_type") or component.get("componentType")
+    ).lower()
+    runtime = _safe_text(component.get("runtime")).lower()
+    framework = _safe_text(component.get("framework")).lower()
+
+    # Pour un frontend statique/Nginx, la racine est un endpoint sûr.
+    if (
+        component_type in {"frontend", "static", "web"}
+        or "nginx" in runtime
+        or any(token in framework for token in ("angular", "react", "vue"))
+    ):
+        return "/"
+
+    # Pour une API, ne jamais inventer /health. Si aucune route n'a été
+    # détectée/confirmée, mieux vaut ne pas générer de probe HTTP.
     return None
 
 
@@ -854,8 +909,8 @@ def _build_default_components(
                     "ingressTlsSecretName": advanced.get("ingressTlsSecretName"),
                     "ingressCertManagerIssuer": advanced.get("ingressCertManagerIssuer"),
                     "replicas": decisions["replicas"],
-                    "readinessPath": advanced.get("readinessPath") or ("/health" if "api" in _safe_text(component.get("component_type")).lower() else "/"),
-                    "livenessPath": advanced.get("livenessPath") or ("/health" if "api" in _safe_text(component.get("component_type")).lower() else "/"),
+                    "readinessPath": advanced.get("readinessPath") or _default_probe_path(component),
+                    "livenessPath": advanced.get("livenessPath") or _default_probe_path(component),
                     **resources,
                 },
                 "persistence": {
@@ -1149,8 +1204,18 @@ def _merge_ai_components(
 
         migration = suggestion.get("migration") if isinstance(suggestion.get("migration"), dict) else {}
         proposed_command = _safe_text(migration.get("command"), maximum=1000)
-        if proposed_command and not result["migration"].get("command"):
+
+        # En mode automatic, la migration doit venir d'une preuve déterministe
+        # issue de l'analyse (Flask-Migrate/Alembic/Django), pas d'une invention
+        # du provider IA. L'IA ne peut proposer une commande libre que si
+        # l'utilisateur a explicitement choisi "enabled".
+        if (
+            decisions["migration"] == "enabled"
+            and proposed_command
+            and not result["migration"].get("command")
+        ):
             result["migration"]["command"] = proposed_command
+
         if decisions["migration"] == "enabled":
             result["migration"]["enabled"] = bool(result["migration"].get("command"))
         elif decisions["migration"] == "disabled":

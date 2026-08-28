@@ -141,6 +141,7 @@ class DeploymentPipeline:
             deployment=deployment,
             logger=self.logger,
             connection=self.kubernetes_connection,
+            contract=self.contract,
         )
 
     @staticmethod
@@ -329,6 +330,11 @@ class DeploymentPipeline:
                     gitops_commit=details.get("gitopsCommit"),
                 )
         elif stage == "argocd":
+            # Le namespace et le Secret de pull doivent exister AVANT le sync
+            # afin d'éviter ImagePullBackOff/401 dès la création des Pods.
+            self.kubernetes_provider.ensure_image_pull_secret(
+                registry_connection=self.registry_connection,
+            )
             details = self.argocd_provider.apply_and_sync()
         elif stage == "kubernetes":
             resources = self.argocd_provider.application_resources()

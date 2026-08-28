@@ -932,6 +932,25 @@ def detect_python_component(
                         "Pipfile",
                     ],
                 ),
+
+            # Ne jamais déduire une migration de Flask seul.
+            # On mémorise uniquement un outil réellement détecté dans
+            # les dépendances / fichiers du composant.
+            "migrationTool": (
+                "flask-migrate"
+                if (
+                    "flask-migrate" in dependency_text
+                    or "flask_migrate" in dependency_text
+                )
+                else "alembic"
+                if "alembic" in dependency_text
+                else "django"
+                if (
+                    "django" in dependency_text
+                    and (component_root / "manage.py").is_file()
+                )
+                else None
+            ),
         },
     )
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import queue
@@ -406,8 +407,7 @@ class WorkspaceProvider:
         else:
             with git_workspace_manager.checkout(
                 project=project,
-                commit_policy="validated",
-                requested_commit_sha=expected_commit or None,
+                commit_policy="confirmed",
             ) as checkout:
                 shutil.copytree(
                     checkout.source_path,
@@ -1731,10 +1731,114 @@ class ArgoCdProvider:
                 f"Synchronisation demandée : {name}",
                 stage="argocd",
             )
+
+        self._wait_for_applications(names)
+
         return {
             "applications": names,
             "destinationServer": destination_server,
         }
+
+    def _wait_for_applications(self, names: list[str]) -> None:
+        if not names:
+            return
+
+        timeout_seconds = int(
+            current_app.config.get("DEPLOYMENT_ARGO_TIMEOUT_SECONDS", 600)
+        )
+        poll_seconds = max(
+            2,
+            int(current_app.config.get("DEPLOYMENT_ARGO_POLL_SECONDS", 5)),
+        )
+        started = time.monotonic()
+        last_summary = ""
+
+        while time.monotonic() - started < timeout_seconds:
+            pending: list[str] = []
+
+            for name in names:
+                response = self._request(
+                    "GET",
+                    f"/api/v1/applications/{quote(name, safe='')}",
+                    expected=(200,),
+                )
+                body = response.json()
+                status = body.get("status") or {}
+                sync = (status.get("sync") or {}).get("status") or "Unknown"
+                health = (status.get("health") or {}).get("status") or "Unknown"
+                operation = status.get("operationState") or {}
+                phase = str(operation.get("phase") or "")
+                message = str(operation.get("message") or "").strip()
+
+                if phase in {"Failed", "Error"}:
+                    raise DeploymentExecutionError(
+                        "ARGOCD_SYNC_FAILED",
+                        sanitize_log(
+                            message
+                            or (
+                                f"La synchronisation Argo CD de {name} "
+                                f"a échoué (sync={sync}, health={health})."
+                            )
+                        ),
+                        stage="argocd",
+                        title="Synchronisation Argo CD échouée",
+                        retryable=True,
+                        integration_name=self.connection.get("name"),
+                    )
+
+                if sync == "Synced" and health == "Healthy":
+                    continue
+
+                if health == "Degraded" and phase == "Succeeded":
+                    raise DeploymentExecutionError(
+                        "ARGOCD_APPLICATION_DEGRADED",
+                        (
+                            f"L'application Argo CD {name} est Degraded après "
+                            "la synchronisation. Inspectez les hooks, probes et "
+                            "workloads Kubernetes avant de relancer."
+                        ),
+                        stage="argocd",
+                        title="Application Argo CD dégradée",
+                        retryable=True,
+                        integration_name=self.connection.get("name"),
+                    )
+
+                pending.append(
+                    f"{name}(sync={sync},health={health},phase={phase or '—'})"
+                )
+
+            if not pending:
+                self.logger.write(
+                    "argocd",
+                    "success",
+                    "Toutes les applications Argo CD sont Synced et Healthy.",
+                    stage="argocd",
+                )
+                return
+
+            summary = ", ".join(pending)
+            if summary != last_summary:
+                self.logger.write(
+                    "argocd",
+                    "info",
+                    f"Argo CD progresse encore : {summary}",
+                    stage="argocd",
+                )
+                last_summary = summary
+
+            time.sleep(poll_seconds)
+
+        raise DeploymentExecutionError(
+            "ARGOCD_SYNC_TIMEOUT",
+            (
+                "Les applications Argo CD ne sont pas devenues "
+                f"Synced/Healthy avant {timeout_seconds} secondes."
+            ),
+            stage="argocd",
+            title="Délai Argo CD dépassé",
+            retryable=True,
+            integration_name=self.connection.get("name"),
+        )
 
     def application_resources(self) -> list[dict[str, Any]]:
         _projects, applications = self._manifests()
@@ -1787,15 +1891,28 @@ class KubernetesProvider:
         deployment: dict[str, Any],
         logger: DeploymentLogger,
         connection: dict[str, Any],
+        contract: dict[str, Any] | None = None,
     ) -> None:
         self.deployment = deployment
         self.logger = logger
         self.connection = connection
-        self.base_url = str(connection.get("base_url") or "").rstrip("/")
+        self.contract = contract or {}
+        self.base_url = str(connection.get("base_url") or "").strip().rstrip("/")
         self.verify_ssl = bool(connection.get("verify_ssl", True))
-        self.secret = decrypt_credential(connection.get("secret_ciphertext"))
+        self.secret = (
+            decrypt_credential(connection.get("secret_ciphertext"))
+            or ""
+        ).strip()
         self.username = connection.get("username")
         self.timeout = int(current_app.config.get("DEPLOYMENT_HTTP_TIMEOUT_SECONDS", 30))
+
+        target = self.contract.get("target") if isinstance(self.contract, dict) else {}
+        target = target if isinstance(target, dict) else {}
+        self.namespace = str(
+            target.get("namespace")
+            or deployment.get("namespace")
+            or "default"
+        ).strip()
 
     def _headers(self) -> dict[str, str]:
         headers = {"Accept": "application/json"}
@@ -1803,7 +1920,14 @@ class KubernetesProvider:
             headers["Authorization"] = f"Bearer {self.secret}"
         return headers
 
-    def _get(self, path: str) -> dict[str, Any]:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict[str, Any] | None = None,
+        expected: Iterable[int] = (200,),
+    ) -> requests.Response:
         if not self.base_url:
             raise DeploymentExecutionError(
                 "KUBERNETES_URL_MISSING",
@@ -1811,10 +1935,17 @@ class KubernetesProvider:
                 stage="kubernetes",
                 integration_name=self.connection.get("name"),
             )
+
+        headers = self._headers()
+        if json_body is not None:
+            headers["Content-Type"] = "application/json"
+
         try:
-            response = requests.get(
+            response = requests.request(
+                method,
                 urljoin(self.base_url + "/", path.lstrip("/")),
-                headers=self._headers(),
+                headers=headers,
+                json=json_body,
                 timeout=self.timeout,
                 verify=self.verify_ssl,
             )
@@ -1827,16 +1958,36 @@ class KubernetesProvider:
                 retryable=True,
                 integration_name=self.connection.get("name"),
             ) from error
-        if response.status_code in {401, 403}:
+
+        if response.status_code == 401:
             raise DeploymentExecutionError(
-                "KUBERNETES_AUTHENTICATION_FAILED",
-                "Kubernetes a refusé le credential configuré.",
+                "KUBERNETES_TOKEN_INVALID",
+                (
+                    "Kubernetes a retourné HTTP 401 : le token est absent, "
+                    "invalide ou expiré."
+                ),
                 stage="kubernetes",
-                title="Authentification Kubernetes refusée",
+                title="Token Kubernetes invalide",
                 retryable=True,
                 integration_name=self.connection.get("name"),
             )
-        if response.status_code >= 400:
+
+        if response.status_code == 403:
+            details = sanitize_log(response.text or f"HTTP 403 sur {path}")
+            raise DeploymentExecutionError(
+                "KUBERNETES_RBAC_FORBIDDEN",
+                (
+                    "Kubernetes a retourné HTTP 403. Le token est valide mais "
+                    f"l'accès est interdit pour le namespace {self.namespace!r}. "
+                    f"Détail API : {details}"
+                ),
+                stage="kubernetes",
+                title="Permissions Kubernetes insuffisantes",
+                retryable=True,
+                integration_name=self.connection.get("name"),
+            )
+
+        if response.status_code not in set(expected):
             raise DeploymentExecutionError(
                 "KUBERNETES_API_FAILED",
                 sanitize_log(response.text or f"HTTP {response.status_code}"),
@@ -1844,22 +1995,225 @@ class KubernetesProvider:
                 retryable=True,
                 integration_name=self.connection.get("name"),
             )
+
+        return response
+
+    def _get(self, path: str) -> dict[str, Any]:
+        response = self._request("GET", path, expected=(200,))
         body = response.json()
         return body if isinstance(body, dict) else {}
 
-    def preflight(self) -> dict[str, Any]:
-        """Vérifie que l'API Kubernetes configurée est réellement joignable."""
-        payload = self._get("/version")
-        version = str(payload.get("gitVersion") or payload.get("git_version") or "").strip()
+    def ensure_namespace(self) -> None:
+        namespace = self.namespace or "default"
+        encoded_namespace = quote(namespace, safe="")
+
+        response = self._request(
+            "GET",
+            f"/api/v1/namespaces/{encoded_namespace}",
+            expected=(200, 404),
+        )
+        if response.status_code == 200:
+            return
+
+        self._request(
+            "POST",
+            "/api/v1/namespaces",
+            json_body={
+                "apiVersion": "v1",
+                "kind": "Namespace",
+                "metadata": {
+                    "name": namespace,
+                    "labels": {
+                        "sapixi.io/managed": "true",
+                    },
+                },
+            },
+            expected=(200, 201, 409),
+        )
+        self.logger.write(
+            "kubernetes",
+            "success",
+            f"Namespace Kubernetes prêt : {namespace}",
+            stage="kubernetes",
+        )
+
+    def ensure_image_pull_secret(
+        self,
+        *,
+        registry_connection: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        target = self.contract.get("target") if isinstance(self.contract, dict) else {}
+        target = target if isinstance(target, dict) else {}
+        registry_target = target.get("registry")
+        registry_target = registry_target if isinstance(registry_target, dict) else {}
+
+        secret_name = str(
+            registry_target.get("imagePullSecretName")
+            or ""
+        ).strip()
+        if not secret_name:
+            return None
+
+        self.ensure_namespace()
+
+        endpoint = str(
+            registry_target.get("host")
+            or registry_target.get("endpointUrl")
+            or registry_connection.get("base_url")
+            or ""
+        ).strip()
+        parsed = urlparse(endpoint if "://" in endpoint else f"//{endpoint}")
+        registry_host = (parsed.netloc or parsed.path).strip().rstrip("/")
+
+        username = str(registry_connection.get("username") or "").strip()
+        password = (
+            decrypt_credential(registry_connection.get("secret_ciphertext"))
+            or ""
+        ).strip()
+
+        if not registry_host or not username or not password:
+            raise DeploymentExecutionError(
+                "REGISTRY_PULL_CREDENTIALS_MISSING",
+                (
+                    "Impossible de provisionner imagePullSecret : "
+                    "host/username/credential Nexus incomplet."
+                ),
+                stage="argocd",
+                title="Credential de pull Nexus incomplet",
+                retryable=True,
+                integration_name=registry_connection.get("name"),
+            )
+
+        auth = base64.b64encode(
+            f"{username}:{password}".encode("utf-8")
+        ).decode("ascii")
+        docker_config = {
+            "auths": {
+                registry_host: {
+                    "username": username,
+                    "password": password,
+                    "auth": auth,
+                }
+            }
+        }
+        docker_config_b64 = base64.b64encode(
+            json.dumps(docker_config, separators=(",", ":")).encode("utf-8")
+        ).decode("ascii")
+
+        namespace = self.namespace or "default"
+        encoded_namespace = quote(namespace, safe="")
+        encoded_name = quote(secret_name, safe="")
+        current = self._request(
+            "GET",
+            f"/api/v1/namespaces/{encoded_namespace}/secrets/{encoded_name}",
+            expected=(200, 404),
+        )
+
+        metadata: dict[str, Any] = {
+            "name": secret_name,
+            "namespace": namespace,
+            "labels": {
+                "sapixi.io/managed": "true",
+            },
+        }
+        if current.status_code == 200:
+            current_body = current.json()
+            resource_version = str(
+                ((current_body.get("metadata") or {}).get("resourceVersion"))
+                or ""
+            ).strip()
+            if resource_version:
+                metadata["resourceVersion"] = resource_version
+
+        body = {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": metadata,
+            "type": "kubernetes.io/dockerconfigjson",
+            "data": {
+                ".dockerconfigjson": docker_config_b64,
+            },
+        }
+
+        if current.status_code == 200:
+            self._request(
+                "PUT",
+                f"/api/v1/namespaces/{encoded_namespace}/secrets/{encoded_name}",
+                json_body=body,
+                expected=(200,),
+            )
+        else:
+            self._request(
+                "POST",
+                f"/api/v1/namespaces/{encoded_namespace}/secrets",
+                json_body=body,
+                expected=(200, 201),
+            )
+
         self.logger.write(
             "kubernetes",
             "success",
             (
-                f"Préflight Kubernetes réussi{f' : {version}' if version else ''}."
+                f"imagePullSecret {secret_name} provisionné dans "
+                f"le namespace {namespace}."
+            ),
+            stage="argocd",
+        )
+        return {
+            "name": secret_name,
+            "namespace": namespace,
+        }
+
+    def preflight(self) -> dict[str, Any]:
+        """Vérifie API + namespace + RBAC avant les étapes coûteuses."""
+        payload = self._get("/version")
+        version = str(
+            payload.get("gitVersion")
+            or payload.get("git_version")
+            or ""
+        ).strip()
+
+        namespace = self.namespace or "default"
+        self.ensure_namespace()
+        encoded_namespace = quote(namespace, safe="")
+        checks = [
+            ("pods", f"/api/v1/namespaces/{encoded_namespace}/pods?limit=1"),
+            ("services", f"/api/v1/namespaces/{encoded_namespace}/services?limit=1"),
+            (
+                "deployments",
+                f"/apis/apps/v1/namespaces/{encoded_namespace}/deployments?limit=1",
+            ),
+            ("jobs", f"/apis/batch/v1/namespaces/{encoded_namespace}/jobs?limit=1"),
+            (
+                "ingresses",
+                f"/apis/networking.k8s.io/v1/namespaces/{encoded_namespace}/ingresses?limit=1",
+            ),
+            (
+                "persistentvolumeclaims",
+                f"/api/v1/namespaces/{encoded_namespace}/persistentvolumeclaims?limit=1",
+            ),
+        ]
+
+        checked: list[str] = []
+        for resource_name, path in checks:
+            self._get(path)
+            checked.append(resource_name)
+
+        self.logger.write(
+            "kubernetes",
+            "success",
+            (
+                "Préflight Kubernetes réussi : "
+                f"version={version or 'inconnue'}, "
+                f"namespace={namespace}, RBAC vérifié."
             ),
             stage="kubernetes",
         )
-        return {"version": version or None}
+        return {
+            "version": version or None,
+            "namespace": namespace,
+            "rbacChecked": checked,
+        }
 
     @staticmethod
     def _age(timestamp: str | None) -> str:
@@ -1879,7 +2233,7 @@ class KubernetesProvider:
         return f"{seconds // 86400} j"
 
     def observe(self) -> list[dict[str, Any]]:
-        namespace = str(self.deployment.get("namespace") or "default")
+        namespace = self.namespace or "default"
         project_slug = str(self.deployment.get("project_slug") or "")
         encoded_namespace = quote(namespace, safe="")
         endpoints = [

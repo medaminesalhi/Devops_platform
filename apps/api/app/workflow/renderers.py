@@ -688,46 +688,6 @@ def render_component(
     ).lower()
 
 
-    effective_port = (
-        8080
-
-        if (
-            require_non_root
-
-            and component_type
-            in {
-                "frontend",
-                "static",
-            }
-
-            and requested_port < 1024
-        )
-
-        else requested_port
-    )
-
-
-    warnings: list[str] = []
-
-
-    if effective_port != requested_port:
-        warnings.append(
-            (
-                f"Le port {requested_port} "
-                f"du composant "
-                f"{component.get('name')} "
-                "a été remplacé par "
-                f"{effective_port} pour permettre "
-                "une exécution non-root."
-            )
-        )
-
-
-    artifacts: list[
-        RenderedArtifact
-    ] = []
-
-
     dockerfile_path = safe_path(
         str(
             build.get(
@@ -745,6 +705,49 @@ def render_component(
         source_root,
         dockerfile_path,
     )
+
+
+    uses_existing_dockerfile = (
+        preserve_dockerfile
+        and existing_dockerfile.is_file()
+    )
+
+
+    # Ne jamais modifier silencieusement le port d'une image existante.
+    # Si un Dockerfile Nginx expose 80, Service/Ingress/probes doivent rester
+    # alignés sur 80. Le fallback 8080 n'est utile que pour un Dockerfile
+    # frontend généré par SApixi en non-root.
+    effective_port = (
+        8080
+        if (
+            not uses_existing_dockerfile
+            and require_non_root
+            and component_type in {"frontend", "static"}
+            and requested_port < 1024
+        )
+        else requested_port
+    )
+
+
+    warnings: list[str] = []
+
+
+    if effective_port != requested_port:
+        warnings.append(
+            (
+                f"Le port {requested_port} "
+                f"du composant "
+                f"{component.get('name')} "
+                "a été remplacé par "
+                f"{effective_port} uniquement pour le Dockerfile "
+                "frontend généré en non-root."
+            )
+        )
+
+
+    artifacts: list[
+        RenderedArtifact
+    ] = []
 
 
     if (
@@ -2027,6 +2030,58 @@ def build_values(
         )
 
 
+    runtime = require_dict(component, "runtime")
+    runtime_name = str(runtime.get("name") or "").strip().lower()
+    is_nginx_runtime = "nginx" in runtime_name
+
+    configured_user = int(container.get("runAsUser") or 10001)
+    require_non_root = bool(policies.get("requireNonRoot", True))
+
+    if is_nginx_runtime:
+        # Compatibilité avec l'image nginx officielle : son entrypoint démarre
+        # en root, prépare/chown les répertoires temporaires puis lance les
+        # workers en utilisateur nginx. On garde seccomp + capabilities
+        # minimales au lieu d'imposer UID 10001/drop ALL aveuglement.
+        pod_security_context = {
+            "seccompProfile": {"type": "RuntimeDefault"},
+        }
+        container_security_context = {
+            "allowPrivilegeEscalation": False,
+            "readOnlyRootFilesystem": False,
+            "runAsNonRoot": False,
+            "runAsUser": 0,
+            "runAsGroup": 0,
+            "capabilities": {
+                "drop": ["ALL"],
+                "add": [
+                    "CHOWN",
+                    "DAC_OVERRIDE",
+                    "FOWNER",
+                    "SETGID",
+                    "SETUID",
+                    "NET_BIND_SERVICE",
+                ],
+            },
+        }
+    else:
+        pod_security_context = {
+            "runAsNonRoot": require_non_root,
+            "runAsUser": configured_user,
+            "runAsGroup": configured_user,
+            "fsGroup": configured_user,
+            "seccompProfile": {"type": "RuntimeDefault"},
+        }
+        container_security_context = {
+            "allowPrivilegeEscalation": False,
+            "readOnlyRootFilesystem": bool(
+                container.get("readOnlyRootFilesystem", False)
+            ),
+            "runAsNonRoot": require_non_root,
+            "runAsUser": configured_user,
+            "capabilities": {"drop": ["ALL"]},
+        }
+
+
     return {
         "nameOverride":
             component_slug,
@@ -2091,83 +2146,12 @@ def build_values(
         },
 
 
-        "podSecurityContext": {
-            "runAsNonRoot":
-                bool(
-                    policies.get(
-                        "requireNonRoot",
-                        True,
-                    )
-                ),
-
-            "runAsUser":
-                int(
-                    container.get(
-                        "runAsUser"
-                    )
-                    or 10001
-                ),
-
-            "runAsGroup":
-                int(
-                    container.get(
-                        "runAsUser"
-                    )
-                    or 10001
-                ),
-
-            "fsGroup":
-                int(
-                    container.get(
-                        "runAsUser"
-                    )
-                    or 10001
-                ),
-
-            "seccompProfile": {
-                "type":
-                    "RuntimeDefault",
-            },
-        },
+        "podSecurityContext":
+            pod_security_context,
 
 
-        "securityContext": {
-            "allowPrivilegeEscalation":
-                False,
-
-            "readOnlyRootFilesystem":
-                bool(
-                    container.get(
-                        (
-                            "readOnlyRoot"
-                            "Filesystem"
-                        ),
-                        False,
-                    )
-                ),
-
-            "runAsNonRoot":
-                bool(
-                    policies.get(
-                        "requireNonRoot",
-                        True,
-                    )
-                ),
-
-            "runAsUser":
-                int(
-                    container.get(
-                        "runAsUser"
-                    )
-                    or 10001
-                ),
-
-            "capabilities": {
-                "drop": [
-                    "ALL",
-                ],
-            },
-        },
+        "securityContext":
+            container_security_context,
 
 
         "service": {
@@ -2196,7 +2180,19 @@ def build_values(
                 ),
 
             "targetPort":
-                effective_port,
+                int(
+                    service.get("targetPort")
+                    or effective_port
+                ),
+
+            # Alias DNS court dans le namespace du projet. Exemple :
+            # minishop-backend reste le nom canonique, mais `backend` devient
+            # aussi résolvable pour les configs Nginx/proxy existantes.
+            "aliasEnabled":
+                bool(service.get("enabled", True)),
+
+            "aliasName":
+                component_slug,
         },
 
 
@@ -2493,6 +2489,25 @@ spec:
       protocol: TCP
   selector:
     {{- include "sapixi.selectorLabels" . | nindent 4 }}
+{{- if and .Values.service.aliasEnabled .Values.service.aliasName (ne .Values.service.aliasName (include "sapixi.fullname" .)) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.service.aliasName }}
+  labels:
+    {{- include "sapixi.labels" . | nindent 4 }}
+    sapixi.io/service-alias: "true"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "sapixi.selectorLabels" . | nindent 4 }}
+{{- end }}
 {{- end }}
 '''
 
