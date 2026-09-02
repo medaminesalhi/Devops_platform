@@ -596,6 +596,7 @@ def get_options(
 def get_project_readiness(
     project_id: int,
     generation_id: int | None = None,
+    selected_commit: str | None = None,
 ) -> dict[str, Any]:
     project = repository.find_project_for_deployment(project_id)
     if project is None:
@@ -644,21 +645,40 @@ def get_project_readiness(
         environment_id=environment_id,
     )
 
+    requested_commit = str(selected_commit or "").strip().lower()
+    generation_commit = str(source_commit or "").strip().lower()
+
+    if (
+        requested_commit
+        and generation_commit
+        and requested_commit != generation_commit
+    ):
+        raise DeploymentServiceError(
+            "INVALID_SOURCE_COMMIT",
+            (
+                "Le commit sélectionné ne correspond pas au commit "
+                "de la génération approuvée."
+            ),
+            409,
+        )
+
+    effective_commit = requested_commit or generation_commit
+
     freshness = (
         inspect_source_freshness(
             project_id=project_id,
-            generation_commit=source_commit,
+            selected_commit=effective_commit,
         )
-        if selected_generation_id and source_commit
+        if selected_generation_id and effective_commit
         else None
     )
 
     if freshness is not None:
-        if freshness.status == "outdated":
-            source_status = "blocked"
-            action_label = "Réanalyser le nouveau commit"
-            action_path = f"/projects/{project_id}/analysis"
-        elif freshness.status == "unavailable":
+        if freshness.status == "unavailable":
+            source_status = "warning"
+            action_label = None
+            action_path = None
+        elif freshness.status == "historical":
             source_status = "warning"
             action_label = None
             action_path = None
@@ -691,7 +711,7 @@ def get_project_readiness(
         ),
         "sourceCommit": source_commit or None,
         "sourceCurrentCommit": freshness.current_commit if freshness else None,
-        "sourceOutdated": freshness.outdated if freshness else False,
+        "sourceOutdated": False,
         "sourceFreshnessStatus": freshness.status if freshness else None,
         "environmentId": environment_id,
         "environmentName": project.get("environment_name"),
