@@ -14,6 +14,7 @@ from app.database import get_database_connection
 from app.integrations.discovery import (
     RepositoryDiscoveryError,
     discover_repositories,
+    resolve_github_repository,
     resolve_gitlab_repository,
 )
 from app.integrations.security import decrypt_credential
@@ -30,12 +31,13 @@ GIT_REFRESH_MODES = {"polling", "webhook"}
 SERVICE_TYPES = {"ClusterIP", "NodePort", "LoadBalancer"}
 INGRESS_PATH_TYPES = {"Prefix", "Exact", "ImplementationSpecific"}
 
-# GitLab GitOps n'est plus obligatoire : un environnement peut utiliser
-# un repository Helm Nexus comme source Argo CD.
+# Les quatre briques de déploiement sont obligatoires pour un
+# environnement exploitable par la plateforme.
 REQUIRED_ENVIRONMENT_ROLES = {
     "kubernetes",
     "argocd",
     "container_registry",
+    "gitops_repository",
 }
 
 SENSITIVE_ENV_MARKERS = (
@@ -149,12 +151,45 @@ def _service_credential(service: dict[str, Any] | None) -> str | None:
     return decrypt_credential(ciphertext) if ciphertext else None
 
 
+def _resolve_gitops_repository(
+    service: dict[str, Any],
+    repository_ref: str,
+) -> dict[str, Any]:
+    provider_type = str(
+        service.get("provider_type") or ""
+    ).strip().lower()
+
+    credential = _service_credential(service)
+
+    if provider_type == "gitlab":
+        return resolve_gitlab_repository(
+            service,
+            credential,
+            repository_ref,
+        )
+
+    if provider_type == "github":
+        return resolve_github_repository(
+            service,
+            credential,
+            repository_ref,
+        )
+
+    raise RepositoryDiscoveryError(
+        (
+            "Le fournisseur GitOps "
+            f"« {provider_type or 'inconnu'} » "
+            "n'est pas supporté."
+        )
+    )
+
+
 def _repository_options(context: ProposalContext) -> dict[str, Any]:
     nexus = next(
         (item for item in context.services if item.get("service_role") == "container_registry"),
         None,
     )
-    gitlab = next(
+    gitops = next(
         (item for item in context.services if item.get("service_role") == "gitops_repository"),
         None,
     )
@@ -182,14 +217,21 @@ def _repository_options(context: ProposalContext) -> dict[str, Any]:
             if item.get("format") == "helm" and item.get("type") == "hosted"
         ]
 
-    if gitlab is not None:
+    if gitops is not None:
         try:
-            git = discover_repositories(gitlab, _service_credential(gitlab))
+            git = discover_repositories(
+                gitops,
+                _service_credential(gitops),
+            )
         except RepositoryDiscoveryError as error:
-            # Le mode Helm doit rester utilisable si GitLab est indisponible.
-            # On conserve cependant l'erreur pour l'afficher dans l'UI :
-            # l'utilisateur peut toujours saisir un projet GitLab manuellement.
-            current_app.logger.warning("GitLab repository discovery failed: %s", error.message)
+            provider_type = str(
+                gitops.get("provider_type") or "git"
+            ).strip()
+            current_app.logger.warning(
+                "%s repository discovery failed: %s",
+                provider_type,
+                error.message,
+            )
             git_discovery_error = error.message
             git = []
 
@@ -291,11 +333,17 @@ def _validate_decisions(
     helm_repository: dict[str, Any] | None = None
 
     if delivery_mode == "git":
-        gitlab = _service_by_role(context, "gitops_repository")
-        if gitlab is None:
+        gitops = _service_by_role(
+            context,
+            "gitops_repository",
+        )
+        if gitops is None:
             raise ProposalError(
                 "GITOPS_CONNECTION_REQUIRED",
-                "L'environnement ne contient aucune connexion GitLab pour GitOps.",
+                (
+                    "L'environnement ne contient aucune "
+                    "connexion GitOps GitHub ou GitLab."
+                ),
                 409,
             )
 
@@ -304,20 +352,22 @@ def _validate_decisions(
             repository_id=git_repository_id,
         )
 
-        # Si la découverte globale ne retourne rien, l'utilisateur peut saisir
-        # directement un ID, un chemin groupe/projet ou une URL GitLab. Le
-        # backend vérifie alors cette valeur auprès du GitLab configuré.
+        # Si la découverte globale ne retourne rien, l'utilisateur peut
+        # saisir directement une référence. Le resolver choisit GitHub ou
+        # GitLab selon le fournisseur configuré pour l'environnement.
         if git_repository is None and git_repository_ref:
             try:
-                git_repository = resolve_gitlab_repository(
-                    gitlab,
-                    _service_credential(gitlab),
+                git_repository = _resolve_gitops_repository(
+                    gitops,
                     git_repository_ref,
                 )
             except RepositoryDiscoveryError as error:
                 raise ProposalError(
                     "GITOPS_REPOSITORY_INVALID",
-                    f"Impossible de valider le repository GitLab : {error.message}",
+                    (
+                        "Impossible de valider le repository "
+                        f"GitOps : {error.message}"
+                    ),
                     409,
                 ) from error
 
@@ -325,8 +375,8 @@ def _validate_decisions(
             raise ProposalError(
                 "GITOPS_REPOSITORY_REQUIRED",
                 (
-                    "Sélectionnez un repository GitLab détecté ou saisissez "
-                    "son chemin/URL manuellement."
+                    "Sélectionnez un repository GitHub/GitLab "
+                    "détecté ou saisissez sa référence manuellement."
                 ),
                 409,
             )
@@ -334,7 +384,7 @@ def _validate_decisions(
         if not bool(git_repository.get("writable", True)):
             raise ProposalError(
                 "GITOPS_REPOSITORY_NOT_WRITABLE",
-                "Le credential GitLab configuré ne possède pas les droits d'écriture sur ce repository.",
+                "Le credential GitOps configuré ne possède pas les droits d'écriture sur ce repository.",
                 409,
             )
 
@@ -1499,7 +1549,7 @@ def _contract_delivery_target(
         if gitops_service is None:
             raise ProposalError(
                 "GITOPS_CONNECTION_REQUIRED",
-                "La connexion GitLab GitOps de l'environnement est absente.",
+                "La connexion GitOps GitHub/GitLab de l'environnement est absente.",
                 409,
             )
 
@@ -1510,9 +1560,8 @@ def _contract_delivery_target(
 
         if selected is None and decisions.get("gitRepositoryRef"):
             try:
-                selected = resolve_gitlab_repository(
+                selected = _resolve_gitops_repository(
                     gitops_service,
-                    _service_credential(gitops_service),
                     str(decisions.get("gitRepositoryRef")),
                 )
             except RepositoryDiscoveryError as error:
@@ -1573,11 +1622,10 @@ def _contract_from_proposal(
             ("kubernetes", kubernetes),
             ("container_registry", registry),
             ("argocd", argocd),
+            ("gitops_repository", gitops),
         )
         if value is None
     ]
-    if decisions.get("deliveryMode") == "git" and gitops is None:
-        missing.append("gitops_repository")
     if missing:
         raise ProposalError(
             "ENVIRONMENT_INCOMPLETE",
@@ -1948,7 +1996,7 @@ def deployment_target_options_route(project_id: int):
         context = _load_context(project_id)
         options = _repository_options(context)
         nexus = _service_by_role(context, "container_registry")
-        gitlab = _service_by_role(context, "gitops_repository")
+        gitops = _service_by_role(context, "gitops_repository")
         return jsonify(
             {
                 "success": True,
@@ -1967,11 +2015,12 @@ def deployment_target_options_route(project_id: int):
                     ),
                     "gitConnection": (
                         {
-                            "id": int(gitlab["connection_id"]),
-                            "name": gitlab["connection_name"],
-                            "status": gitlab["status"],
+                            "id": int(gitops["connection_id"]),
+                            "name": gitops["connection_name"],
+                            "providerType": gitops["provider_type"],
+                            "status": gitops["status"],
                         }
-                        if gitlab else None
+                        if gitops else None
                     ),
                 },
             }

@@ -170,15 +170,15 @@ const SERVICE_DEFINITIONS:
 
       description:
         (
-          'Optionnel. Nécessaire uniquement si '
-          + 'la source Argo CD choisie en phase 3 '
-          + 'est un repository GitLab.'
+          'Repository GitHub ou GitLab utilisé par '
+          + 'Argo CD pour la synchronisation GitOps.'
         ),
 
       required:
-        false,
+        true,
 
       providers: [
+        'github',
         'gitlab',
       ],
     },
@@ -404,7 +404,7 @@ export class Infrastructure
 
             Validators.pattern(
               (
-                /^[a-z0-9]+ (?:[-a-z0-9]*[a-z0-9])?$/
+                /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/
               )
             ),
           ],
@@ -435,21 +435,37 @@ export class Infrastructure
 
         kubernetesConnectionId: [
           0,
+
+          [
+            Validators.min(1),
+          ],
         ],
 
 
         argocdConnectionId: [
           0,
+
+          [
+            Validators.min(1),
+          ],
         ],
 
 
         registryConnectionId: [
           0,
+
+          [
+            Validators.min(1),
+          ],
         ],
 
 
         gitopsConnectionId: [
           0,
+
+          [
+            Validators.min(1),
+          ],
         ],
 
 

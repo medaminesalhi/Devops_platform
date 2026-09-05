@@ -24,6 +24,7 @@ ROLE_PROVIDER_MAP: dict[str, set[str]] = {
 
     "gitops_repository": {
         "gitlab",
+        "github",
     },
 
     "storage": {
@@ -47,6 +48,7 @@ REQUIRED_SERVICE_ROLES = {
     "kubernetes",
     "argocd",
     "container_registry",
+    "gitops_repository",
 }
 
 
@@ -443,6 +445,29 @@ def _validate_connections(
     validated: list[
         tuple[str, int, bool]
     ] = []
+
+
+    configured_roles = {
+        service_role
+        for service_role, connection_id
+        in connection_ids.items()
+        if int(connection_id or 0) > 0
+    }
+
+    missing_required_roles = sorted(
+        REQUIRED_SERVICE_ROLES
+        - configured_roles
+    )
+
+    if missing_required_roles:
+        raise ValueError(
+            (
+                "Les connexions obligatoires suivantes "
+                "sont absentes : "
+                + ", ".join(missing_required_roles)
+                + "."
+            )
+        )
 
 
     for (

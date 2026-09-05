@@ -822,10 +822,28 @@ class GitAuthentication:
     def prepare(self, repository_url: str) -> tuple[str, dict[str, str]]:
         secret = decrypt_credential(self.connection.get("secret_ciphertext"))
         username = str(self.connection.get("username") or "").strip()
+        provider_type = str(
+            self.connection.get("provider_type") or ""
+        ).strip().lower()
+        repository_host = (
+            urlparse(repository_url).hostname
+            or ""
+        ).lower()
+        is_github = (
+            provider_type == "github"
+            or repository_host
+            in {"github.com", "www.github.com"}
+        )
+
         if not secret:
             return repository_url, self.environment
+
         if not username:
-            username = "oauth2"
+            username = (
+                "x-access-token"
+                if is_github
+                else "oauth2"
+            )
 
         self.auth_directory.mkdir(parents=True, exist_ok=True)
         if os.name == "nt":
@@ -966,6 +984,40 @@ class GitOpsProvider:
         delivery = ((self.contract.get("target") or {}).get("delivery") or {})
         if str(delivery.get("refreshMode") or "polling") != "webhook":
             return
+
+        provider_type = str(
+            self.gitops_connection.get("provider_type") or ""
+        ).strip().lower()
+        gitops_host = (
+            urlparse(
+                str(
+                    self.gitops_connection.get("base_url")
+                    or ""
+                )
+            ).hostname
+            or ""
+        ).lower()
+        is_github = (
+            provider_type == "github"
+            or gitops_host
+            in {"github.com", "www.github.com"}
+        )
+
+        # Pour GitHub, le webhook n'est pas bloquant pour le déploiement.
+        # Argo CD continuera à détecter les nouveaux commits par polling.
+        # Cela évite d'appeler par erreur l'API GitLab /api/v4 sur GitHub.
+        if is_github:
+            self.logger.write(
+                "gitops",
+                "warning",
+                (
+                    "Webhook GitHub non configuré automatiquement. "
+                    "Argo CD utilisera son polling."
+                ),
+                stage="gitops",
+            )
+            return
+
         project_id = delivery.get("repositoryId")
         if not project_id:
             self.logger.write(
@@ -1419,8 +1471,24 @@ class ArgoCdProvider:
                 requires_new_generation=True,
             )
 
-        source_secret = decrypt_credential(self.source_connection.get("secret_ciphertext"))
-        username = str(self.source_connection.get("username") or "").strip()
+        source_secret = decrypt_credential(
+            self.source_connection.get("secret_ciphertext")
+        )
+        username = str(
+            self.source_connection.get("username") or ""
+        ).strip()
+        source_provider_type = str(
+            self.source_connection.get("provider_type") or ""
+        ).strip().lower()
+        source_repository_host = (
+            urlparse(repository_url).hostname
+            or ""
+        ).lower()
+        source_is_github = (
+            source_provider_type == "github"
+            or source_repository_host
+            in {"github.com", "www.github.com"}
+        )
         mode = str(delivery.get("mode") or "git")
         body: dict[str, Any] = {
             "repo": repository_url,
@@ -1430,7 +1498,11 @@ class ArgoCdProvider:
         if username:
             body["username"] = username
         elif mode == "git" and source_secret:
-            body["username"] = "oauth2"
+            body["username"] = (
+                "x-access-token"
+                if source_is_github
+                else "oauth2"
+            )
         if source_secret:
             body["password"] = source_secret
         if mode == "helm":
